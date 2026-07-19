@@ -17,64 +17,19 @@ import * as Localization from 'expo-localization';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import * as ImagePicker from 'expo-image-picker';
 import { Video } from 'expo-av';
-import * as ImageManipulator from 'expo-image-manipulator';
-import * as FileSystem from 'expo-file-system';
-import { decode } from 'base64-arraybuffer';
 import {
   useFonts,
   Manrope_400Regular,
   Manrope_600SemiBold,
   Manrope_700Bold,
 } from '@expo-google-fonts/manrope';
-import { createClient } from '@supabase/supabase-js';
+import { COLORS } from './src/theme/colors';
+import { DEV_BYPASS_CODE, IS_DEVELOPMENT } from './src/config/env';
+import { supabase } from './src/lib/supabase';
+import { ensureAuthed, ensureDevSession } from './src/services/authService';
+import { uploadToBucket } from './src/services/uploadService';
 
-/* ---------------- Supabase ---------------- */
-const SUPABASE_URL = 'https://ftfsfmfhflqxfstvsuyf.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_QahClSakT8LsX9_RrKItyw_Llgg4Z0h';
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkY29saXdmaHZnZWFiaG1xeWRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxMTA1NjEsImV4cCI6MjA3MzY4NjU2MX0.un-AxI-X5rjubn03BQULQr_f2UM4BAJOH2DaX78uOao';
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-/* ---------------- DEV session (bypass) ---------------- */
-const DEV_EMAIL = 'dev@circles.local';
-const DEV_PASSWORD = 'circles123';
-const DEV_BYPASS_CODE = '000000';
-
-async function ensureDevSession() {
-  if (!__DEV__) return null;
-  const cur = await supabase.auth.getSession();
-  if (cur.data.session) return cur.data.session;
-  let { error } = await supabase.auth.signInWithPassword({ email: DEV_EMAIL, password: DEV_PASSWORD });
-  if (error) {
-    const { error: upErr } = await supabase.auth.signUp({ email: DEV_EMAIL, password: DEV_PASSWORD });
-    if (upErr && !/already/i.test(upErr.message)) console.log('Dev signUp error:', upErr.message);
-    const retry = await supabase.auth.signInWithPassword({ email: DEV_EMAIL, password: DEV_PASSWORD });
-    if (retry.error) { console.log('Dev signIn retry error:', retry.error.message); return null; }
-  }
-  try { await supabase.rpc('ensure_user', { phone: '+15550000000' }); } catch {}
-  const after = await supabase.auth.getSession();
-  return after.data.session;
-}
-
-/* ---------------- NEW: central guard ---------------- */
-async function ensureAuthed() {
-  let { data: { session } } = await supabase.auth.getSession();
-  if (!session && __DEV__) {
-    await ensureDevSession();
-    ({ data: { session } } = await supabase.auth.getSession());
-  }
-  if (!session) throw new Error('Please sign in first');
-  return session;
-}
-
-/* ---------------- Theme & helpers ---------------- */
-const COLORS = {
-  bg: '#ffffff',
-  text: '#111111',
-  subtext: '#6b6b6b',
-  primary: '#000000',
-  border: '#e6e6e6',
-  divider: '#eeeeee',
-};
+/* ---------------- Layout & helpers ---------------- */
 const { width: W, height: H } = Dimensions.get('window');
 const IS_SMALL = W < 360 || H < 720;
 
@@ -92,46 +47,6 @@ function getInitials(name = '') {
   return name.split(/\s+/).slice(0, 2).map(s => s[0] || '').join('').toUpperCase();
 }
 function randomId() { return Math.random().toString(36).slice(2); }
-
-/* --- Upload helpers (RN-safe: no Blob, ArrayBuffer via base64) --- */
-function normalizeMime(m) {
-  if (!m) return 'image/jpeg';
-  if (m === 'video/quicktime') return 'video/mp4';
-  return m;
-}
-async function compressIfImage(uri, mimeHint = 'image/jpeg') {
-  const m = normalizeMime(mimeHint);
-  if (!m.startsWith('image/')) return { uri, mime: m };
-  const { uri: outUri } = await ImageManipulator.manipulateAsync(
-    uri,
-    [],
-    { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-  );
-  return { uri: outUri, mime: 'image/jpeg' };
-}
-async function uploadToBucket(uri, bucket, mime = 'image/jpeg') {
-  // ensure we have a session before write (avoids RLS errors)
-  await ensureAuthed();
-
-  const { uri: u2, mime: m2raw } = await compressIfImage(uri, mime);
-  const m2 = normalizeMime(m2raw);
-  const ext = m2.startsWith('video/') ? 'mp4' : 'jpg';
-  const name = `${Date.now()}_${Math.floor(Math.random() * 1e6)}.${ext}`;
-  const path = name;
-
-  // Read file as base64 => ArrayBuffer (no Blob API)
-  const base64 = await FileSystem.readAsStringAsync(u2, { encoding: 'base64' }); // << fix here
-  const arrayBuffer = decode(base64);
-
-  const { error } = await supabase.storage.from(bucket).upload(path, arrayBuffer, {
-    contentType: m2,
-    upsert: false,
-  });
-  if (error) throw error;
-
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
-}
 
 /* ---------------- Demo data for Inbox ---------------- */
 const USERS = {
@@ -157,7 +72,6 @@ const Tabs = createBottomTabNavigator();
 /* ---------------- App ---------------- */
 export default function App() {
   const [fontsLoaded] = useFonts({ Manrope_400Regular, Manrope_600SemiBold, Manrope_700Bold });
-  useEffect(() => { ensureDevSession().catch(() => {}); }, []);
   if (!fontsLoaded) return null;
 
   return (
@@ -250,7 +164,7 @@ function AuthPhoneScreen({ navigation }) {
        * Do not require Twilio/SMS just to reach the test OTP screen.
        * The 000000 code will create the authenticated dev session there.
        */
-      if (__DEV__) {
+      if (IS_DEVELOPMENT) {
         navigation.replace('AuthOtp', { phone: e164 });
         return;
       }
@@ -284,7 +198,7 @@ function AuthPhoneScreen({ navigation }) {
         We’ll text you a one-time code.
       </Text>
 
-      {__DEV__ ? (
+      {IS_DEVELOPMENT ? (
         <Text style={[styles.authCaption, { marginTop: 6 }]}>
           Development mode: no text will be sent. Enter 000000 on the next
           screen.
@@ -308,7 +222,7 @@ function AuthPhoneScreen({ navigation }) {
           <ActivityIndicator color="#fff" />
         ) : (
           <Text style={styles.primaryBtnText}>
-            {__DEV__ ? 'Continue' : 'Send Code'}
+            {IS_DEVELOPMENT ? 'Continue' : 'Send Code'}
           </Text>
         )}
       </Pressable>
@@ -337,21 +251,13 @@ function AuthOtpScreen({ route, navigation }) {
        * Development bypass:
        * Establish a real Supabase session before entering the app.
        */
-      if (__DEV__ && token === DEV_BYPASS_CODE) {
-        const session = await ensureDevSession();
+      if (IS_DEVELOPMENT && token === DEV_BYPASS_CODE) {
+        const session = await ensureDevSession(phone);
 
         if (!session?.user) {
           throw new Error(
             'The development account could not sign in. Check that dev@circles.local exists and Email auth is enabled in Supabase.'
           );
-        }
-
-        const { error: ensureError } = await supabase.rpc('ensure_user', {
-          phone: phone || '+15550000000',
-        });
-
-        if (ensureError) {
-          throw ensureError;
         }
 
         navigation.replace('ContactsIntro');
@@ -395,7 +301,7 @@ function AuthOtpScreen({ route, navigation }) {
       <Text style={styles.authTitle}>Enter the code</Text>
 
       <Text style={styles.authCaption}>
-        {__DEV__
+        {IS_DEVELOPMENT
           ? `Development login for ${phone || 'this device'}`
           : `We sent an SMS to ${phone}`}
       </Text>
@@ -579,7 +485,7 @@ function AppTabs() {
         const { data: { session } } = await supabase.auth.getSession();
         const isAuthed = !!session;
         if (mounted) setAuthed(isAuthed);
-        if (!isAuthed) { if (__DEV__) setReqCount(1); else setReqCount(0); return; }
+        if (!isAuthed) { if (IS_DEVELOPMENT) setReqCount(1); else setReqCount(0); return; }
         const { data, error } = await supabase.rpc('incoming_requests');
         if (error) throw error;
         if (mounted) setReqCount((data || []).length);
@@ -594,7 +500,7 @@ function AppTabs() {
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
-      {__DEV__ && !authed ? <DevBanner /> : null}
+      {IS_DEVELOPMENT && !authed ? <DevBanner /> : null}
       <Tabs.Navigator
         screenOptions={({ route }) => ({
           headerShown: false,
@@ -677,7 +583,7 @@ function MutualsScreen() {
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { if (__DEV__) { setCandidates(MOCK_CANDIDATES); setIncoming(MOCK_INCOMING); } return; }
+      if (!session) { if (IS_DEVELOPMENT) { setCandidates(MOCK_CANDIDATES); setIncoming(MOCK_INCOMING); } return; }
       const [{ data: cand }, { data: reqs }] = await Promise.all([
         supabase.rpc('mutual_candidates'),
         supabase.rpc('incoming_requests'),
@@ -700,7 +606,7 @@ function MutualsScreen() {
   }, [authed]);
 
   const sendRequest = async (userId) => {
-    if (!authed && __DEV__) { setCandidates(prev => prev.filter(u => u.id !== userId)); Alert.alert('DEV', 'Simulated request.'); return; }
+    if (!authed && IS_DEVELOPMENT) { setCandidates(prev => prev.filter(u => u.id !== userId)); Alert.alert('DEV', 'Simulated request.'); return; }
     setSending(s => ({ ...s, [userId]: true }));
     try {
       await ensureAuthed();
@@ -712,7 +618,7 @@ function MutualsScreen() {
   };
 
   const respond = async (reqId, action) => {
-    if (!authed && __DEV__) { setIncoming(prev => prev.filter(r => r.id !== reqId)); Alert.alert('DEV', `Simulated ${action}.`); return; }
+    if (!authed && IS_DEVELOPMENT) { setIncoming(prev => prev.filter(r => r.id !== reqId)); Alert.alert('DEV', `Simulated ${action}.`); return; }
     setResponding(s => ({ ...s, [reqId]: true }));
     try {
       await ensureAuthed();
@@ -832,7 +738,6 @@ function FeedScreen({ navigation }) {
 
   useEffect(() => {
     (async () => {
-      await ensureDevSession();
       const { data: { session } } = await supabase.auth.getSession();
       setAuthed(!!session);
       if (session) {
@@ -1491,9 +1396,7 @@ function MeScreen({ navigation }) {
   const load = async () => {
     setLoading(true);
     try {
-      await ensureDevSession();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not signed in');
+      const session = await ensureAuthed();
       const uid = session.user.id;
 
       const { data: u } = await supabase.from('users').select('id, display_name, avatar_url, bio').eq('id', uid).single();
@@ -1562,10 +1465,8 @@ function ProfileScreen({ route }) {
   const load = async () => {
     setLoading(true);
     try {
-      await ensureDevSession();
-      const { data: { session } } = await supabase.auth.getSession();
-      const uid = userId || session?.user?.id;
-      if (!uid) throw new Error('No user');
+      const session = await ensureAuthed();
+      const uid = userId || session.user.id;
 
       const { data: u } = await supabase.from('users').select('id, display_name, avatar_url, bio').eq('id', uid).single();
       setProfile(u || { id: uid, display_name: 'User', avatar_url: null, bio: '' });
@@ -1613,11 +1514,15 @@ function EditProfileScreen({ navigation }) {
 
   useEffect(() => {
     (async () => {
-      await ensureDevSession();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const { data: u } = await supabase.from('users').select('display_name, avatar_url, bio').eq('id', session.user.id).maybeSingle();
-      setDisplayName(u?.display_name || ''); setBio(u?.bio || ''); setAvatarUri(u?.avatar_url || null);
+      try {
+        const session = await ensureAuthed();
+        const { data: u } = await supabase.from('users').select('display_name, avatar_url, bio').eq('id', session.user.id).maybeSingle();
+        setDisplayName(u?.display_name || '');
+        setBio(u?.bio || '');
+        setAvatarUri(u?.avatar_url || null);
+      } catch (e) {
+        Alert.alert('Profile unavailable', e?.message || 'Please sign in again.');
+      }
     })();
   }, []);
 
