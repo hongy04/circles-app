@@ -29,8 +29,8 @@ import {
 import { createClient } from '@supabase/supabase-js';
 
 /* ---------------- Supabase ---------------- */
-const SUPABASE_URL = 'https://bdcoliwfhvgeabhmqydg.supabase.co';
-const SUPABASE_ANON_KEY =
+const SUPABASE_URL = 'https://ftfsfmfhflqxfstvsuyf.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_QahClSakT8LsX9_RrKItyw_Llgg4Z0h';
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJkY29saXdmaHZnZWFiaG1xeWRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxMTA1NjEsImV4cCI6MjA3MzY4NjU2MX0.un-AxI-X5rjubn03BQULQr_f2UM4BAJOH2DaX78uOao';
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -234,27 +234,83 @@ function AuthPhoneScreen({ navigation }) {
   const region = Localization?.region || 'US';
 
   const onSendCode = async () => {
-    if (!phone.trim()) return;
+    if (!phone.trim()) {
+      Alert.alert('Phone required', 'Enter your phone number.');
+      return;
+    }
+
     setLoading(true);
+
     try {
       const parsed = parsePhoneNumberFromString(phone, region);
       const e164 = parsed?.isValid() ? parsed.number : phone.trim();
-      const { error } = await supabase.auth.signInWithOtp({ phone: e164 });
+
+      /*
+       * Development mode:
+       * Do not require Twilio/SMS just to reach the test OTP screen.
+       * The 000000 code will create the authenticated dev session there.
+       */
+      if (__DEV__) {
+        navigation.replace('AuthOtp', { phone: e164 });
+        return;
+      }
+
+      /*
+       * Production mode:
+       * A configured Supabase phone provider is required.
+       */
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: e164,
+      });
+
       if (error) throw error;
+
       navigation.replace('AuthOtp', { phone: e164 });
     } catch (e) {
-      alert(e.message || 'Failed to send code');
-    } finally { setLoading(false); }
+      Alert.alert(
+        'Could not send code',
+        e?.message || 'Failed to send the verification code.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.authRoot} edges={['top']}>
       <Text style={styles.authTitle}>Verify your phone</Text>
-      <Text style={styles.authCaption}>We’ll text you a one-time code.</Text>
-      {__DEV__ ? <Text style={[styles.authCaption, { marginTop: 6 }]}>Dev tip: enter 000000 on the next screen.</Text> : null}
-      <TextInput value={phone} onChangeText={setPhone} placeholder="+1 555 123 4567" keyboardType="phone-pad" style={styles.input} />
-      <Pressable style={styles.primaryBtn} onPress={onSendCode} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Send Code</Text>}
+
+      <Text style={styles.authCaption}>
+        We’ll text you a one-time code.
+      </Text>
+
+      {__DEV__ ? (
+        <Text style={[styles.authCaption, { marginTop: 6 }]}>
+          Development mode: no text will be sent. Enter 000000 on the next
+          screen.
+        </Text>
+      ) : null}
+
+      <TextInput
+        value={phone}
+        onChangeText={setPhone}
+        placeholder="+1 555 123 4567"
+        keyboardType="phone-pad"
+        style={styles.input}
+      />
+
+      <Pressable
+        style={styles.primaryBtn}
+        onPress={onSendCode}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.primaryBtnText}>
+            {__DEV__ ? 'Continue' : 'Send Code'}
+          </Text>
+        )}
       </Pressable>
     </SafeAreaView>
   );
@@ -262,39 +318,113 @@ function AuthPhoneScreen({ navigation }) {
 
 function AuthOtpScreen({ route, navigation }) {
   const { phone } = route.params || {};
+
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
 
   const onVerify = async () => {
     const token = (code || '').trim();
-    if (!token) return;
 
-    if (__DEV__ && token === DEV_BYPASS_CODE) {
-      try { await supabase.rpc('ensure_user', { phone }); } catch {}
-      navigation.replace('ContactsIntro');
+    if (!token) {
+      Alert.alert('Code required', 'Enter the six-digit verification code.');
       return;
     }
 
     setLoading(true);
+
     try {
-      const { error } = await supabase.auth.verifyOtp({ phone, token, type: 'sms' });
+      /*
+       * Development bypass:
+       * Establish a real Supabase session before entering the app.
+       */
+      if (__DEV__ && token === DEV_BYPASS_CODE) {
+        const session = await ensureDevSession();
+
+        if (!session?.user) {
+          throw new Error(
+            'The development account could not sign in. Check that dev@circles.local exists and Email auth is enabled in Supabase.'
+          );
+        }
+
+        const { error: ensureError } = await supabase.rpc('ensure_user', {
+          phone: phone || '+15550000000',
+        });
+
+        if (ensureError) {
+          throw ensureError;
+        }
+
+        navigation.replace('ContactsIntro');
+        return;
+      }
+
+      /*
+       * Real SMS verification.
+       */
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone,
+        token,
+        type: 'sms',
+      });
+
       if (error) throw error;
-      await supabase.rpc('ensure_user', { phone });
+
+      if (!data?.session?.user) {
+        throw new Error('Verification succeeded, but no session was created.');
+      }
+
+      const { error: ensureError } = await supabase.rpc('ensure_user', {
+        phone,
+      });
+
+      if (ensureError) throw ensureError;
+
       navigation.replace('ContactsIntro');
     } catch (e) {
-      alert(e.message || 'Invalid code');
-    } finally { setLoading(false); }
+      Alert.alert(
+        'Verification failed',
+        e?.message || 'Invalid or expired code.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.authRoot} edges={['top']}>
       <Text style={styles.authTitle}>Enter the code</Text>
-      <Text style={styles.authCaption}>We sent an SMS to {phone}</Text>
-      <TextInput value={code} onChangeText={setCode} placeholder="123456" keyboardType="number-pad" maxLength={6} style={styles.input} />
-      <Pressable style={styles.primaryBtn} onPress={onVerify} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Verify</Text>}
+
+      <Text style={styles.authCaption}>
+        {__DEV__
+          ? `Development login for ${phone || 'this device'}`
+          : `We sent an SMS to ${phone}`}
+      </Text>
+
+      <TextInput
+        value={code}
+        onChangeText={setCode}
+        placeholder="123456"
+        keyboardType="number-pad"
+        maxLength={6}
+        style={styles.input}
+      />
+
+      <Pressable
+        style={styles.primaryBtn}
+        onPress={onVerify}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.primaryBtnText}>Verify</Text>
+        )}
       </Pressable>
-      <Pressable style={{ marginTop: 12 }} onPress={() => navigation.replace('AuthPhone')}>
+
+      <Pressable
+        style={{ marginTop: 12 }}
+        onPress={() => navigation.replace('AuthPhone')}
+      >
         <Text style={styles.linkText}>Use a different number</Text>
       </Pressable>
     </SafeAreaView>
