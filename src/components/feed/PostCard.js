@@ -1,5 +1,11 @@
-import React, { useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
@@ -11,102 +17,108 @@ export function PostCard({
   onToggleLike,
   onDoubleLike,
   onOpenComments,
+  onOpenPost,
+  onOpenProfile,
 }) {
   const [showBigHeart, setShowBigHeart] = useState(false);
   const lastTapRef = useRef(0);
+  const singleTapTimerRef = useRef(null);
+  const heartTimerRef = useRef(null);
+
+  useEffect(
+    () => () => {
+      clearTimeout(singleTapTimerRef.current);
+      clearTimeout(heartTimerRef.current);
+    },
+    []
+  );
 
   const onImagePress = () => {
     const now = Date.now();
+    const isDoubleTap = now - lastTapRef.current < 300;
 
-    if (now - lastTapRef.current < 300) {
+    if (isDoubleTap) {
+      clearTimeout(singleTapTimerRef.current);
       setShowBigHeart(true);
+
       if (!post.liked) onDoubleLike?.();
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setTimeout(() => setShowBigHeart(false), 650);
+
+      Haptics.impactAsync(
+        Haptics.ImpactFeedbackStyle.Medium
+      ).catch(() => {});
+
+      clearTimeout(heartTimerRef.current);
+      heartTimerRef.current = setTimeout(
+        () => setShowBigHeart(false),
+        650
+      );
+
+      lastTapRef.current = 0;
+      return;
     }
 
     lastTapRef.current = now;
+    clearTimeout(singleTapTimerRef.current);
+    singleTapTimerRef.current = setTimeout(() => {
+      onOpenPost?.();
+      lastTapRef.current = 0;
+    }, 310);
   };
 
   return (
-    <View
-      style={{
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: COLORS.divider,
-      }}
-    >
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          padding: 12,
-        }}
-      >
-        <Avatar
-          size={36}
-          name={post.user.name}
-          uri={post.user.avatarUri}
-        />
+    <View style={styles.root}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={onOpenProfile}
+          disabled={!onOpenProfile}
+          style={styles.authorButton}
+        >
+          <Avatar
+            size={36}
+            name={post.user.name}
+            uri={post.user.avatarUri}
+          />
 
-        <View style={{ marginLeft: 10, flex: 1 }}>
-          <Text
-            style={{
-              fontFamily: 'Manrope_700Bold',
-              color: COLORS.text,
-            }}
-          >
-            {post.user.name}
-          </Text>
-          <Text
-            style={{
-              fontFamily: 'Manrope_400Regular',
-              color: '#888',
-              fontSize: 12,
-            }}
-          >
-            {post.time}
-          </Text>
-        </View>
+          <View style={styles.authorText}>
+            <Text style={styles.authorName} numberOfLines={1}>
+              {post.user.name}
+            </Text>
+            <Text style={styles.time}>{post.time}</Text>
+          </View>
+        </Pressable>
 
-        <Ionicons name="ellipsis-horizontal" size={18} color="#888" />
+        <Pressable hitSlop={10}>
+          <Ionicons
+            name="ellipsis-horizontal"
+            size={18}
+            color="#888"
+          />
+        </Pressable>
       </View>
 
       <Pressable
         onPress={onImagePress}
-        style={{ backgroundColor: '#f2f2f2' }}
+        style={styles.mediaButton}
       >
-        <View style={{ width: '100%', aspectRatio: 1 }}>
+        <View style={styles.mediaWrap}>
           <Image
             source={{ uri: post.uri }}
-            style={{ width: '100%', height: '100%' }}
+            style={styles.media}
             resizeMode="cover"
           />
 
           {showBigHeart ? (
-            <View
-              style={[
-                StyleSheet.absoluteFillObject,
-                {
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                },
-              ]}
-            >
+            <View style={styles.heartOverlay}>
               <MotiView
                 from={{ scale: 0.3, opacity: 0 }}
                 animate={{ scale: 1.1, opacity: 1 }}
-                exit={{ scale: 0.3, opacity: 0 }}
                 transition={{ type: 'timing', duration: 350 }}
               >
                 <Ionicons
                   name="heart"
                   size={96}
                   color="#fff"
-                  style={{
-                    textShadowColor: 'rgba(0,0,0,0.35)',
-                    textShadowOffset: { width: 0, height: 2 },
-                    textShadowRadius: 8,
-                  }}
+                  style={styles.largeHeart}
                 />
               </MotiView>
             </View>
@@ -114,18 +126,11 @@ export function PostCard({
         </View>
       </Pressable>
 
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 12,
-          paddingVertical: 8,
-        }}
-      >
+      <View style={styles.actions}>
         <Pressable
           onPress={onToggleLike}
           hitSlop={10}
-          style={{ marginRight: 16 }}
+          style={styles.actionButton}
         >
           <Ionicons
             name={post.liked ? 'heart' : 'heart-outline'}
@@ -137,7 +142,7 @@ export function PostCard({
         <Pressable
           onPress={onOpenComments}
           hitSlop={10}
-          style={{ marginRight: 16 }}
+          style={styles.actionButton}
         >
           <Ionicons
             name="chatbubble-outline"
@@ -146,7 +151,7 @@ export function PostCard({
           />
         </Pressable>
 
-        <Pressable hitSlop={10}>
+        <Pressable hitSlop={10} style={styles.actionButton}>
           <Ionicons
             name="paper-plane-outline"
             size={24}
@@ -155,37 +160,107 @@ export function PostCard({
         </Pressable>
       </View>
 
-      <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
-        <Text
-          style={{
-            fontFamily: 'Manrope_700Bold',
-            color: COLORS.text,
-          }}
-        >
-          {post.likes} likes
-        </Text>
+      <View style={styles.details}>
+        <Text style={styles.likes}>{post.likes} likes</Text>
 
-        <Text style={{ marginTop: 4, color: COLORS.text }}>
-          <Text style={{ fontFamily: 'Manrope_700Bold' }}>
-            {post.user.name}{' '}
-          </Text>
-          <Text style={{ fontFamily: 'Manrope_400Regular' }}>
-            {post.caption}
-          </Text>
-        </Text>
+        {post.caption ? (
+          <Pressable onPress={onOpenPost}>
+            <Text style={styles.caption} numberOfLines={3}>
+              <Text style={styles.captionName}>
+                {post.user.name}{' '}
+              </Text>
+              <Text style={styles.captionBody}>{post.caption}</Text>
+            </Text>
+          </Pressable>
+        ) : null}
 
         <Pressable onPress={onOpenComments}>
-          <Text
-            style={{
-              color: '#6b6b6b',
-              marginTop: 6,
-              fontFamily: 'Manrope_400Regular',
-            }}
-          >
-            View comments
-          </Text>
+          <Text style={styles.commentsLink}>View comments</Text>
         </Pressable>
       </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.divider,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+  },
+  authorButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  authorText: {
+    marginLeft: 10,
+    flex: 1,
+  },
+  authorName: {
+    fontFamily: 'Manrope_700Bold',
+    color: COLORS.text,
+  },
+  time: {
+    fontFamily: 'Manrope_400Regular',
+    color: '#888',
+    fontSize: 12,
+  },
+  mediaButton: {
+    backgroundColor: '#f2f2f2',
+  },
+  mediaWrap: {
+    width: '100%',
+    aspectRatio: 1,
+  },
+  media: {
+    width: '100%',
+    height: '100%',
+  },
+  heartOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  largeHeart: {
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  actionButton: {
+    marginRight: 16,
+  },
+  details: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  likes: {
+    fontFamily: 'Manrope_700Bold',
+    color: COLORS.text,
+  },
+  caption: {
+    marginTop: 4,
+    color: COLORS.text,
+  },
+  captionName: {
+    fontFamily: 'Manrope_700Bold',
+  },
+  captionBody: {
+    fontFamily: 'Manrope_400Regular',
+  },
+  commentsLink: {
+    color: '#6b6b6b',
+    marginTop: 6,
+    fontFamily: 'Manrope_400Regular',
+  },
+});

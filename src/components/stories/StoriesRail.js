@@ -1,10 +1,22 @@
 import React from 'react';
-import { Image, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS } from '../../theme/colors';
 import { getInitials } from '../../utils/getInitials';
 
-export function StoriesRail({ stories, onAddYourStory, onOpen }) {
+export function StoriesRail({
+  stories,
+  isAdding = false,
+  onAddYourStory,
+  onOpen,
+}) {
   return (
     <View style={{ paddingVertical: 10 }}>
       <ScrollView
@@ -14,7 +26,12 @@ export function StoriesRail({ stories, onAddYourStory, onOpen }) {
       >
         <Pressable
           onPress={onAddYourStory}
-          style={{ alignItems: 'center', marginRight: 14 }}
+          disabled={isAdding}
+          style={({ pressed }) => ({
+            alignItems: 'center',
+            marginRight: 14,
+            opacity: pressed || isAdding ? 0.7 : 1,
+          })}
         >
           <View
             style={{
@@ -28,7 +45,15 @@ export function StoriesRail({ stories, onAddYourStory, onOpen }) {
               backgroundColor: '#f6f6f6',
             }}
           >
-            <Ionicons name="add" size={28} color={COLORS.primary} />
+            {isAdding ? (
+              <ActivityIndicator color={COLORS.primary} />
+            ) : (
+              <Ionicons
+                name="add"
+                size={28}
+                color={COLORS.primary}
+              />
+            )}
           </View>
 
           <Text
@@ -39,7 +64,7 @@ export function StoriesRail({ stories, onAddYourStory, onOpen }) {
               color: COLORS.text,
             }}
           >
-            Your Story
+            {isAdding ? 'Posting…' : 'Your Story'}
           </Text>
         </Pressable>
 
@@ -47,7 +72,11 @@ export function StoriesRail({ stories, onAddYourStory, onOpen }) {
           <Pressable
             key={story.userId}
             onPress={() => onOpen(index)}
-            style={{ alignItems: 'center', marginRight: 14 }}
+            style={({ pressed }) => ({
+              alignItems: 'center',
+              marginRight: 14,
+              opacity: pressed ? 0.75 : 1,
+            })}
           >
             <View
               style={{
@@ -70,6 +99,7 @@ export function StoriesRail({ stories, onAddYourStory, onOpen }) {
                     flex: 1,
                     alignItems: 'center',
                     justifyContent: 'center',
+                    backgroundColor: '#f6f6f6',
                   }}
                 >
                   <Text style={{ fontFamily: 'Manrope_700Bold' }}>
