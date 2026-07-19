@@ -12,9 +12,6 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
-import * as Contacts from 'expo-contacts';
-import * as Localization from 'expo-localization';
-import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import * as ImagePicker from 'expo-image-picker';
 import { Video } from 'expo-av';
 import {
@@ -24,9 +21,9 @@ import {
   Manrope_700Bold,
 } from '@expo-google-fonts/manrope';
 import { COLORS } from './src/theme/colors';
-import { DEV_BYPASS_CODE, IS_DEVELOPMENT } from './src/config/env';
+import { IS_DEVELOPMENT } from './src/config/env';
 import { supabase } from './src/lib/supabase';
-import { ensureAuthed, ensureDevSession } from './src/services/authService';
+import { ensureAuthed } from './src/services/authService';
 import { uploadToBucket } from './src/services/uploadService';
 import { Avatar } from './src/components/Avatar';
 import { DevBanner } from './src/components/DevBanner';
@@ -35,6 +32,7 @@ import { UnreadBadge } from './src/components/UnreadBadge';
 import { PostCard } from './src/components/feed/PostCard';
 import { StoriesRail } from './src/components/stories/StoriesRail';
 import { StoryViewer } from './src/components/stories/StoryViewer';
+import { AuthNavigator } from './src/navigation/AuthNavigator';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W, height: H } = Dimensions.get('window');
@@ -69,7 +67,6 @@ const GROUPS = [
 
 /* ---------------- Navigation ---------------- */
 const RootStack = createNativeStackNavigator();
-const AuthStackNav = createNativeStackNavigator();
 const CirclesStackNav = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
 
@@ -83,7 +80,7 @@ export default function App() {
       <NavigationContainer>
         <RootStack.Navigator screenOptions={{ headerShown: false }}>
           <RootStack.Screen name="Gate" component={GateScreen} />
-          <RootStack.Screen name="Auth" component={AuthStack} />
+          <RootStack.Screen name="Auth" component={AuthNavigator} />
           <RootStack.Screen name="MainTabs" component={AppTabs} />
           <RootStack.Screen name="CreatePost" component={CreatePostScreen} />
           <RootStack.Screen name="Profile" component={ProfileScreen} />
@@ -130,349 +127,6 @@ function GateScreen({ navigation }) {
         </View>
       ) : null}
     </View>
-  );
-}
-
-/* ---------------- Auth stack ---------------- */
-function AuthStack() {
-  return (
-    <AuthStackNav.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: COLORS.bg } }}>
-      <AuthStackNav.Screen name="AuthPhone" component={AuthPhoneScreen} />
-      <AuthStackNav.Screen name="AuthOtp" component={AuthOtpScreen} />
-      <AuthStackNav.Screen name="ContactsIntro" component={ContactsIntroScreen} />
-      <AuthStackNav.Screen name="ContactsPicker" component={ContactsPickerScreen} />
-      <AuthStackNav.Screen name="Syncing" component={SyncingScreen} />
-    </AuthStackNav.Navigator>
-  );
-}
-
-function AuthPhoneScreen({ navigation }) {
-  const [phone, setPhone] = useState('');
-  const [loading, setLoading] = useState(false);
-  const region = Localization?.region || 'US';
-
-  const onSendCode = async () => {
-    if (!phone.trim()) {
-      Alert.alert('Phone required', 'Enter your phone number.');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const parsed = parsePhoneNumberFromString(phone, region);
-      const e164 = parsed?.isValid() ? parsed.number : phone.trim();
-
-      /*
-       * Development mode:
-       * Do not require Twilio/SMS just to reach the test OTP screen.
-       * The 000000 code will create the authenticated dev session there.
-       */
-      if (IS_DEVELOPMENT) {
-        navigation.replace('AuthOtp', { phone: e164 });
-        return;
-      }
-
-      /*
-       * Production mode:
-       * A configured Supabase phone provider is required.
-       */
-      const { error } = await supabase.auth.signInWithOtp({
-        phone: e164,
-      });
-
-      if (error) throw error;
-
-      navigation.replace('AuthOtp', { phone: e164 });
-    } catch (e) {
-      Alert.alert(
-        'Could not send code',
-        e?.message || 'Failed to send the verification code.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <SafeAreaView style={styles.authRoot} edges={['top']}>
-      <Text style={styles.authTitle}>Verify your phone</Text>
-
-      <Text style={styles.authCaption}>
-        We’ll text you a one-time code.
-      </Text>
-
-      {IS_DEVELOPMENT ? (
-        <Text style={[styles.authCaption, { marginTop: 6 }]}>
-          Development mode: no text will be sent. Enter 000000 on the next
-          screen.
-        </Text>
-      ) : null}
-
-      <TextInput
-        value={phone}
-        onChangeText={setPhone}
-        placeholder="+1 555 123 4567"
-        keyboardType="phone-pad"
-        style={styles.input}
-      />
-
-      <Pressable
-        style={styles.primaryBtn}
-        onPress={onSendCode}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.primaryBtnText}>
-            {IS_DEVELOPMENT ? 'Continue' : 'Send Code'}
-          </Text>
-        )}
-      </Pressable>
-    </SafeAreaView>
-  );
-}
-
-function AuthOtpScreen({ route, navigation }) {
-  const { phone } = route.params || {};
-
-  const [code, setCode] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const onVerify = async () => {
-    const token = (code || '').trim();
-
-    if (!token) {
-      Alert.alert('Code required', 'Enter the six-digit verification code.');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      /*
-       * Development bypass:
-       * Establish a real Supabase session before entering the app.
-       */
-      if (IS_DEVELOPMENT && token === DEV_BYPASS_CODE) {
-        const session = await ensureDevSession(phone);
-
-        if (!session?.user) {
-          throw new Error(
-            'The development account could not sign in. Check that dev@circles.local exists and Email auth is enabled in Supabase.'
-          );
-        }
-
-        navigation.replace('ContactsIntro');
-        return;
-      }
-
-      /*
-       * Real SMS verification.
-       */
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone,
-        token,
-        type: 'sms',
-      });
-
-      if (error) throw error;
-
-      if (!data?.session?.user) {
-        throw new Error('Verification succeeded, but no session was created.');
-      }
-
-      const { error: ensureError } = await supabase.rpc('ensure_user', {
-        phone,
-      });
-
-      if (ensureError) throw ensureError;
-
-      navigation.replace('ContactsIntro');
-    } catch (e) {
-      Alert.alert(
-        'Verification failed',
-        e?.message || 'Invalid or expired code.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <SafeAreaView style={styles.authRoot} edges={['top']}>
-      <Text style={styles.authTitle}>Enter the code</Text>
-
-      <Text style={styles.authCaption}>
-        {IS_DEVELOPMENT
-          ? `Development login for ${phone || 'this device'}`
-          : `We sent an SMS to ${phone}`}
-      </Text>
-
-      <TextInput
-        value={code}
-        onChangeText={setCode}
-        placeholder="123456"
-        keyboardType="number-pad"
-        maxLength={6}
-        style={styles.input}
-      />
-
-      <Pressable
-        style={styles.primaryBtn}
-        onPress={onVerify}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.primaryBtnText}>Verify</Text>
-        )}
-      </Pressable>
-
-      <Pressable
-        style={{ marginTop: 12 }}
-        onPress={() => navigation.replace('AuthPhone')}
-      >
-        <Text style={styles.linkText}>Use a different number</Text>
-      </Pressable>
-    </SafeAreaView>
-  );
-}
-
-/* ---------------- Contacts sync ---------------- */
-function ContactsIntroScreen({ navigation }) {
-  return (
-    <SafeAreaView style={styles.authRoot} edges={['top']}>
-      <Text style={styles.authTitle}>Find your mutuals</Text>
-      <Text style={styles.authCaption}>We match only with people who also have your number. Exclude anyone before syncing.</Text>
-      <View style={{ height: 16 }} />
-      <Pressable style={styles.primaryBtn} onPress={() => navigation.replace('ContactsPicker')}>
-        <Text style={styles.primaryBtnText}>Choose Contacts</Text>
-      </Pressable>
-      <Pressable style={{ marginTop: 12 }} onPress={() => navigation.replace('MainTabs')}>
-        <Text style={styles.linkText}>Skip for now</Text>
-      </Pressable>
-    </SafeAreaView>
-  );
-}
-
-function ContactsPickerScreen({ navigation }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const region = Localization?.region || 'US';
-
-  useEffect(() => {
-    (async () => {
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status !== 'granted') { alert('Contacts permission denied'); navigation.replace('MainTabs'); return; }
-      const { data } = await Contacts.getContactsAsync({ fields: [Contacts.Fields.PhoneNumbers], pageSize: 2000 });
-      const mapped = (data || [])
-        .filter(c => c.phoneNumbers && c.phoneNumbers.length)
-        .map(c => ({ id: c.id, name: c.name || 'Unknown', numbers: c.phoneNumbers.map(p => p.number).filter(Boolean), selected: true }));
-      setItems(mapped); setLoading(false);
-    })();
-  }, [navigation]);
-
-  const allSelected = items.length > 0 && items.every(i => i.selected);
-  const toggleAll = () => setItems(prev => prev.map(i => ({ ...i, selected: !allSelected })));
-  const toggle = (id) => setItems(prev => prev.map(i => i.id === id ? { ...i, selected: !i.selected } : i));
-
-  const normalizeToE164 = (raw) => {
-    try {
-      const parsed = parsePhoneNumberFromString(raw, region);
-      if (parsed?.isValid()) return parsed.number;
-    } catch {}
-    const digits = (raw || '').replace(/\D+/g, '');
-    if (!digits) return null;
-    if (digits.startsWith('1') && digits.length === 11) return '+' + digits;
-    if (digits.length === 10) return '+1' + digits;
-    return '+' + digits;
-  };
-
-  const onContinue = async () => {
-    setSubmitting(true);
-    try {
-      await ensureAuthed(); // ensure session for RPC that writes
-      const e164 = new Set();
-      items.forEach(i => { if (i.selected) i.numbers.forEach(n => { const v = normalizeToE164(n); if (v) e164.add(v); }); });
-      const arr = Array.from(e164);
-      const { data, error } = await supabase.rpc('upload_contacts', { phones: arr });
-      if (error) throw error;
-      navigation.replace('Syncing', { summary: data || { uploaded: arr.length } });
-    } catch (e) {
-      alert(e.message || 'Failed to sync contacts');
-      navigation.replace('MainTabs');
-    } finally { setSubmitting(false); }
-  };
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.authRoot} edges={['top']}>
-        <ActivityIndicator />
-        <Text style={{ marginTop: 8, fontFamily: 'Manrope_400Regular', color: COLORS.subtext }}>Loading contacts…</Text>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={[styles.authRoot, { paddingHorizontal: 16 }]} edges={['top']}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <Text style={styles.authTitle}>Choose contacts</Text>
-        <Pressable onPress={toggleAll} hitSlop={8} style={({pressed}) => ({
-          flexDirection:'row', alignItems:'center',
-          paddingHorizontal: 10, paddingVertical: 6,
-          borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
-          backgroundColor: pressed ? '#f6f6f6' : '#fff'
-        })}>
-          <View style={[styles.checkbox, allSelected && styles.checkboxOn, { marginRight: 8 }]}>
-            {allSelected ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
-          </View>
-          <Text style={{ fontFamily:'Manrope_600SemiBold', color: COLORS.text }}>
-            {allSelected ? 'Deselect all' : 'Select all'}
-          </Text>
-        </Pressable>
-      </View>
-
-      <View style={{ flex: 1, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, borderRadius: 12, overflow: 'hidden' }}>
-        <ScrollView>
-          {items.map(item => (
-            <Pressable
-              key={item.id}
-              onPress={() => toggle(item.id)}
-              style={({ pressed }) => [styles.contactRow, { backgroundColor: pressed ? '#f8f8f8' : COLORS.bg, paddingHorizontal: 12 }]}
-            >
-              <View style={[styles.checkbox, item.selected && styles.checkboxOn]}>
-                {item.selected ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
-              </View>
-              <Text style={styles.contactName} numberOfLines={1}>{item.name}</Text>
-              <Text style={styles.contactNumbers} numberOfLines={1}>{item.numbers[0]}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      </View>
-
-      <Pressable style={[styles.primaryBtn, { marginTop: 12 }]} onPress={onContinue} disabled={submitting}>
-        {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Continue</Text>}
-      </Pressable>
-      <Pressable style={{ marginTop: 10 }} onPress={() => navigation.replace('MainTabs')}>
-        <Text style={styles.linkText}>Skip for now</Text>
-      </Pressable>
-    </SafeAreaView>
-  );
-}
-
-function SyncingScreen({ route, navigation }) {
-  const summary = route.params?.summary || {};
-  useEffect(() => { const t = setTimeout(() => navigation.replace('MainTabs'), 900); return () => clearTimeout(t); }, [navigation]);
-  return (
-    <SafeAreaView style={styles.authRoot} edges={['top']}>
-      <Text style={styles.authTitle}>All set</Text>
-      <Text style={styles.authCaption}>Uploaded: {summary.uploaded ?? '—'} • New mutuals: {summary.mutuals ?? '—'}</Text>
-      <ActivityIndicator style={{ marginTop: 14 }} />
-    </SafeAreaView>
   );
 }
 
@@ -1601,13 +1255,6 @@ const styles = StyleSheet.create({
   subtitle: { marginTop: 6, fontFamily: 'Manrope_400Regular', color: COLORS.subtext },
   portalCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  authRoot: { flex: 1, padding: 16, backgroundColor: COLORS.bg },
-  authTitle: { fontFamily: 'Manrope_700Bold', fontSize: 22, color: COLORS.text, marginBottom: 6 },
-  authCaption: { fontFamily: 'Manrope_400Regular', color: COLORS.subtext },
-  input: { marginTop: 12, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 12, fontFamily: 'Manrope_400Regular' },
-  primaryBtn: { marginTop: 14, backgroundColor: COLORS.primary, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
-  primaryBtnText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
-  linkText: { color: COLORS.primary, fontFamily: 'Manrope_600SemiBold' },
 
   tabBadge: { position: 'absolute', right: -6, top: -4, backgroundColor: '#000', minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   tabBadgeText: { color: '#fff', fontSize: 10, fontFamily: 'Manrope_700Bold' },
@@ -1625,10 +1272,5 @@ const styles = StyleSheet.create({
   rowRight: { alignItems: 'flex-end' },
   rowTime: { color: COLORS.subtext, fontSize: 12, fontFamily: 'Manrope_400Regular' },
 
-  contactRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider },
-  contactName: { flex: 1, fontFamily: 'Manrope_600SemiBold', color: COLORS.text },
-  contactNumbers: { flex: 1, textAlign: 'right', fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 },
 
-  checkbox: { width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  checkboxOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
 });
