@@ -28,6 +28,13 @@ import { DEV_BYPASS_CODE, IS_DEVELOPMENT } from './src/config/env';
 import { supabase } from './src/lib/supabase';
 import { ensureAuthed, ensureDevSession } from './src/services/authService';
 import { uploadToBucket } from './src/services/uploadService';
+import { Avatar } from './src/components/Avatar';
+import { DevBanner } from './src/components/DevBanner';
+import { MonoRingWithRipples } from './src/components/MonoRingWithRipples';
+import { UnreadBadge } from './src/components/UnreadBadge';
+import { PostCard } from './src/components/feed/PostCard';
+import { StoriesRail } from './src/components/stories/StoriesRail';
+import { StoryViewer } from './src/components/stories/StoryViewer';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W, height: H } = Dimensions.get('window');
@@ -42,9 +49,6 @@ function timeAgo(iso) {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   return `${d}d`;
-}
-function getInitials(name = '') {
-  return name.split(/\s+/).slice(0, 2).map(s => s[0] || '').join('').toUpperCase();
 }
 function randomId() { return Math.random().toString(36).slice(2); }
 
@@ -965,162 +969,6 @@ function FeedScreen({ navigation }) {
   );
 }
 
-function StoriesRail({ stories, onAddYourStory, onOpen }) {
-  return (
-    <View style={{ paddingVertical: 10 }}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12 }}>
-        <Pressable onPress={onAddYourStory} style={{ alignItems:'center', marginRight: 14 }}>
-          <View style={{ width: 64, height: 64, borderRadius: 32, borderWidth:2, borderColor: COLORS.primary, alignItems:'center', justifyContent:'center', backgroundColor:'#f6f6f6' }}>
-            <Ionicons name="add" size={28} color={COLORS.primary} />
-          </View>
-          <Text style={{ fontFamily:'Manrope_600SemiBold', fontSize:12, marginTop:6, color:COLORS.text }}>Your Story</Text>
-        </Pressable>
-        {stories.map((s, idx) => (
-          <Pressable key={s.userId} onPress={() => onOpen(idx)} style={{ alignItems:'center', marginRight: 14 }}>
-            <View style={{ width: 64, height: 64, borderRadius: 32, borderWidth:2, borderColor: COLORS.primary, overflow:'hidden' }}>
-              {s.avatar ? <Image source={{ uri: s.avatar }} style={{ width:'100%', height:'100%' }} /> :
-                <View style={{ flex:1, alignItems:'center', justifyContent:'center' }}>
-                  <Text style={{ fontFamily:'Manrope_700Bold' }}>{getInitials(s.userName)}</Text>
-                </View>}
-            </View>
-            <Text numberOfLines={1} style={{ maxWidth:70, fontFamily:'Manrope_600SemiBold', fontSize:12, marginTop:6, color:COLORS.text }}>
-              {s.userName}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
-
-function StoryViewer({ user, index, onClose, onNext, onPrev }) {
-  const item = user?.items?.[index];
-  const isImage = item?.media_type === 'image';
-  const [progress, setProgress] = useState(0);
-  const progRef = useRef(null);
-
-  useEffect(() => {
-    setProgress(0);
-    if (isImage) {
-      clearInterval(progRef.current);
-      const start = Date.now();
-      progRef.current = setInterval(() => {
-        const t = (Date.now() - start) / 5000;
-        if (t >= 1) { clearInterval(progRef.current); onNext(); }
-        else setProgress(t);
-      }, 50);
-    }
-    return () => clearInterval(progRef.current);
-  }, [item?.id]);
-
-  return (
-    <View style={{ flex:1 }}>
-      <View style={{ position:'absolute', top:12, left:12, right:12, zIndex:10 }}>
-        <View style={{ flexDirection:'row', gap:6, marginBottom:8 }}>
-          {user.items.map((_, i) => (
-            <View key={i} style={{ flex:1, height:3, backgroundColor:'rgba(255,255,255,0.3)', borderRadius:2, overflow:'hidden' }}>
-              <View style={{ width: `${i<index ? 100 : i>index ? 0 : progress*100}%`, height:'100%', backgroundColor:'#fff' }} />
-            </View>
-          ))}
-        </View>
-        <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between' }}>
-          <View style={{ flexDirection:'row', alignItems:'center' }}>
-            <View style={{ width:32, height:32, borderRadius:16, overflow:'hidden', borderWidth:1, borderColor:'#fff' }}>
-              {user.avatar ? <Image source={{ uri: user.avatar }} style={{ width:'100%', height:'100%' }} /> : null}
-            </View>
-            <Text style={{ color:'#fff', marginLeft:8, fontFamily:'Manrope_700Bold' }}>{user.userName}</Text>
-          </View>
-          <Pressable onPress={onClose}><Ionicons name="close" size={26} color="#fff" /></Pressable>
-        </View>
-      </View>
-
-      <Pressable style={{ flex:1, flexDirection:'row' }}>
-        <Pressable style={{ flex:1 }} onPress={onPrev} />
-        <View style={{ width: Math.min(800, Dimensions.get('window').width), aspectRatio: 9/16, alignSelf:'center' }}>
-          {isImage ? (
-            <Image source={{ uri: item.url }} style={{ width:'100%', height:'100%' }} resizeMode="cover" />
-          ) : (
-            <Video
-              source={{ uri: item.url }}
-              style={{ width:'100%', height:'100%' }}
-              resizeMode="cover"
-              shouldPlay
-              onPlaybackStatusUpdate={(st) => {
-                if (!st || !st.isLoaded) return;
-                if (st.didJustFinish) onNext();
-                if (st.durationMillis) setProgress(Math.min(1, (st.positionMillis || 0) / st.durationMillis));
-              }}
-            />
-          )}
-        </View>
-        <Pressable style={{ flex:1 }} onPress={onNext} />
-      </Pressable>
-    </View>
-  );
-}
-
-function PostCard({ post, onToggleLike, onDoubleLike, onOpenComments }) {
-  const [showBigHeart, setShowBigHeart] = useState(false);
-  const lastTapRef = useRef(0);
-
-  const onImagePress = () => {
-    const now = Date.now();
-    if (now - lastTapRef.current < 300) {
-      setShowBigHeart(true);
-      if (!post.liked) onDoubleLike?.();
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setTimeout(() => setShowBigHeart(false), 650);
-    }
-    lastTapRef.current = now;
-  };
-
-  return (
-    <View style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12 }}>
-        <Avatar size={36} name={post.user.name} uri={post.user.avatarUri} />
-        <View style={{ marginLeft: 10, flex: 1 }}>
-          <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }}>{post.user.name}</Text>
-          <Text style={{ fontFamily: 'Manrope_400Regular', color: '#888', fontSize: 12 }}>{post.time}</Text>
-        </View>
-        <Ionicons name="ellipsis-horizontal" size={18} color="#888" />
-      </View>
-
-      <Pressable onPress={onImagePress} style={{ backgroundColor: '#f2f2f2' }}>
-        <View style={{ width: '100%', aspectRatio: 1 }}>
-          <Image source={{ uri: post.uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-          {showBigHeart ? (
-            <View style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center' }]}>
-              <MotiView from={{ scale: 0.3, opacity: 0 }} animate={{ scale: 1.1, opacity: 1 }} exit={{ scale: 0.3, opacity: 0 }} transition={{ type: 'timing', duration: 350 }}>
-                <Ionicons name="heart" size={96} color="#fff" style={{ textShadowColor: 'rgba(0,0,0,0.35)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8 }} />
-              </MotiView>
-            </View>
-          ) : null}
-        </View>
-      </Pressable>
-
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8 }}>
-        <Pressable onPress={onToggleLike} hitSlop={10} style={{ marginRight: 16 }}>
-          <Ionicons name={post.liked ? 'heart' : 'heart-outline'} size={26} color={post.liked ? '#e11d48' : COLORS.text} />
-        </Pressable>
-        <Pressable onPress={onOpenComments} hitSlop={10} style={{ marginRight: 16 }}>
-          <Ionicons name="chatbubble-outline" size={24} color={COLORS.text} />
-        </Pressable>
-        <Pressable hitSlop={10}><Ionicons name="paper-plane-outline" size={24} color={COLORS.text} /></Pressable>
-      </View>
-
-      <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
-        <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }}>{post.likes} likes</Text>
-        <Text style={{ marginTop: 4, color: COLORS.text }}>
-          <Text style={{ fontFamily: 'Manrope_700Bold' }}>{post.user.name} </Text>
-          <Text style={{ fontFamily: 'Manrope_400Regular' }}>{post.caption}</Text>
-        </Text>
-        <Pressable onPress={onOpenComments}>
-          <Text style={{ color: '#6b6b6b', marginTop: 6, fontFamily: 'Manrope_400Regular' }}>View comments</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
 
 /* ---------------- Inbox / Chat / GroupDetails ---------------- */
 function InboxScreen({ navigation }) {
@@ -1738,59 +1586,7 @@ function CreatePostScreen({ navigation }) {
 }
 
 /* ---------------- Small UI components ---------------- */
-function DevBanner() {
-  const insets = useSafeAreaInsets();
-  return (
-    <View style={{ paddingTop: Math.max(insets.top * 0.3, 2), paddingBottom: 6, paddingHorizontal: 12, backgroundColor: '#111' }}>
-      <Text numberOfLines={1} style={{ textAlign: 'center', color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 11 }}>
-        MOCK MODE (no session)
-      </Text>
-    </View>
-  );
-}
 
-function Avatar({ size = 64, name, uri, ripple }) {
-  return (
-    <View style={{ width: size, alignItems: 'center' }}>
-      <View style={{ width: size, height: size, borderRadius: size/2, overflow: 'hidden', backgroundColor: '#f2f2f2', alignItems:'center', justifyContent:'center' }}>
-        {uri ? <Image source={{ uri }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontFamily:'Manrope_700Bold' }}>{getInitials(name)}</Text>}
-      </View>
-      {ripple ? (
-        <MotiView
-          from={{ opacity: 0.35, scale: 1 }}
-          animate={{ opacity: 0, scale: 1.6 }}
-          transition={{ loop: true, type: 'timing', duration: 1600 }}
-          style={{ position: 'absolute', top: -2, left: (size*-0.03), width: size*1.06, height: size*1.06, borderRadius: size, borderWidth: 2, borderColor: 'rgba(0,0,0,0.15)' }}
-        />
-      ) : null}
-    </View>
-  );
-}
-
-function MonoRingWithRipples({ size = 220 }) {
-  return (
-    <View style={{ width: size, height: size, borderRadius: size/2, alignItems:'center', justifyContent:'center' }}>
-      <View style={{ position:'absolute', width:size, height:size, borderRadius:size/2, borderWidth:3, borderColor:'rgba(0,0,0,0.35)' }} />
-      {[1,2,3].map((i) => (
-        <MotiView
-          key={i}
-          from={{ opacity: 0.25, scale: 0.9 }}
-          animate={{ opacity: 0, scale: 1.25 }}
-          transition={{ loop: true, delay: i*300, type:'timing', duration: 1600 }}
-          style={{ position:'absolute', width:size, height:size, borderRadius:size/2, borderWidth:2, borderColor:'rgba(0,0,0,0.15)' }}
-        />
-      ))}
-    </View>
-  );
-}
-
-function UnreadBadge({ count }) {
-  return (
-    <View style={{ backgroundColor: '#000', minWidth: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}>
-      <Text style={{ color: '#fff', fontSize: 12, fontFamily: 'Manrope_700Bold' }}>{count > 99 ? '99+' : count}</Text>
-    </View>
-  );
-}
 
 function sortConvos(a, b) {
   if (a.pinned && !b.pinned) return -1;
