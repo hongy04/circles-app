@@ -2,7 +2,7 @@ import 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Dimensions, FlatList, Image, KeyboardAvoidingView,
+  ActivityIndicator, Alert, Dimensions, FlatList, KeyboardAvoidingView,
   Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,7 +12,6 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
 import {
   useFonts,
   Manrope_400Regular,
@@ -23,7 +22,6 @@ import { COLORS } from './src/theme/colors';
 import { IS_DEVELOPMENT } from './src/config/env';
 import { supabase } from './src/lib/supabase';
 import { ensureAuthed } from './src/services/authService';
-import { uploadToBucket } from './src/services/uploadService';
 import { Avatar } from './src/components/Avatar';
 import { DevBanner } from './src/components/DevBanner';
 import { MonoRingWithRipples } from './src/components/MonoRingWithRipples';
@@ -33,6 +31,10 @@ import { FeedScreen } from './src/screens/feed/FeedScreen';
 import { CreatePostScreen } from './src/screens/posts/CreatePostScreen';
 import { PostDetailScreen } from './src/screens/posts/PostDetailScreen';
 import { StoryComposerScreen } from './src/screens/stories/StoryComposerScreen';
+import { MeScreen } from './src/screens/profile/MeScreen';
+import { ProfileScreen } from './src/screens/profile/ProfileScreen';
+import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
+import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W, height: H } = Dimensions.get('window');
@@ -76,6 +78,7 @@ export default function App() {
           <RootStack.Screen name="CreateStory" component={StoryComposerScreen} />
           <RootStack.Screen name="Profile" component={ProfileScreen} />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
+          <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
           <RootStack.Screen name="PostDetail" component={PostDetailScreen} />
         </RootStack.Navigator>
       </NavigationContainer>
@@ -217,7 +220,7 @@ const MOCK_INCOMING = [
   { id: 'r1', from_user: 'uZ', display_name: 'Taylor Brooks', avatar_url: 'https://i.pravatar.cc/150?img=47', note: null, created_at: new Date().toISOString() },
 ];
 
-function MutualsScreen() {
+function MutualsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [candidates, setCandidates] = useState([]);
   const [incoming, setIncoming] = useState([]);
@@ -310,11 +313,16 @@ function MutualsScreen() {
             </Text>
           ) : candidates.map(u => (
             <View key={u.id} style={{ flexDirection:'row', alignItems:'center', padding:12, borderWidth:StyleSheet.hairlineWidth, borderColor:COLORS.divider, borderRadius:12 }}>
-              <Avatar size={48} name={u.display_name || 'Unknown'} uri={u.avatar_url} />
-              <View style={{ flex:1, marginHorizontal:12 }}>
-                <Text style={{ fontFamily:'Manrope_700Bold', color:COLORS.text }} numberOfLines={1}>{u.display_name || 'Unknown'}</Text>
-                <Text style={{ fontFamily:'Manrope_400Regular', color:COLORS.subtext, fontSize:12 }}>Mutual contact</Text>
-              </View>
+              <Pressable
+                onPress={() => navigation.navigate('Profile', { userId: u.id })}
+                style={{ flex:1, flexDirection:'row', alignItems:'center' }}
+              >
+                <Avatar size={48} name={u.display_name || 'Unknown'} uri={u.avatar_url} />
+                <View style={{ flex:1, marginHorizontal:12 }}>
+                  <Text style={{ fontFamily:'Manrope_700Bold', color:COLORS.text }} numberOfLines={1}>{u.display_name || 'Unknown'}</Text>
+                  <Text style={{ fontFamily:'Manrope_400Regular', color:COLORS.subtext, fontSize:12 }}>Mutual contact</Text>
+                </View>
+              </Pressable>
               <Pressable onPress={() => sendRequest(u.id)} disabled={!!sending[u.id]} style={({pressed}) => ({
                 paddingHorizontal:14, paddingVertical:8, borderRadius:10,
                 backgroundColor:COLORS.primary, opacity: pressed||sending[u.id] ? 0.7 : 1
@@ -330,13 +338,17 @@ function MutualsScreen() {
             <Text style={{ textAlign:'center', color:COLORS.subtext, fontFamily:'Manrope_400Regular' }}>No requests right now.</Text>
           ) : incoming.map(r => (
             <View key={r.id} style={{ padding:12, borderWidth:StyleSheet.hairlineWidth, borderColor:COLORS.divider, borderRadius:12 }}>
-              <View style={{ flexDirection:'row', alignItems:'center' }}>
+              <Pressable
+                onPress={() => navigation.navigate('Profile', { userId: r.from_user })}
+                style={{ flexDirection:'row', alignItems:'center' }}
+              >
                 <Avatar size={48} name={r.display_name || 'Unknown'} uri={r.avatar_url} />
                 <View style={{ flex:1, marginHorizontal:12 }}>
                   <Text style={{ fontFamily:'Manrope_700Bold', color:COLORS.text }} numberOfLines={1}>{r.display_name || 'Unknown'}</Text>
                   <Text style={{ fontFamily:'Manrope_400Regular', color:COLORS.subtext, fontSize:12 }}>wants to connect</Text>
                 </View>
-              </View>
+                <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
+              </Pressable>
               <View style={{ flexDirection:'row', gap:10, marginTop:10 }}>
                 <Pressable onPress={() => respond(r.id,'accept')} disabled={!!responding[r.id]} style={({pressed}) => ({
                   flex:1, paddingVertical:10, borderRadius:10, backgroundColor:COLORS.primary, alignItems:'center',
@@ -619,190 +631,6 @@ function GroupDetailsScreen({ route }) {
             </View>
           );
         })}
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-/* ---------------- Me / Profile / Edit / PostDetail ---------------- */
-function MeScreen({ navigation }) {
-  const [profile, setProfile] = useState(null);
-  const [myPosts, setMyPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const session = await ensureAuthed();
-      const uid = session.user.id;
-
-      const { data: u } = await supabase.from('users').select('id, display_name, avatar_url, bio').eq('id', uid).single();
-      setProfile(u || { id: uid, display_name: 'You', avatar_url: null, bio: '' });
-
-      const { data: posts } = await supabase
-        .from('posts')
-        .select('id, image_url, caption, created_at')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false });
-      setMyPosts(posts || []);
-    } catch (e) { alert(e.message || 'Failed to load profile'); }
-    finally { setLoading(false); }
-  };
-
-  useEffect(() => { const unsub = navigation.addListener('focus', load); return unsub; }, [navigation]);
-
-  if (loading) {
-    return (<SafeAreaView edges={['top']} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator /></SafeAreaView>);
-  }
-
-  return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
-        <Avatar size={84} name={profile?.display_name || 'You'} uri={profile?.avatar_url} />
-        <View style={{ marginLeft: 14, flex: 1 }}>
-          <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 20, color: COLORS.text }} numberOfLines={1}>{profile?.display_name || 'You'}</Text>
-          {!!profile?.bio && <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, marginTop: 4 }} numberOfLines={2}>{profile.bio}</Text>}
-        </View>
-        <Pressable onPress={() => navigation.navigate('Profile', { userId: profile.id, name: profile.display_name })} style={{ paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, marginRight: 8 }}>
-          <Text style={{ fontFamily: 'Manrope_600SemiBold', color: COLORS.text }}>View</Text>
-        </Pressable>
-        <Pressable onPress={() => navigation.navigate('EditProfile', { userId: profile.id })} style={{ paddingHorizontal: 10, paddingVertical: 8, backgroundColor: COLORS.primary, borderRadius: 10 }}>
-          <Text style={{ fontFamily: 'Manrope_700Bold', color: '#fff' }}>Edit</Text>
-        </Pressable>
-      </View>
-
-      {myPosts.length === 0 ? (
-        <View style={{ padding: 20 }}>
-          <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext }}>
-            You haven’t posted yet. Tap the + button on the Feed to create your first post.
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={myPosts}
-          keyExtractor={(x) => x.id}
-          numColumns={3}
-          renderItem={({ item }) => (
-            <Pressable onPress={() => navigation.navigate('PostDetail', { postId: item.id })}>
-              <Image source={{ uri: item.image_url }} style={{ width: W / 3, height: W / 3 }} />
-            </Pressable>
-          )}
-        />
-      )}
-    </SafeAreaView>
-  );
-}
-
-function ProfileScreen({ route }) {
-  const { userId } = route?.params || {};
-  const [profile, setProfile] = useState(null);
-  const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const session = await ensureAuthed();
-      const uid = userId || session.user.id;
-
-      const { data: u } = await supabase.from('users').select('id, display_name, avatar_url, bio').eq('id', uid).single();
-      setProfile(u || { id: uid, display_name: 'User', avatar_url: null, bio: '' });
-
-      const { data: rows } = await supabase
-        .from('posts')
-        .select('id, image_url, caption, created_at')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false });
-      setPosts(rows || []);
-    } catch (e) { alert(e.message || 'Failed to load profile'); }
-    finally { setLoading(false); }
-  };
-
-  useEffect(() => { load(); }, [userId]);
-
-  if (loading) return (<SafeAreaView edges={['top']} style={{ flex:1, alignItems:'center', justifyContent:'center' }}><ActivityIndicator /></SafeAreaView>);
-
-  return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
-      <View style={{ alignItems: 'center', paddingTop: 16, paddingBottom: 12 }}>
-        <Avatar size={96} name={profile?.display_name || 'User'} uri={profile?.avatar_url} />
-        <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 20, marginTop: 10, color: COLORS.text }}>{profile?.display_name || 'User'}</Text>
-        {!!profile?.bio && <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, marginTop: 6, paddingHorizontal: 24, textAlign: 'center' }}>{profile.bio}</Text>}
-      </View>
-      <FlatList
-        data={posts}
-        keyExtractor={(x) => x.id}
-        numColumns={3}
-        renderItem={({ item }) => (
-          <Pressable onPress={() => {}}>
-            <Image source={{ uri: item.image_url }} style={{ width: W / 3, height: W / 3 }} />
-          </Pressable>
-        )}
-      />
-    </SafeAreaView>
-  );
-}
-
-function EditProfileScreen({ navigation }) {
-  const [displayName, setDisplayName] = useState('');
-  const [bio, setBio] = useState('');
-  const [avatarUri, setAvatarUri] = useState(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const session = await ensureAuthed();
-        const { data: u } = await supabase.from('users').select('display_name, avatar_url, bio').eq('id', session.user.id).maybeSingle();
-        setDisplayName(u?.display_name || '');
-        setBio(u?.bio || '');
-        setAvatarUri(u?.avatar_url || null);
-      } catch (e) {
-        Alert.alert('Profile unavailable', e?.message || 'Please sign in again.');
-      }
-    })();
-  }, []);
-
-  const onPickAvatar = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') return alert('Permission needed');
-    const pick = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsMultipleSelection: false, quality: 0.9 });
-    if (pick.canceled) return;
-    setAvatarUri(pick.assets[0].uri);
-  };
-
-  const onSave = async () => {
-    setSaving(true);
-    try {
-      const { user } = await ensureAuthed();
-      let avatarUrl = avatarUri;
-      if (avatarUri && avatarUri.startsWith('file:')) avatarUrl = await uploadToBucket(avatarUri, 'avatars', 'image/jpeg');
-      const updates = { display_name: displayName || null, avatar_url: avatarUrl || null };
-      const { error } = await supabase.from('users').update(updates).eq('id', user.id);
-      if (error) throw error;
-      try { await supabase.from('users').update({ bio: bio || null }).eq('id', user.id); } catch {}
-      navigation.goBack();
-    } catch (e) { alert(e.message || 'Failed to save profile'); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <SafeAreaView edges={['top']} style={{ flex:1, backgroundColor: COLORS.bg }}>
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
-        <View style={{ alignItems:'center', marginBottom: 16 }}>
-          <Pressable onPress={onPickAvatar}><Avatar size={100} name={displayName || 'You'} uri={avatarUri} /></Pressable>
-          <Pressable onPress={onPickAvatar} style={{ marginTop: 10 }}><Text style={{ fontFamily:'Manrope_600SemiBold', color: COLORS.primary }}>Change Photo</Text></Pressable>
-        </View>
-
-        <Text style={{ fontFamily:'Manrope_700Bold', color: COLORS.text, marginBottom: 6 }}>Name</Text>
-        <TextInput value={displayName} onChangeText={setDisplayName} placeholder="Your name" style={{ borderWidth:1, borderColor:COLORS.border, borderRadius:10, padding:12, fontFamily:'Manrope_400Regular', marginBottom: 14 }} />
-
-        <Text style={{ fontFamily:'Manrope_700Bold', color: COLORS.text, marginBottom: 6 }}>Bio</Text>
-        <TextInput value={bio} onChangeText={setBio} placeholder="Write a short bio" multiline style={{ minHeight:90, borderWidth:1, borderColor:COLORS.border, borderRadius:10, padding:12, textAlignVertical:'top', fontFamily:'Manrope_400Regular' }} />
-
-        <Pressable onPress={onSave} disabled={saving} style={({pressed})=>({ marginTop:18, backgroundColor: COLORS.primary, paddingVertical:12, borderRadius:12, alignItems:'center', opacity: pressed||saving ? 0.7 : 1 })}>
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color:'#fff', fontFamily:'Manrope_700Bold' }}>Save</Text>}
-        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );

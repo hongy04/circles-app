@@ -337,12 +337,11 @@ export function FeedScreen({ navigation }) {
   );
 
   const closeComments = useCallback(() => {
-    if (commentSending) return;
     setOpenPostId(null);
     setActiveComments([]);
     setCommentsError(null);
     setCommentText('');
-  }, [commentSending]);
+  }, []);
 
   const submitComment = useCallback(async () => {
     const text = commentText.trim();

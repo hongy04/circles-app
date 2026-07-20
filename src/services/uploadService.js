@@ -32,10 +32,18 @@ export async function compressIfImage(uri, mimeHint = 'image/jpeg') {
   };
 }
 
+function sanitizeFolder(folder) {
+  return String(folder || '')
+    .trim()
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/[^a-zA-Z0-9/_-]/g, '');
+}
+
 export async function uploadToBucket(
   uri,
   bucket,
-  mimeHint = 'image/jpeg'
+  mimeHint = 'image/jpeg',
+  options = {}
 ) {
   await ensureAuthed();
 
@@ -46,7 +54,9 @@ export async function uploadToBucket(
 
   const mime = normalizeMime(rawMime);
   const extension = mime.startsWith('video/') ? 'mp4' : 'jpg';
-  const path = `${Date.now()}_${Math.floor(Math.random() * 1e6)}.${extension}`;
+  const folder = sanitizeFolder(options.folder);
+  const filename = `${Date.now()}_${Math.floor(Math.random() * 1e6)}.${extension}`;
+  const path = folder ? `${folder}/${filename}` : filename;
 
   const base64 = await FileSystem.readAsStringAsync(uploadUri, {
     encoding: 'base64',
