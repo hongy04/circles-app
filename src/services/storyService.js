@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
 import { uploadToBucket } from './uploadService';
+import { validateStoryAsset } from '../utils/mediaValidation';
 
 export async function fetchActiveStories() {
   const {
@@ -47,6 +48,9 @@ export async function fetchActiveStories() {
 }
 
 export async function createStoryFromAsset(asset) {
+  const validationError = validateStoryAsset(asset);
+  if (validationError) throw new Error(validationError);
+
   const { user } = await ensureAuthed();
   const mediaType = asset.type === 'video' ? 'video' : 'image';
   const mimeType =

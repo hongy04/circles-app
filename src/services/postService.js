@@ -1,17 +1,17 @@
 import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
 import { uploadToBucket } from './uploadService';
+import { validatePostAssets } from '../utils/mediaValidation';
 
 export async function createPostWithMedia({
   assets,
   caption,
   onProgress,
 }) {
-  await ensureAuthed();
+  const validationError = validatePostAssets(assets);
+  if (validationError) throw new Error(validationError);
 
-  if (!assets?.length) {
-    throw new Error('Select at least one photo or video.');
-  }
+  await ensureAuthed();
 
   const urls = [];
   const types = [];

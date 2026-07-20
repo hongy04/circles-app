@@ -16,6 +16,11 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../../theme/colors';
 import { createPostWithMedia } from '../../services/postService';
+import {
+  formatDuration,
+  formatFileSize,
+  validatePostAssets,
+} from '../../utils/mediaValidation';
 
 function normalizeAsset(asset) {
   return {
@@ -28,6 +33,7 @@ function normalizeAsset(asset) {
     height: asset.height,
     duration: asset.duration,
     fileName: asset.fileName,
+    fileSize: asset.fileSize,
     mimeType:
       asset.mimeType ||
       (asset.type === 'video'
@@ -86,7 +92,15 @@ export function CreatePostScreen({ navigation }) {
 
       if (result.canceled) return;
 
-      setAssets(result.assets.map(normalizeAsset));
+      const nextAssets = result.assets.map(normalizeAsset);
+      const validationError = validatePostAssets(nextAssets);
+
+      if (validationError) {
+        Alert.alert('Media not added', validationError);
+        return;
+      }
+
+      setAssets(nextAssets);
     } catch (error) {
       Alert.alert(
         'Could not open your library',
@@ -230,7 +244,9 @@ export function CreatePostScreen({ navigation }) {
                         size={34}
                         color="#fff"
                       />
-                      <Text style={styles.videoLabel}>Video</Text>
+                      <Text style={styles.videoLabel}>
+                        {formatDuration(asset.duration) || 'Video'}
+                      </Text>
                     </View>
                   ) : (
                     <Image
@@ -238,6 +254,14 @@ export function CreatePostScreen({ navigation }) {
                       style={styles.thumbnail}
                     />
                   )}
+
+                  {asset.fileSize ? (
+                    <View style={styles.fileBadge}>
+                      <Text style={styles.fileBadgeText}>
+                        {formatFileSize(asset.fileSize)}
+                      </Text>
+                    </View>
+                  ) : null}
 
                   <View style={styles.orderBadge}>
                     <Text style={styles.orderText}>{index + 1}</Text>
@@ -395,6 +419,20 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_600SemiBold',
     color: '#fff',
     fontSize: 11,
+  },
+  fileBadge: {
+    position: 'absolute',
+    left: 5,
+    bottom: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+  },
+  fileBadgeText: {
+    color: '#fff',
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 9,
   },
   orderBadge: {
     position: 'absolute',

@@ -32,6 +32,7 @@ import { AuthNavigator } from './src/navigation/AuthNavigator';
 import { FeedScreen } from './src/screens/feed/FeedScreen';
 import { CreatePostScreen } from './src/screens/posts/CreatePostScreen';
 import { PostDetailScreen } from './src/screens/posts/PostDetailScreen';
+import { StoryComposerScreen } from './src/screens/stories/StoryComposerScreen';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W, height: H } = Dimensions.get('window');
@@ -72,6 +73,7 @@ export default function App() {
           <RootStack.Screen name="Auth" component={AuthNavigator} />
           <RootStack.Screen name="MainTabs" component={AppTabs} />
           <RootStack.Screen name="CreatePost" component={CreatePostScreen} />
+          <RootStack.Screen name="CreateStory" component={StoryComposerScreen} />
           <RootStack.Screen name="Profile" component={ProfileScreen} />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="PostDetail" component={PostDetailScreen} />

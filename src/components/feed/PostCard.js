@@ -1,69 +1,48 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { MotiView } from 'moti';
-import * as Haptics from 'expo-haptics';
 import { COLORS } from '../../theme/colors';
 import { Avatar } from '../Avatar';
+import { PostMediaCarousel } from './PostMediaCarousel';
+
+const COLLAPSED_CAPTION_LENGTH = 120;
+
+function likeLabel(count) {
+  return `${count} ${count === 1 ? 'like' : 'likes'}`;
+}
+
+function commentsLabel(count) {
+  if (!count) return 'Add a comment';
+  return `View all ${count} ${count === 1 ? 'comment' : 'comments'}`;
+}
 
 export function PostCard({
   post,
+  isVisible = false,
   onToggleLike,
   onDoubleLike,
   onOpenComments,
   onOpenPost,
   onOpenProfile,
 }) {
-  const [showBigHeart, setShowBigHeart] = useState(false);
-  const lastTapRef = useRef(0);
-  const singleTapTimerRef = useRef(null);
-  const heartTimerRef = useRef(null);
+  const [captionExpanded, setCaptionExpanded] = useState(false);
 
-  useEffect(
-    () => () => {
-      clearTimeout(singleTapTimerRef.current);
-      clearTimeout(heartTimerRef.current);
-    },
-    []
-  );
+  useEffect(() => {
+    setCaptionExpanded(false);
+  }, [post.id]);
 
-  const onImagePress = () => {
-    const now = Date.now();
-    const isDoubleTap = now - lastTapRef.current < 300;
+  const captionNeedsCollapse =
+    post.caption.length > COLLAPSED_CAPTION_LENGTH;
 
-    if (isDoubleTap) {
-      clearTimeout(singleTapTimerRef.current);
-      setShowBigHeart(true);
-
-      if (!post.liked) onDoubleLike?.();
-
-      Haptics.impactAsync(
-        Haptics.ImpactFeedbackStyle.Medium
-      ).catch(() => {});
-
-      clearTimeout(heartTimerRef.current);
-      heartTimerRef.current = setTimeout(
-        () => setShowBigHeart(false),
-        650
-      );
-
-      lastTapRef.current = 0;
-      return;
-    }
-
-    lastTapRef.current = now;
-    clearTimeout(singleTapTimerRef.current);
-    singleTapTimerRef.current = setTimeout(() => {
-      onOpenPost?.();
-      lastTapRef.current = 0;
-    }, 310);
-  };
+  const visibleCaption =
+    captionNeedsCollapse && !captionExpanded
+      ? `${post.caption.slice(0, COLLAPSED_CAPTION_LENGTH).trimEnd()}…`
+      : post.caption;
 
   return (
     <View style={styles.root}>
@@ -74,7 +53,7 @@ export function PostCard({
           style={styles.authorButton}
         >
           <Avatar
-            size={36}
+            size={38}
             name={post.user.name}
             uri={post.user.avatarUri}
           />
@@ -87,44 +66,22 @@ export function PostCard({
           </View>
         </Pressable>
 
-        <Pressable hitSlop={10}>
+        <Pressable hitSlop={10} disabled>
           <Ionicons
             name="ellipsis-horizontal"
-            size={18}
+            size={19}
             color="#888"
           />
         </Pressable>
       </View>
 
-      <Pressable
-        onPress={onImagePress}
-        style={styles.mediaButton}
-      >
-        <View style={styles.mediaWrap}>
-          <Image
-            source={{ uri: post.uri }}
-            style={styles.media}
-            resizeMode="cover"
-          />
-
-          {showBigHeart ? (
-            <View style={styles.heartOverlay}>
-              <MotiView
-                from={{ scale: 0.3, opacity: 0 }}
-                animate={{ scale: 1.1, opacity: 1 }}
-                transition={{ type: 'timing', duration: 350 }}
-              >
-                <Ionicons
-                  name="heart"
-                  size={96}
-                  color="#fff"
-                  style={styles.largeHeart}
-                />
-              </MotiView>
-            </View>
-          ) : null}
-        </View>
-      </Pressable>
+      <PostMediaCarousel
+        media={post.media}
+        liked={post.liked}
+        isVisible={isVisible}
+        onOpenPost={onOpenPost}
+        onDoubleLike={onDoubleLike}
+      />
 
       <View style={styles.actions}>
         <Pressable
@@ -134,7 +91,7 @@ export function PostCard({
         >
           <Ionicons
             name={post.liked ? 'heart' : 'heart-outline'}
-            size={26}
+            size={27}
             color={post.liked ? '#e11d48' : COLORS.text}
           />
         </Pressable>
@@ -146,36 +103,41 @@ export function PostCard({
         >
           <Ionicons
             name="chatbubble-outline"
-            size={24}
-            color={COLORS.text}
-          />
-        </Pressable>
-
-        <Pressable hitSlop={10} style={styles.actionButton}>
-          <Ionicons
-            name="paper-plane-outline"
-            size={24}
+            size={25}
             color={COLORS.text}
           />
         </Pressable>
       </View>
 
       <View style={styles.details}>
-        <Text style={styles.likes}>{post.likes} likes</Text>
+        <Text style={styles.likes}>{likeLabel(post.likes)}</Text>
 
         {post.caption ? (
-          <Pressable onPress={onOpenPost}>
-            <Text style={styles.caption} numberOfLines={3}>
-              <Text style={styles.captionName}>
-                {post.user.name}{' '}
-              </Text>
-              <Text style={styles.captionBody}>{post.caption}</Text>
+          <Text style={styles.caption}>
+            <Text
+              style={styles.captionName}
+              onPress={onOpenProfile}
+            >
+              {post.user.name}{' '}
             </Text>
-          </Pressable>
+            <Text style={styles.captionBody}>{visibleCaption}</Text>
+            {captionNeedsCollapse ? (
+              <Text
+                style={styles.moreText}
+                onPress={() =>
+                  setCaptionExpanded((current) => !current)
+                }
+              >
+                {captionExpanded ? ' less' : ' more'}
+              </Text>
+            ) : null}
+          </Text>
         ) : null}
 
         <Pressable onPress={onOpenComments}>
-          <Text style={styles.commentsLink}>View comments</Text>
+          <Text style={styles.commentsLink}>
+            {commentsLabel(post.commentCount)}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -184,13 +146,18 @@ export function PostCard({
 
 const styles = StyleSheet.create({
   root: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: COLORS.divider,
+    backgroundColor: COLORS.bg,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
   },
   authorButton: {
     flex: 1,
@@ -206,50 +173,31 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   time: {
+    marginTop: 1,
     fontFamily: 'Manrope_400Regular',
     color: '#888',
     fontSize: 12,
-  },
-  mediaButton: {
-    backgroundColor: '#f2f2f2',
-  },
-  mediaWrap: {
-    width: '100%',
-    aspectRatio: 1,
-  },
-  media: {
-    width: '100%',
-    height: '100%',
-  },
-  heartOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  largeHeart: {
-    textShadowColor: 'rgba(0,0,0,0.35)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
   },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingTop: 9,
+    paddingBottom: 7,
   },
   actionButton: {
-    marginRight: 16,
+    marginRight: 17,
   },
   details: {
     paddingHorizontal: 12,
-    paddingBottom: 12,
+    paddingBottom: 13,
   },
   likes: {
     fontFamily: 'Manrope_700Bold',
     color: COLORS.text,
   },
   caption: {
-    marginTop: 4,
+    marginTop: 5,
     color: COLORS.text,
   },
   captionName: {
@@ -258,9 +206,13 @@ const styles = StyleSheet.create({
   captionBody: {
     fontFamily: 'Manrope_400Regular',
   },
+  moreText: {
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_600SemiBold',
+  },
   commentsLink: {
-    color: '#6b6b6b',
-    marginTop: 6,
+    color: COLORS.subtext,
+    marginTop: 7,
     fontFamily: 'Manrope_400Regular',
   },
 });

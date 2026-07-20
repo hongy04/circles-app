@@ -17,7 +17,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../../theme/colors';
 import { supabase } from '../../lib/supabase';
 import {
@@ -26,10 +25,7 @@ import {
   fetchPostComments,
   togglePostLike,
 } from '../../services/feedService';
-import {
-  createStoryFromAsset,
-  fetchActiveStories,
-} from '../../services/storyService';
+import { fetchActiveStories } from '../../services/storyService';
 import { PostCard } from '../../components/feed/PostCard';
 import { CommentsModal } from '../../components/feed/CommentsModal';
 import { StoriesRail } from '../../components/stories/StoriesRail';
@@ -69,12 +65,24 @@ export function FeedScreen({ navigation }) {
 
   const [storyOpen, setStoryOpen] = useState(null);
   const [storyIndex, setStoryIndex] = useState(0);
-  const [storyUploading, setStoryUploading] = useState(false);
+  const [visiblePostIds, setVisiblePostIds] = useState(() => new Set());
 
   const mountedRef = useRef(true);
   const postsRef = useRef([]);
   const initialLoadFinishedRef = useRef(false);
   const likeRequestsRef = useRef(new Set());
+  const viewabilityConfigRef = useRef({
+    itemVisiblePercentThreshold: 60,
+  });
+  const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
+    setVisiblePostIds(
+      new Set(
+        viewableItems
+          .map((item) => item.item?.id)
+          .filter(Boolean)
+      )
+    );
+  });
 
   useEffect(() => {
     postsRef.current = posts;
@@ -298,7 +306,16 @@ export function FeedScreen({ navigation }) {
 
     try {
       const comments = await fetchPostComments(postId);
-      if (mountedRef.current) setActiveComments(comments);
+      if (mountedRef.current) {
+        setActiveComments(comments);
+        setPosts((currentPosts) =>
+          currentPosts.map((post) =>
+            post.id === postId
+              ? { ...post, commentCount: comments.length }
+              : post
+          )
+        );
+      }
     } catch (error) {
       if (!mountedRef.current) return;
       setCommentsError(
@@ -355,6 +372,13 @@ export function FeedScreen({ navigation }) {
 
       if (mountedRef.current && openPostId === postId) {
         setActiveComments(comments);
+        setPosts((currentPosts) =>
+          currentPosts.map((post) =>
+            post.id === postId
+              ? { ...post, commentCount: comments.length }
+              : post
+          )
+        );
       }
     } catch (error) {
       if (mountedRef.current) {
@@ -374,45 +398,6 @@ export function FeedScreen({ navigation }) {
       if (mountedRef.current) setCommentSending(false);
     }
   }, [commentSending, commentText, openPostId]);
-
-  const addStory = useCallback(async () => {
-    if (storyUploading) return;
-
-    setStoryUploading(true);
-
-    try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission needed',
-          'Allow photo access to add a story.'
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.All,
-        allowsMultipleSelection: false,
-        quality: 0.9,
-        videoQuality:
-          ImagePicker.UIImagePickerControllerQualityType.High,
-      });
-
-      if (result.canceled) return;
-
-      await createStoryFromAsset(result.assets[0]);
-      await refreshStories();
-    } catch (error) {
-      Alert.alert(
-        'Story not posted',
-        errorMessage(error, 'Please try again.')
-      );
-    } finally {
-      if (mountedRef.current) setStoryUploading(false);
-    }
-  }, [refreshStories, storyUploading]);
 
   const retryFeed = useCallback(() => {
     refreshFeed('initial');
@@ -500,6 +485,7 @@ export function FeedScreen({ navigation }) {
         renderItem={({ item }) => (
           <PostCard
             post={item}
+            isVisible={visiblePostIds.has(item.id)}
             onToggleLike={() => toggleLike(item.id)}
             onDoubleLike={() => toggleLike(item.id)}
             onOpenComments={() => openComments(item.id)}
@@ -508,8 +494,21 @@ export function FeedScreen({ navigation }) {
                 postId: item.id,
               })
             }
+            onOpenProfile={
+              item.user.id
+                ? () =>
+                    navigation.navigate('Profile', {
+                      userId: item.user.id,
+                      name: item.user.name,
+                    })
+                : undefined
+            }
           />
         )}
+        viewabilityConfig={viewabilityConfigRef.current}
+        onViewableItemsChanged={
+          onViewableItemsChangedRef.current
+        }
         onEndReachedThreshold={0.25}
         onEndReached={loadMore}
         refreshControl={
@@ -536,8 +535,10 @@ export function FeedScreen({ navigation }) {
 
             <StoriesRail
               stories={stories}
-              isAdding={storyUploading}
-              onAddYourStory={addStory}
+              isAdding={false}
+              onAddYourStory={() =>
+                navigation.navigate('CreateStory')
+              }
               onOpen={openStory}
             />
 
