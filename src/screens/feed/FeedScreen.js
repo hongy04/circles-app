@@ -25,7 +25,10 @@ import {
   fetchPostComments,
   togglePostLike,
 } from '../../services/feedService';
-import { fetchActiveStories } from '../../services/storyService';
+import {
+  deleteOwnStory,
+  fetchActiveStories,
+} from '../../services/storyService';
 import { PostCard } from '../../components/feed/PostCard';
 import { CommentsModal } from '../../components/feed/CommentsModal';
 import { StoriesRail } from '../../components/stories/StoriesRail';
@@ -65,6 +68,10 @@ export function FeedScreen({ navigation }) {
 
   const [storyOpen, setStoryOpen] = useState(null);
   const [storyIndex, setStoryIndex] = useState(0);
+  const [storyDeletingId, setStoryDeletingId] = useState(null);
+  const [seenStoryUserIds, setSeenStoryUserIds] = useState(
+    () => new Set()
+  );
   const [visiblePostIds, setVisiblePostIds] = useState(() => new Set());
 
   const mountedRef = useRef(true);
@@ -135,6 +142,7 @@ export function FeedScreen({ navigation }) {
   useEffect(() => {
     mountedRef.current = true;
     let feedChannel = null;
+    let storyChannel = null;
 
     const start = async () => {
       try {
@@ -175,6 +183,19 @@ export function FeedScreen({ navigation }) {
             () => refreshFeed('silent')
           )
           .subscribe();
+
+        storyChannel = supabase
+          .channel('stories_rt')
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'stories',
+            },
+            () => refreshStories()
+          )
+          .subscribe();
       } catch (error) {
         if (!mountedRef.current) return;
         setInitialLoading(false);
@@ -190,6 +211,7 @@ export function FeedScreen({ navigation }) {
     return () => {
       mountedRef.current = false;
       if (feedChannel) supabase.removeChannel(feedChannel);
+      if (storyChannel) supabase.removeChannel(storyChannel);
     };
   }, [refreshFeed, refreshStories]);
 
@@ -203,6 +225,40 @@ export function FeedScreen({ navigation }) {
 
     return unsubscribe;
   }, [authed, navigation, refreshFeed, refreshStories]);
+
+
+  useEffect(() => {
+    const expirationTimes = stories
+      .flatMap((story) => story.items || [])
+      .map((item) => new Date(item.expires_at).getTime())
+      .filter((timestamp) => Number.isFinite(timestamp));
+
+    if (!expirationTimes.length) return undefined;
+
+    const nextExpiration = Math.min(...expirationTimes);
+    const delay = Math.max(1000, nextExpiration - Date.now() + 500);
+    const timer = setTimeout(
+      () => refreshStories(),
+      Math.min(delay, 2_147_000_000)
+    );
+
+    return () => clearTimeout(timer);
+  }, [refreshStories, stories]);
+
+  useEffect(() => {
+    if (storyOpen === null) return;
+
+    const currentStory = stories[storyOpen];
+    if (!currentStory?.userId) return;
+
+    setSeenStoryUserIds((currentSeen) => {
+      if (currentSeen.has(currentStory.userId)) return currentSeen;
+
+      const nextSeen = new Set(currentSeen);
+      nextSeen.add(currentStory.userId);
+      return nextSeen;
+    });
+  }, [stories, storyOpen]);
 
   const onRefresh = useCallback(async () => {
     await Promise.all([
@@ -408,6 +464,33 @@ export function FeedScreen({ navigation }) {
     setStoryIndex(0);
   }, []);
 
+  const closeStory = useCallback(() => {
+    setStoryOpen(null);
+    setStoryIndex(0);
+  }, []);
+
+  const deleteStory = useCallback(
+    async (storyItem) => {
+      if (!storyItem?.id || storyDeletingId) return;
+
+      setStoryDeletingId(storyItem.id);
+
+      try {
+        await deleteOwnStory(storyItem);
+        closeStory();
+        await refreshStories();
+      } catch (error) {
+        Alert.alert(
+          'Story not deleted',
+          errorMessage(error, 'Please try again.')
+        );
+      } finally {
+        if (mountedRef.current) setStoryDeletingId(null);
+      }
+    },
+    [closeStory, refreshStories, storyDeletingId]
+  );
+
   const nextStory = useCallback(() => {
     setStoryOpen((currentUserIndex) => {
       if (currentUserIndex === null) return null;
@@ -534,7 +617,7 @@ export function FeedScreen({ navigation }) {
 
             <StoriesRail
               stories={stories}
-              isAdding={false}
+              seenStoryUserIds={seenStoryUserIds}
               onAddYourStory={() =>
                 navigation.navigate('CreateStory')
               }
@@ -542,7 +625,22 @@ export function FeedScreen({ navigation }) {
             />
 
             {storyError ? (
-              <Text style={styles.inlineNotice}>{storyError}</Text>
+              <Pressable
+                onPress={refreshStories}
+                style={({ pressed }) => [
+                  styles.storyNotice,
+                  pressed && styles.storyNoticePressed,
+                ]}
+              >
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={16}
+                  color={COLORS.subtext}
+                />
+                <Text style={styles.inlineNotice}>
+                  {storyError} Tap to retry.
+                </Text>
+              </Pressable>
             ) : null}
 
             {feedError ? (
@@ -610,19 +708,24 @@ export function FeedScreen({ navigation }) {
       <Modal
         visible={storyOpen !== null}
         animationType="fade"
-        onRequestClose={() => setStoryOpen(null)}
+        onRequestClose={closeStory}
       >
         <SafeAreaView
-          edges={['top']}
+          edges={['top', 'bottom']}
           style={styles.storyModal}
         >
           {storyOpen !== null && stories[storyOpen] ? (
             <StoryViewer
               user={stories[storyOpen]}
               index={storyIndex}
-              onClose={() => setStoryOpen(null)}
+              onClose={closeStory}
               onNext={nextStory}
               onPrev={previousStory}
+              onDelete={deleteStory}
+              deleting={
+                storyDeletingId ===
+                stories[storyOpen]?.items?.[storyIndex]?.id
+              }
             />
           ) : null}
         </SafeAreaView>
@@ -693,9 +796,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
     fontSize: 24,
   },
+  storyNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 12,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#f4f4f4',
+  },
+  storyNoticePressed: {
+    opacity: 0.7,
+  },
   inlineNotice: {
-    paddingHorizontal: 14,
-    paddingBottom: 8,
+    flex: 1,
+    marginLeft: 7,
     color: COLORS.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,

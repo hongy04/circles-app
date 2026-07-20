@@ -43,6 +43,8 @@ export function StoryComposerScreen({ navigation }) {
   const { width, height } = useWindowDimensions();
   const [asset, setAsset] = useState(null);
   const [posting, setPosting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState('');
 
   const previewWidth = Math.min(width - 32, 430);
   const previewHeight = Math.min(
@@ -102,9 +104,16 @@ export function StoryComposerScreen({ navigation }) {
     }
 
     setPosting(true);
+    setUploadProgress(0.05);
+    setUploadStage('Preparing media…');
 
     try {
-      await createStoryFromAsset(asset);
+      await createStoryFromAsset(asset, {
+        onProgress: ({ progress, label }) => {
+          setUploadProgress(progress);
+          setUploadStage(label);
+        },
+      });
       navigation.goBack();
     } catch (error) {
       Alert.alert(
@@ -113,11 +122,13 @@ export function StoryComposerScreen({ navigation }) {
       );
     } finally {
       setPosting(false);
+      setUploadProgress(0);
+      setUploadStage('');
     }
   };
 
   return (
-    <SafeAreaView edges={['top']} style={styles.root}>
+    <SafeAreaView edges={['top', 'bottom']} style={styles.root}>
       <View style={styles.header}>
         <Pressable
           onPress={() => navigation.goBack()}
@@ -241,6 +252,27 @@ export function StoryComposerScreen({ navigation }) {
           </View>
         ) : null}
 
+        {posting ? (
+          <View style={styles.uploadProgressWrap}>
+            <View style={styles.uploadProgressHeader}>
+              <Text style={styles.uploadProgressLabel}>
+                {uploadStage || 'Posting story…'}
+              </Text>
+              <Text style={styles.uploadProgressPercent}>
+                {Math.round(uploadProgress * 100)}%
+              </Text>
+            </View>
+            <View style={styles.uploadProgressTrack}>
+              <View
+                style={[
+                  styles.uploadProgressFill,
+                  { width: `${Math.max(4, uploadProgress * 100)}%` },
+                ]}
+              />
+            </View>
+          </View>
+        ) : null}
+
         <Pressable
           onPress={asset ? postStory : pickMedia}
           disabled={posting}
@@ -252,7 +284,9 @@ export function StoryComposerScreen({ navigation }) {
           {posting ? (
             <View style={styles.postingRow}>
               <ActivityIndicator color="#fff" size="small" />
-              <Text style={styles.primaryButtonText}>Posting story…</Text>
+              <Text style={styles.primaryButtonText}>
+                {uploadStage || 'Posting story…'}
+              </Text>
             </View>
           ) : (
             <Text style={styles.primaryButtonText}>
@@ -382,6 +416,37 @@ const styles = StyleSheet.create({
   changeButtonText: {
     color: COLORS.text,
     fontFamily: 'Manrope_700Bold',
+  },
+  uploadProgressWrap: {
+    width: '100%',
+    marginTop: 18,
+  },
+  uploadProgressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 7,
+  },
+  uploadProgressLabel: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 12,
+  },
+  uploadProgressPercent: {
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 12,
+  },
+  uploadProgressTrack: {
+    height: 8,
+    overflow: 'hidden',
+    borderRadius: 4,
+    backgroundColor: '#e5e5ea',
+  },
+  uploadProgressFill: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: COLORS.primary,
   },
   primaryButton: {
     width: '100%',
