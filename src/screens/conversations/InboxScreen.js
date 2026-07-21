@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -24,64 +25,114 @@ import {
   toggleConversationPin,
 } from '../../services/conversationService';
 
-function ConversationRow({ conversation, onOpen, onTogglePin }) {
-  const subtitle = conversation.lastMessage
+function getConversationSubtitle(conversation) {
+  return conversation.lastMessage
     || (conversation.kind === 'direct'
       ? 'You are connected. Start a private conversation.'
       : conversation.pendingInvitationCount > 0
         ? `Waiting on ${conversation.pendingInvitationCount} invitation${conversation.pendingInvitationCount === 1 ? '' : 's'}`
         : `${conversation.memberCount} members`);
+}
+
+function PinnedConversation({
+  conversation,
+  onOpen,
+  onTogglePin,
+  itemWidth,
+}) {
+  return (
+    <View style={[styles.pinnedCell, { width: itemWidth }]}> 
+      <Pressable
+        onPress={() => onOpen(conversation)}
+        onLongPress={() => onTogglePin(conversation)}
+        delayLongPress={350}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${conversation.title}`}
+        accessibilityHint="Press and hold to unpin this conversation"
+        style={({ pressed }) => [
+          styles.pinnedPressable,
+          pressed && styles.pinnedPressed,
+        ]}
+      >
+        <View style={styles.pinnedAvatarWrap}>
+          <Avatar
+            size={74}
+            name={conversation.title}
+            uri={conversation.avatarUri}
+            ripple={conversation.unreadCount > 0}
+          />
+
+          {conversation.kind === 'group' ? (
+            <View style={styles.groupBadge}>
+              <Ionicons name="people" size={13} color="#fff" />
+            </View>
+          ) : null}
+
+          {conversation.unreadCount > 0 ? (
+            <View style={styles.pinnedUnreadBadge}>
+              <UnreadBadge count={conversation.unreadCount} />
+            </View>
+          ) : null}
+        </View>
+
+        <Text style={styles.pinnedLabel} numberOfLines={2}>
+          {conversation.title}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function ConversationRow({ conversation, onOpen, onTogglePin }) {
+  const subtitle = getConversationSubtitle(conversation);
 
   return (
     <Pressable
       onPress={() => onOpen(conversation)}
       onLongPress={() => onTogglePin(conversation)}
       delayLongPress={350}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${conversation.title}`}
+      accessibilityHint="Press and hold to pin this conversation"
       style={({ pressed }) => [
         styles.row,
-        pressed && styles.pressed,
+        pressed && styles.rowPressed,
       ]}
     >
-      <Avatar
-        size={54}
-        name={conversation.title}
-        uri={conversation.avatarUri}
-        ripple={conversation.unreadCount > 0}
-      />
+      <View style={styles.rowAvatarWrap}>
+        <Avatar
+          size={56}
+          name={conversation.title}
+          uri={conversation.avatarUri}
+          ripple={conversation.unreadCount > 0}
+        />
+        {conversation.kind === 'group' ? (
+          <View style={styles.rowGroupBadge}>
+            <Ionicons name="people" size={11} color="#fff" />
+          </View>
+        ) : null}
+      </View>
 
       <View style={styles.rowCenter}>
         <View style={styles.titleLine}>
           <Text style={styles.rowTitle} numberOfLines={1}>
             {conversation.title}
           </Text>
-          {conversation.kind === 'group' ? (
-            <Ionicons
-              name="people-outline"
-              size={15}
-              color={COLORS.subtext}
-              style={styles.kindIcon}
-            />
-          ) : null}
-        </View>
-        <Text style={styles.rowSubtitle} numberOfLines={1}>
-          {subtitle}
-        </Text>
-      </View>
-
-      <View style={styles.rowRight}>
-        <View style={styles.timeLine}>
-          {conversation.pinned ? (
-            <Ionicons name="pin" size={13} color={COLORS.subtext} />
-          ) : null}
           <Text style={styles.rowTime}>
             {timeAgo(conversation.lastMessageAt || conversation.createdAt)}
           </Text>
         </View>
-        {conversation.unreadCount > 0 ? (
-          <UnreadBadge count={conversation.unreadCount} />
-        ) : (
-          <Ionicons name="chevron-forward" size={17} color="#c7c7cc" />
-        )}
+
+        <View style={styles.subtitleLine}>
+          <Text style={styles.rowSubtitle} numberOfLines={1}>
+            {subtitle}
+          </Text>
+          {conversation.unreadCount > 0 ? (
+            <UnreadBadge count={conversation.unreadCount} />
+          ) : (
+            <Ionicons name="chevron-forward" size={17} color="#c7c7cc" />
+          )}
+        </View>
       </View>
     </Pressable>
   );
@@ -138,6 +189,7 @@ function InvitationCard({ invitation, busy, onRespond }) {
 }
 
 export function InboxScreen({ navigation }) {
+  const { width } = useWindowDimensions();
   const [conversations, setConversations] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -172,8 +224,9 @@ export function InboxScreen({ navigation }) {
           hitSlop={10}
           accessibilityRole="button"
           accessibilityLabel="Create private group"
+          style={({ pressed }) => pressed && styles.headerButtonPressed}
         >
-          <Ionicons name="create-outline" size={24} color={COLORS.text} />
+          <Ionicons name="create-outline" size={25} color={COLORS.text} />
         </Pressable>
       ),
     });
@@ -200,6 +253,20 @@ export function InboxScreen({ navigation }) {
     }),
     [conversations]
   );
+
+  const pinnedConversations = useMemo(
+    () => sortedConversations.filter((conversation) => conversation.pinned),
+    [sortedConversations]
+  );
+
+  const otherConversations = useMemo(
+    () => sortedConversations.filter((conversation) => !conversation.pinned),
+    [sortedConversations]
+  );
+
+  const pinnedColumnCount = width >= 700 ? 6 : width >= 520 ? 5 : 3;
+  const contentWidth = Math.min(width, 760);
+  const pinnedItemWidth = Math.floor((contentWidth - 24) / pinnedColumnCount);
 
   const openConversation = async (conversation) => {
     await Haptics.selectionAsync();
@@ -281,7 +348,7 @@ export function InboxScreen({ navigation }) {
       ) : null}
 
       {invitations.length > 0 ? (
-        <View style={styles.section}>
+        <View style={styles.invitationSection}>
           <Text style={styles.sectionLabel}>PRIVATE GROUP INVITATIONS</Text>
           {invitations.map((invitation) => (
             <InvitationCard
@@ -294,11 +361,28 @@ export function InboxScreen({ navigation }) {
         </View>
       ) : null}
 
-      {sortedConversations.length > 0 ? (
-        <View style={styles.section}>
+      {pinnedConversations.length > 0 ? (
+        <View style={styles.pinnedSection}>
+          <Text style={styles.sectionLabel}>YOUR CIRCLES</Text>
+          <View style={styles.pinnedGrid}>
+            {pinnedConversations.map((conversation) => (
+              <PinnedConversation
+                key={conversation.id}
+                conversation={conversation}
+                onOpen={openConversation}
+                onTogglePin={togglePin}
+                itemWidth={pinnedItemWidth}
+              />
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {otherConversations.length > 0 ? (
+        <View style={styles.messageSection}>
           <Text style={styles.sectionLabel}>MESSAGES</Text>
-          <View style={styles.listCard}>
-            {sortedConversations.map((conversation, index) => (
+          <View style={styles.messageList}>
+            {otherConversations.map((conversation, index) => (
               <View key={conversation.id}>
                 {index > 0 ? <View style={styles.separator} /> : null}
                 <ConversationRow
@@ -309,8 +393,14 @@ export function InboxScreen({ navigation }) {
               </View>
             ))}
           </View>
-          <Text style={styles.pinHint}>Press and hold a conversation to pin it.</Text>
         </View>
+      ) : null}
+
+      {sortedConversations.length > 0 ? (
+        <Text style={styles.pinHint}>
+          Press and hold a conversation to pin or unpin it. New private groups
+          begin in Your Circles automatically.
+        </Text>
       ) : (
         <View style={styles.emptyCard}>
           <View style={styles.emptyIcon}>
@@ -331,14 +421,14 @@ export function InboxScreen({ navigation }) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f7f7f7',
+    backgroundColor: COLORS.bg,
   },
   content: {
     width: '100%',
     maxWidth: 760,
     alignSelf: 'center',
-    padding: 14,
-    paddingBottom: 40,
+    paddingTop: 8,
+    paddingBottom: 44,
   },
   centerState: {
     flex: 1,
@@ -351,89 +441,24 @@ const styles = StyleSheet.create({
     color: COLORS.subtext,
     fontFamily: 'Manrope_400Regular',
   },
-  section: {
+  sectionLabel: {
+    marginLeft: 16,
+    marginBottom: 8,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 11,
+    letterSpacing: 0.7,
+  },
+  invitationSection: {
+    marginTop: 8,
     marginBottom: 22,
   },
-  sectionLabel: {
-    marginLeft: 4,
-    marginBottom: 7,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 11,
-    letterSpacing: 0.6,
-  },
-  listCard: {
-    overflow: 'hidden',
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
-  },
-  row: {
-    minHeight: 76,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 13,
-    paddingVertical: 10,
-  },
-  rowCenter: {
-    flex: 1,
-    marginLeft: 11,
-    marginRight: 8,
-  },
-  titleLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  rowTitle: {
-    flexShrink: 1,
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
-  },
-  kindIcon: {
-    marginLeft: 5,
-  },
-  rowSubtitle: {
-    marginTop: 3,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 12,
-  },
-  rowRight: {
-    minWidth: 48,
-    alignItems: 'flex-end',
-  },
-  timeLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 6,
-  },
-  rowTime: {
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 11,
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: 78,
-    backgroundColor: COLORS.border,
-  },
-  pinHint: {
-    marginTop: 7,
-    marginLeft: 4,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 11,
-  },
   invitationCard: {
+    marginHorizontal: 14,
     marginBottom: 10,
     padding: 14,
     borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    backgroundColor: '#f2f2f7',
   },
   invitationHeader: {
     flexDirection: 'row',
@@ -479,22 +504,163 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: '#d1d1d6',
+    backgroundColor: '#fff',
   },
   secondaryButtonText: {
     color: COLORS.text,
     fontFamily: 'Manrope_700Bold',
   },
+  pinnedSection: {
+    marginTop: 4,
+    marginBottom: 18,
+  },
+  pinnedGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 12,
+    paddingTop: 2,
+  },
+  pinnedCell: {
+    minHeight: 118,
+    alignItems: 'center',
+    paddingHorizontal: 3,
+    marginBottom: 8,
+  },
+  pinnedPressable: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  pinnedPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.97 }],
+  },
+  pinnedAvatarWrap: {
+    position: 'relative',
+    width: 82,
+    height: 78,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupBadge: {
+    position: 'absolute',
+    right: 1,
+    bottom: 1,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.bg,
+    backgroundColor: COLORS.primary,
+  },
+  pinnedUnreadBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+  },
+  pinnedLabel: {
+    maxWidth: 96,
+    marginTop: 5,
+    color: COLORS.text,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: 'center',
+  },
+  messageSection: {
+    marginTop: 2,
+  },
+  messageList: {
+    backgroundColor: COLORS.bg,
+  },
+  row: {
+    minHeight: 78,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 16,
+    paddingRight: 12,
+    paddingVertical: 9,
+    backgroundColor: COLORS.bg,
+  },
+  rowPressed: {
+    backgroundColor: '#f2f2f7',
+  },
+  rowAvatarWrap: {
+    position: 'relative',
+    width: 58,
+    height: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowGroupBadge: {
+    position: 'absolute',
+    right: -1,
+    bottom: -1,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: COLORS.bg,
+    backgroundColor: COLORS.primary,
+  },
+  rowCenter: {
+    flex: 1,
+    marginLeft: 12,
+    minWidth: 0,
+  },
+  titleLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  rowTitle: {
+    flex: 1,
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+  },
+  rowTime: {
+    marginLeft: 8,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+  },
+  subtitleLine: {
+    minHeight: 23,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 3,
+  },
+  rowSubtitle: {
+    flex: 1,
+    marginRight: 8,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 13,
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 86,
+    backgroundColor: COLORS.border,
+  },
+  pinHint: {
+    marginTop: 13,
+    marginHorizontal: 18,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+  },
   emptyCard: {
     alignItems: 'center',
-    marginTop: 40,
-    paddingHorizontal: 28,
+    marginTop: 48,
+    marginHorizontal: 24,
+    paddingHorizontal: 24,
     paddingVertical: 34,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
   },
   emptyIcon: {
     width: 66,
@@ -518,6 +684,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   errorCard: {
+    marginHorizontal: 14,
     marginBottom: 16,
     padding: 14,
     borderRadius: 12,
@@ -534,6 +701,9 @@ const styles = StyleSheet.create({
   retryText: {
     color: '#b42318',
     fontFamily: 'Manrope_700Bold',
+  },
+  headerButtonPressed: {
+    opacity: 0.55,
   },
   pressed: {
     opacity: 0.7,

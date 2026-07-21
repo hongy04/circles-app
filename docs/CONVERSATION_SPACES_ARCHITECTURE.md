@@ -203,3 +203,15 @@ The old Family, Basketball Crew, College, Gaming, and similar sample chats are
 not part of the product model. Step 9A archives the old free-form message table
 and replaces the visible inbox with real accepted connections, accepted group
 memberships, and pending private-group invitations.
+
+## Inbox identity: pinned Circles
+
+The inbox should retain the familiar clarity of iMessage while making Circles'
+identity visible. Pinned conversations are presented as large circular items
+above the standard message list.
+
+Private groups begin pinned for every accepted member because group formation is
+intentional and represents a shared Circle. Pin state remains personal: one
+member may unpin a group without changing another member's inbox. Pending group
+invitations never appear as pinned conversations because an invitation does not
+yet grant membership or access.
