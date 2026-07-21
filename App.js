@@ -1,9 +1,8 @@
 import 'react-native-gesture-handler';
 import 'react-native-reanimated';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Dimensions, FlatList, KeyboardAvoidingView,
-  Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View
+  ActivityIndicator, Alert, Dimensions, Pressable, ScrollView, StyleSheet, Text, View
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -25,7 +24,6 @@ import { ensureAuthed } from './src/services/authService';
 import { Avatar } from './src/components/Avatar';
 import { DevBanner } from './src/components/DevBanner';
 import { MonoRingWithRipples } from './src/components/MonoRingWithRipples';
-import { UnreadBadge } from './src/components/UnreadBadge';
 import { AuthNavigator } from './src/navigation/AuthNavigator';
 import { FeedScreen } from './src/screens/feed/FeedScreen';
 import { CreatePostScreen } from './src/screens/posts/CreatePostScreen';
@@ -36,27 +34,15 @@ import { MeScreen } from './src/screens/profile/MeScreen';
 import { ProfileScreen } from './src/screens/profile/ProfileScreen';
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
+import { DevAccountsScreen } from './src/screens/dev/DevAccountsScreen';
+import { InboxScreen } from './src/screens/conversations/InboxScreen';
+import { ChatScreen } from './src/screens/conversations/ChatScreen';
+import { CreateGroupScreen } from './src/screens/conversations/CreateGroupScreen';
+import { ConversationDetailsScreen } from './src/screens/conversations/ConversationDetailsScreen';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W, height: H } = Dimensions.get('window');
 const IS_SMALL = W < 360 || H < 720;
-
-function randomId() { return Math.random().toString(36).slice(2); }
-
-/* ---------------- Demo data for Inbox ---------------- */
-const USERS = {
-  u1: { id: 'u1', name: 'You',            avatarUri: 'https://i.pravatar.cc/150?img=1' },
-  u2: { id: 'u2', name: 'Alex Johnson',   avatarUri: 'https://i.pravatar.cc/150?img=5' },
-  u3: { id: 'u3', name: 'Sam Lee',        avatarUri: 'https://i.pravatar.cc/150?img=15' },
-  u4: { id: 'u4', name: 'Maya Patel',     avatarUri: 'https://i.pravatar.cc/150?img=22' },
-};
-const GROUPS = [
-  { id: '1', name: 'Best Friends',    members: ['u1', 'u2', 'u3'], avatarUri: null,               last: 'See you at 7? I can drive.', time: '2m', unread: 3, pinned: true },
-  { id: '2', name: 'Family',          members: ['u1', 'u4'],       avatarUri: null,               last: 'Mom sent a photo 📸',       time: '12m', unread: 0, pinned: true },
-  { id: '3', name: 'Basketball Crew', members: ['u1','u2'],        avatarUri: null,               last: 'Court is open this wknd',   time: '1h', unread: 1, pinned: false },
-  { id: '4', name: 'College',         members: ['u1','u3','u4'],   avatarUri: USERS.u2.avatarUri, last: 'Assignment due Mon',        time: '3h', unread: 0, pinned: false },
-  { id: '5', name: 'Gaming',          members: ['u1','u2'],        avatarUri: USERS.u3.avatarUri, last: 'Queue later? 🎮',           time: 'Yesterday', unread: 0, pinned: false },
-];
 
 /* ---------------- Navigation ---------------- */
 const RootStack = createNativeStackNavigator();
@@ -80,6 +66,9 @@ export default function App() {
           <RootStack.Screen name="Profile" component={ProfileScreen} />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
+          {IS_DEVELOPMENT ? (
+            <RootStack.Screen name="DevAccounts" component={DevAccountsScreen} />
+          ) : null}
           <RootStack.Screen name="PostDetail" component={PostDetailScreen} />
           <RootStack.Screen name="EditPost" component={EditPostScreen} />
         </RootStack.Navigator>
@@ -130,6 +119,7 @@ function GateScreen({ navigation }) {
 function AppTabs() {
   const insets = useSafeAreaInsets();
   const [reqCount, setReqCount] = useState(0);
+  const [conversationInviteCount, setConversationInviteCount] = useState(0);
   const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
@@ -139,15 +129,37 @@ function AppTabs() {
         const { data: { session } } = await supabase.auth.getSession();
         const isAuthed = !!session;
         if (mounted) setAuthed(isAuthed);
-        if (!isAuthed) { if (IS_DEVELOPMENT) setReqCount(1); else setReqCount(0); return; }
-        const { data, error } = await supabase.rpc('incoming_requests');
-        if (error) throw error;
-        if (mounted) setReqCount((data || []).length);
-      } catch { if (mounted) setReqCount(0); }
+        if (!isAuthed) {
+          if (mounted) {
+            setReqCount(IS_DEVELOPMENT ? 1 : 0);
+            setConversationInviteCount(0);
+          }
+          return;
+        }
+
+        const [requestResult, invitationResult] = await Promise.all([
+          supabase.rpc('incoming_requests'),
+          supabase.rpc('get_my_conversation_invitations'),
+        ]);
+
+        if (requestResult.error) throw requestResult.error;
+        if (invitationResult.error) throw invitationResult.error;
+
+        if (mounted) {
+          setReqCount((requestResult.data || []).length);
+          setConversationInviteCount((invitationResult.data || []).length);
+        }
+      } catch {
+        if (mounted) {
+          setReqCount(0);
+          setConversationInviteCount(0);
+        }
+      }
     };
     loadCount();
-    const ch = supabase.channel('connreqs_tabbadge')
+    const ch = supabase.channel('relationship_tabbadges')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests' }, () => loadCount())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_invitations' }, () => loadCount())
       .subscribe();
     return () => { mounted = false; supabase.removeChannel(ch); };
   }, []);
@@ -180,6 +192,9 @@ function AppTabs() {
                 {route.name === 'Mutuals' && reqCount > 0 ? (
                   <View style={styles.tabBadge}><Text style={styles.tabBadgeText}>{reqCount > 99 ? '99+' : String(reqCount)}</Text></View>
                 ) : null}
+                {route.name === 'Circles' && conversationInviteCount > 0 ? (
+                  <View style={styles.tabBadge}><Text style={styles.tabBadgeText}>{conversationInviteCount > 99 ? '99+' : String(conversationInviteCount)}</Text></View>
+                ) : null}
               </View>
             );
           },
@@ -207,9 +222,26 @@ function CirclesStack() {
         contentStyle: { backgroundColor: COLORS.bg },
       }}
     >
-      <CirclesStackNav.Screen name="Inbox" component={InboxScreen} options={{ title: 'Circles' }} />
-      <CirclesStackNav.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params?.name || 'Chat' })} />
-      <CirclesStackNav.Screen name="GroupDetails" component={GroupDetailsScreen} options={{ title: 'Details' }} />
+      <CirclesStackNav.Screen
+        name="Inbox"
+        component={InboxScreen}
+        options={{ title: 'Circles' }}
+      />
+      <CirclesStackNav.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={({ route }) => ({ title: route.params?.name || 'Chat' })}
+      />
+      <CirclesStackNav.Screen
+        name="CreateGroup"
+        component={CreateGroupScreen}
+        options={{ title: 'New Private Group' }}
+      />
+      <CirclesStackNav.Screen
+        name="ConversationDetails"
+        component={ConversationDetailsScreen}
+        options={{ title: 'Shared Space' }}
+      />
     </CirclesStackNav.Navigator>
   );
 }
@@ -373,279 +405,9 @@ function MutualsScreen({ navigation }) {
   );
 }
 
-/* ---------------- Inbox / Chat / GroupDetails ---------------- */
-function InboxScreen({ navigation }) {
-  const [convos, setConvos] = useState(GROUPS);
-  const togglePin = async (id) => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setConvos((prev) => prev.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c)).sort(sortConvos));
-  };
-  const openConversation = async (c) => { await Haptics.selectionAsync(); navigation.navigate('Chat', { groupId: c.id, name: c.name }); };
-  const pinned = convos.filter((c) => c.pinned);
-  const others = convos.filter((c) => !c.pinned);
-
-  return (
-    <View style={styles.inboxRoot}>
-      {pinned.length > 0 && (
-        <View style={styles.pinnedWrap}>
-          <View style={styles.pinnedGrid}>
-            {pinned.map((c) => (
-              <View key={c.id} style={styles.pinnedCell}>
-                <Pressable onPress={() => openConversation(c)} onLongPress={() => togglePin(c.id)} style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.97 : 1 }] }]}>
-                  <Avatar size={IS_SMALL ? 64 : 72} name={c.name} uri={c.avatarUri} ripple />
-                </Pressable>
-                <Text style={styles.pinnedLabel} numberOfLines={2}>{c.name}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
-      <View style={styles.listWrap}>
-        {others.map((c) => (
-          <Pressable key={c.id} onPress={() => openConversation(c)} onLongPress={() => togglePin(c.id)} style={({ pressed }) => [styles.row, { opacity: pressed ? 0.9 : 1 }]}>
-            <Avatar size={IS_SMALL ? 48 : 54} name={c.name} uri={c.avatarUri} ripple={c.unread > 0} />
-            <View style={styles.rowCenter}>
-              <Text style={styles.rowTitle} numberOfLines={1}>{c.name}</Text>
-              <Text style={styles.rowSubtitle} numberOfLines={1}>{c.last}</Text>
-            </View>
-            <View style={styles.rowRight}>
-              <Text style={styles.rowTime}>{c.time}</Text>
-              {c.unread > 0 ? <UnreadBadge count={c.unread} /> : null}
-            </View>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function ChatScreen({ route, navigation }) {
-  const { groupId } = route.params || {};
-  const group = GROUPS.find((g) => g.id === groupId) || GROUPS[0];
-  const insets = useSafeAreaInsets();
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
-  const [authed, setAuthed] = useState(false);
-  const [sessionUserId, setSessionUserId] = useState(null);
-  const typingTimerRef = useRef(null);
-  const presenceRef = useRef(null);
-  const listRef = useRef(null);
-  const seenIdsRef = useRef(new Set());
-
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <Pressable onPress={() => navigation.navigate('GroupDetails', { groupId })} hitSlop={10}>
-          <Ionicons name="ellipsis-horizontal-circle" size={22} color={COLORS.text} />
-        </Pressable>
-      ),
-      title: group.name,
-    });
-  }, [navigation, groupId]);
-
-  useEffect(() => {
-    let channel;
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const isAuthed = !!session;
-      setAuthed(isAuthed);
-      setSessionUserId(session?.user?.id || null);
-
-      if (!isAuthed) {
-        const seed = [
-          { id: 'm2', user_id: 'you', body: 'Testing messages locally 👋', created_at: new Date(Date.now()-1000*60*4).toISOString() },
-          { id: 'm1', user_id: 'friend', body: `Welcome to ${group.name}!`, created_at: new Date(Date.now()-1000*60*5).toISOString() },
-        ];
-        seed.forEach(m => seenIdsRef.current.add(m.id));
-        setMessages(seed);
-        return;
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from('messages')
-          .select('id, user_id, body, created_at')
-          .eq('group_id', groupId)
-          .order('created_at', { ascending: false });
-        if (error) throw error;
-
-        (data || []).forEach(m => seenIdsRef.current.add(m.id));
-        setMessages(data || []);
-
-        channel = supabase
-          .channel(`messages_${groupId}`)
-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `group_id=eq.${groupId}` }, (payload) => {
-            const row = payload.new;
-            if (seenIdsRef.current.has(row.id)) return;
-            seenIdsRef.current.add(row.id);
-            setMessages(prev => [row, ...prev]);
-          })
-          .subscribe();
-
-        const key = session.user.id;
-        const presence = supabase.channel(`typing_${groupId}`, { config: { presence: { key } } });
-        presence.subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') await presence.track({ typing: false, display_name: 'You' });
-        });
-        presenceRef.current = presence;
-      } catch {
-        setAuthed(false);
-        const seed = [
-          { id: 'm2', user_id: 'you', body: 'Testing messages locally 👋', created_at: new Date(Date.now()-1000*60*4).toISOString() },
-          { id: 'm1', user_id: 'friend', body: `Welcome to ${group.name}!`, created_at: new Date(Date.now()-1000*60*5).toISOString() },
-        ];
-        seed.forEach(m => seenIdsRef.current.add(m.id));
-        setMessages(seed);
-      }
-    })();
-
-    return () => {
-      if (channel) supabase.removeChannel(channel);
-      if (presenceRef.current) supabase.removeChannel(presenceRef.current);
-    };
-  }, [groupId]);
-
-  useEffect(() => { setTimeout(() => listRef.current?.scrollToOffset?.({ offset: 0, animated: true }), 0); }, [messages.length]);
-
-  const handleChangeText = (t) => {
-    setInput(t);
-    const presence = presenceRef.current;
-    if (!authed || !presence) return;
-    presence.track({ typing: true, display_name: 'You' }).catch(() => {});
-    clearTimeout(typingTimerRef.current);
-    typingTimerRef.current = setTimeout(() => { presence.track({ typing: false, display_name: 'You' }).catch(() => {}); }, 1200);
-  };
-
-  const fmtHM = (ts) => {
-    const d = new Date(ts); const h = d.getHours(); const m = String(d.getMinutes()).padStart(2, '0');
-    const hh = ((h + 11) % 12) + 1; const ampm = h < 12 ? 'AM' : 'PM'; return `${hh}:${m} ${ampm}`;
-  };
-
-  const sendMessage = async () => {
-    const text = input.trim();
-    if (!text) return;
-    setInput('');
-    await Haptics.selectionAsync();
-
-    if (!authed) {
-      const local = { id: randomId(), user_id: 'you', body: text, created_at: new Date().toISOString() };
-      seenIdsRef.current.add(local.id);
-      setMessages(prev => [local, ...prev]);
-      return;
-    }
-
-    setSending(true);
-    try {
-      const { user } = await ensureAuthed();
-      const { data: row, error } = await supabase
-        .from('messages')
-        .insert({ group_id: groupId, user_id: user.id, body: text })
-        .select('id, user_id, body, created_at')
-        .single();
-      if (error) throw error;
-      if (!seenIdsRef.current.has(row.id)) {
-        seenIdsRef.current.add(row.id);
-        setMessages(prev => [row, ...prev]);
-      }
-    } catch (e) { alert(e.message || 'Failed to send'); }
-    finally { setSending(false); }
-  };
-
-  const renderItem = ({ item }) => {
-    const mine = authed ? (item.user_id === sessionUserId) : (item.user_id === 'you');
-    const bubbleCommon = { maxWidth: '76%', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18 };
-    const mineStyle = { alignSelf:'flex-end', backgroundColor: '#000', borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 18, borderBottomRightRadius: 6 };
-    const otherStyle = { alignSelf:'flex-start', backgroundColor: '#e9e9eb', borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 6, borderBottomRightRadius: 18 };
-    return (
-      <View style={{ paddingHorizontal: 12, paddingVertical: 4 }}>
-        <View style={[bubbleCommon, mine ? mineStyle : otherStyle]}>
-          <Text style={{ color: mine ? '#fff' : '#000', fontFamily: 'Manrope_400Regular', fontSize: 16 }}>{item.body}</Text>
-        </View>
-        <Text style={{ marginTop: 4, fontSize: 11, color: '#8e8e93', alignSelf: mine ? 'flex-end' : 'flex-start', fontFamily: 'Manrope_400Regular' }}>{fmtHM(item.created_at)}</Text>
-      </View>
-    );
-  };
-
-  return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(m) => m.id}
-        renderItem={renderItem}
-        inverted
-        keyboardShouldPersistTaps="handled"
-        onContentSizeChange={() => listRef.current?.scrollToOffset?.({ offset: 0, animated: true })}
-        contentContainerStyle={{ paddingTop: 8, paddingBottom: 8 + insets.bottom }}
-      />
-
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}>
-        <View style={{ paddingHorizontal: 8, paddingTop: 8, paddingBottom: Math.max(8, insets.bottom), backgroundColor: COLORS.bg, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border, flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, paddingHorizontal: 12, paddingVertical: Platform.OS === 'ios' ? 10 : 8 }}>
-            <TextInput
-              value={input}
-              onChangeText={handleChangeText}
-              placeholder="iMessage"
-              placeholderTextColor="#9e9e9e"
-              style={{ flex: 1, fontFamily: 'Manrope_400Regular', fontSize: 16, color: COLORS.text }}
-              onFocus={() => setTimeout(() => listRef.current?.scrollToOffset?.({ offset: 0, animated: true }), 50)}
-              textAlignVertical="center"
-            />
-            <Pressable hitSlop={8}><Ionicons name="camera-outline" size={22} color="#7a7a7a" /></Pressable>
-          </View>
-          <Pressable
-            onPress={sendMessage}
-            disabled={sending || !input.trim()}
-            style={({ pressed }) => ({
-              marginLeft: 8, width: 36, height: 36, borderRadius: 18,
-              backgroundColor: input.trim() ? COLORS.primary : '#d1d1d6',
-              alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.85 : 1
-            })}
-          >
-            <Ionicons name="arrow-up" size={18} color="#fff" />
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
-}
-
-function GroupDetailsScreen({ route }) {
-  const { groupId } = route.params || {};
-  const group = GROUPS.find(g => g.id === groupId) || GROUPS[0];
-  return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
-      <View style={{ padding: 16 }}>
-        <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 20, color: COLORS.text }}>{group.name}</Text>
-        <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, marginTop: 4 }}>
-          {group.members.length} member{group.members.length > 1 ? 's' : ''}
-        </Text>
-      </View>
-      <View style={{ height: 1, backgroundColor: COLORS.border }} />
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
-        {group.members.map((uid) => {
-          const u = USERS[uid];
-          return (
-            <View key={uid} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-              <Avatar size={48} name={u?.name || 'Member'} uri={u?.avatarUri} />
-              <Text style={{ marginLeft: 12, fontFamily: 'Manrope_600SemiBold', color: COLORS.text }}>{u?.name || 'Member'}</Text>
-            </View>
-          );
-        })}
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
 /* ---------------- Small UI components ---------------- */
 
 
-function sortConvos(a, b) {
-  if (a.pinned && !b.pinned) return -1;
-  if (!a.pinned && b.pinned) return 1;
-  return 0;
-}
 
 /* ---------------- Styles ---------------- */
 const styles = StyleSheet.create({
@@ -658,18 +420,6 @@ const styles = StyleSheet.create({
   tabBadge: { position: 'absolute', right: -6, top: -4, backgroundColor: '#000', minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   tabBadgeText: { color: '#fff', fontSize: 10, fontFamily: 'Manrope_700Bold' },
 
-  inboxRoot: { flex: 1, backgroundColor: COLORS.bg },
-  pinnedWrap: { paddingHorizontal: 12, paddingTop: 10 },
-  pinnedGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  pinnedCell: { width: (W - 12 * 2) / 4, alignItems: 'center', marginBottom: 12 },
-  pinnedLabel: { marginTop: 6, fontSize: 12, color: COLORS.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
-  listWrap: { paddingHorizontal: 12, paddingTop: 6 },
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
-  rowCenter: { flex: 1, marginLeft: 10 },
-  rowTitle: { fontFamily: 'Manrope_700Bold', color: COLORS.text },
-  rowSubtitle: { color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
-  rowRight: { alignItems: 'flex-end' },
-  rowTime: { color: COLORS.subtext, fontSize: 12, fontFamily: 'Manrope_400Regular' },
 
 
 });

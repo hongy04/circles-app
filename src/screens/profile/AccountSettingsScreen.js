@@ -166,6 +166,17 @@ export function AccountSettingsScreen({ navigation }) {
 
           <Text style={styles.sectionLabel}>APP</Text>
           <View style={styles.section}>
+            {IS_DEVELOPMENT ? (
+              <>
+                <SettingRow
+                  icon="flask-outline"
+                  title="Test accounts"
+                  subtitle="Switch identities and exercise multi-user privacy flows"
+                  onPress={() => navigation.navigate('DevAccounts')}
+                />
+                <View style={styles.separator} />
+              </>
+            ) : null}
             <SettingRow
               icon="information-circle-outline"
               title="Circles"
