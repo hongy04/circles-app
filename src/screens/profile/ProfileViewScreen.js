@@ -15,6 +15,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS } from '../../theme/colors';
 import { ProfileHeader } from '../../components/profile/ProfileHeader';
 import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
+import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
+import { deleteOwnPost } from '../../services/postService';
 import {
   fetchProfilePage,
   respondToProfileRequest,
@@ -115,6 +117,8 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
   const [error, setError] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
   const [gridWidth, setGridWidth] = useState(0);
+  const [managedPost, setManagedPost] = useState(null);
+  const [deletingPostId, setDeletingPostId] = useState(null);
 
   const load = useCallback(async ({ refresh = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -147,6 +151,47 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
   }, [navigation, load]);
 
   const resolvedIsSelf = isSelf || profile?.relationship_status === 'self';
+
+  const editManagedPost = () => {
+    if (!managedPost?.id) return;
+
+    const postId = managedPost.id;
+    setManagedPost(null);
+    navigation.navigate('EditPost', { postId });
+  };
+
+  const removeManagedPost = async () => {
+    if (!managedPost?.id || deletingPostId) return;
+
+    const postId = managedPost.id;
+    setDeletingPostId(postId);
+
+    try {
+      await deleteOwnPost(postId);
+      setPosts((currentPosts) =>
+        currentPosts.filter((post) => post.id !== postId)
+      );
+      setProfile((currentProfile) =>
+        currentProfile
+          ? {
+              ...currentProfile,
+              post_count: Math.max(
+                0,
+                Number(currentProfile.post_count || 0) - 1
+              ),
+            }
+          : currentProfile
+      );
+      setManagedPost(null);
+    } catch (deleteError) {
+      Alert.alert(
+        'Post not deleted',
+        deleteError?.message || 'Please try again.'
+      );
+    } finally {
+      setDeletingPostId(null);
+    }
+  };
 
   const handleConnect = async () => {
     if (!profile?.id || actionBusy) return;
@@ -262,6 +307,9 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
               post={item}
               size={gridWidth > 0 ? Math.floor(gridWidth / 3) : undefined}
               onPress={() => navigation.navigate('PostDetail', { postId: item.id })}
+              onMenuPress={
+                resolvedIsSelf ? () => setManagedPost(item) : undefined
+              }
             />
           )}
           ListEmptyComponent={(
@@ -281,6 +329,14 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
           contentContainerStyle={styles.listContent}
           columnWrapperStyle={styles.gridRow}
           showsVerticalScrollIndicator={false}
+        />
+
+        <PostOwnerMenu
+          visible={Boolean(managedPost)}
+          busy={Boolean(deletingPostId)}
+          onClose={() => !deletingPostId && setManagedPost(null)}
+          onEdit={editManagedPost}
+          onDelete={removeManagedPost}
         />
       </View>
     </SafeAreaView>

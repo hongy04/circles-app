@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,9 +15,22 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Video } from 'expo-av';
 import { COLORS } from '../../theme/colors';
 import { Avatar } from '../../components/Avatar';
-import { togglePostLike } from '../../services/feedService';
-import { fetchPostDetail } from '../../services/postService';
+import { CommentsModal } from '../../components/feed/CommentsModal';
+import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
+import {
+  addPostComment,
+  fetchPostComments,
+  togglePostLike,
+} from '../../services/feedService';
+import {
+  deleteOwnPost,
+  fetchPostDetail,
+} from '../../services/postService';
 import { timeAgo } from '../../utils/timeAgo';
+
+function localCommentId() {
+  return `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export function PostDetailScreen({ route, navigation }) {
   const { postId } = route.params || {};
@@ -30,13 +43,24 @@ export function PostDetailScreen({ route, navigation }) {
   const [liked, setLiked] = useState(false);
   const [likes, setLikes] = useState(0);
   const [liking, setLiking] = useState(false);
+  const [commentCount, setCommentCount] = useState(0);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
-  const mountedRef = useRef(true);
+  const [isOwner, setIsOwner] = useState(false);
+  const [ownerMenuVisible, setOwnerMenuVisible] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
+  const [commentsVisible, setCommentsVisible] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsError, setCommentsError] = useState(null);
+  const [commentText, setCommentText] = useState('');
+  const [commentSending, setCommentSending] = useState(false);
+
+  const mountedRef = useRef(true);
   const mediaWidth = Math.min(width, 720);
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     setError(null);
 
     try {
@@ -48,26 +72,36 @@ export function PostDetailScreen({ route, navigation }) {
       setAuthor(detail.author);
       setMedia(detail.media);
       setLikes(detail.likes);
+      setCommentCount(detail.commentCount);
       setLiked(detail.likedByMe);
-      setActiveMediaIndex(0);
+      setIsOwner(detail.isOwner);
+      if (!silent) setActiveMediaIndex(0);
     } catch (loadError) {
       if (!mountedRef.current) return;
-      setError(
-        loadError?.message || 'The post could not be loaded.'
-      );
+
+      if (silent) {
+        console.warn('Post refresh failed.', loadError);
+      } else {
+        setError(loadError?.message || 'The post could not be loaded.');
+      }
     } finally {
-      if (mountedRef.current) setLoading(false);
+      if (mountedRef.current && !silent) setLoading(false);
     }
-  };
+  }, [postId]);
 
   useEffect(() => {
     mountedRef.current = true;
     load();
 
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (mountedRef.current && post) load({ silent: true });
+    });
+
     return () => {
       mountedRef.current = false;
+      unsubscribe();
     };
-  }, [postId]);
+  }, [load, navigation, post?.id]);
 
   const onToggleLike = async () => {
     if (liking) return;
@@ -78,9 +112,7 @@ export function PostDetailScreen({ route, navigation }) {
 
     setLiking(true);
     setLiked(nextLiked);
-    setLikes(
-      Math.max(0, previousLikes + (nextLiked ? 1 : -1))
-    );
+    setLikes(Math.max(0, previousLikes + (nextLiked ? 1 : -1)));
 
     try {
       await togglePostLike(postId);
@@ -96,6 +128,103 @@ export function PostDetailScreen({ route, navigation }) {
     }
   };
 
+  const loadComments = useCallback(async () => {
+    setCommentsLoading(true);
+    setCommentsError(null);
+
+    try {
+      const rows = await fetchPostComments(postId);
+      if (!mountedRef.current) return;
+      setComments(rows);
+      setCommentCount(rows.length);
+    } catch (commentsLoadError) {
+      if (!mountedRef.current) return;
+      setCommentsError(
+        commentsLoadError?.message || 'Comments could not be loaded.'
+      );
+    } finally {
+      if (mountedRef.current) setCommentsLoading(false);
+    }
+  }, [postId]);
+
+  const openComments = () => {
+    setCommentsVisible(true);
+    setCommentText('');
+    setComments([]);
+    loadComments();
+  };
+
+  const closeComments = () => {
+    setCommentsVisible(false);
+    setCommentsError(null);
+    setCommentText('');
+  };
+
+  const submitComment = async () => {
+    const text = commentText.trim();
+    if (!text || commentSending) return;
+
+    const temporaryId = localCommentId();
+    setCommentSending(true);
+    setCommentText('');
+    setComments((current) => [
+      ...current,
+      {
+        id: temporaryId,
+        userName: 'You',
+        avatarUri: null,
+        text,
+        pending: true,
+      },
+    ]);
+
+    try {
+      await addPostComment(postId, text);
+      const rows = await fetchPostComments(postId);
+
+      if (!mountedRef.current) return;
+      setComments(rows);
+      setCommentCount(rows.length);
+    } catch (commentError) {
+      if (mountedRef.current) {
+        setComments((current) =>
+          current.filter((comment) => comment.id !== temporaryId)
+        );
+        setCommentText(text);
+      }
+
+      Alert.alert(
+        'Comment not posted',
+        commentError?.message || 'Please try again.'
+      );
+    } finally {
+      if (mountedRef.current) setCommentSending(false);
+    }
+  };
+
+  const editPost = () => {
+    setOwnerMenuVisible(false);
+    navigation.navigate('EditPost', { postId });
+  };
+
+  const removePost = async () => {
+    if (deleting) return;
+
+    setDeleting(true);
+    try {
+      await deleteOwnPost(postId);
+      setOwnerMenuVisible(false);
+      navigation.goBack();
+    } catch (deleteError) {
+      Alert.alert(
+        'Post not deleted',
+        deleteError?.message || 'Please try again.'
+      );
+    } finally {
+      if (mountedRef.current) setDeleting(false);
+    }
+  };
+
   const displayMedia = media.length
     ? media
     : post?.image_url
@@ -103,7 +232,9 @@ export function PostDetailScreen({ route, navigation }) {
           {
             id: 'primary-image',
             url: post.image_url,
-            media_type: 'image',
+            media_type: /\.(mp4|mov|m4v)(?:$|\?)/i.test(post.image_url)
+              ? 'video'
+              : 'image',
           },
         ]
       : [];
@@ -120,23 +251,16 @@ export function PostDetailScreen({ route, navigation }) {
   if (error || !post) {
     return (
       <SafeAreaView edges={['top']} style={styles.centerRoot}>
-        <Ionicons
-          name="alert-circle-outline"
-          size={34}
-          color={COLORS.subtext}
-        />
+        <Ionicons name="alert-circle-outline" size={34} color={COLORS.subtext} />
         <Text style={styles.errorTitle}>Post unavailable</Text>
         <Text style={styles.errorBody}>
           {error || 'The post could not be found.'}
         </Text>
         <View style={styles.errorActions}>
-          <Pressable
-            onPress={() => navigation.goBack()}
-            style={styles.secondaryButton}
-          >
+          <Pressable onPress={() => navigation.goBack()} style={styles.secondaryButton}>
             <Text style={styles.secondaryButtonText}>Go back</Text>
           </Pressable>
-          <Pressable onPress={load} style={styles.primaryButton}>
+          <Pressable onPress={() => load()} style={styles.primaryButton}>
             <Text style={styles.primaryButtonText}>Try again</Text>
           </Pressable>
         </View>
@@ -147,24 +271,23 @@ export function PostDetailScreen({ route, navigation }) {
   return (
     <SafeAreaView edges={['top']} style={styles.root}>
       <View style={styles.header}>
-        <Pressable
-          onPress={() => navigation.goBack()}
-          hitSlop={10}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={24}
-            color={COLORS.text}
-          />
+        <Pressable onPress={() => navigation.goBack()} hitSlop={10} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Post</Text>
-        <Pressable hitSlop={10}>
-          <Ionicons
-            name="ellipsis-horizontal"
-            size={22}
-            color={COLORS.text}
-          />
-        </Pressable>
+        {isOwner ? (
+          <Pressable
+            onPress={() => setOwnerMenuVisible(true)}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Manage post"
+            style={styles.headerButton}
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.text} />
+          </Pressable>
+        ) : (
+          <View style={styles.headerButton} />
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -188,9 +311,7 @@ export function PostDetailScreen({ route, navigation }) {
               <Text style={styles.authorName} numberOfLines={1}>
                 {author?.display_name || 'Unknown'}
               </Text>
-              <Text style={styles.timestamp}>
-                {timeAgo(post.created_at)}
-              </Text>
+              <Text style={styles.timestamp}>{timeAgo(post.created_at)}</Text>
             </View>
           </Pressable>
 
@@ -200,37 +321,28 @@ export function PostDetailScreen({ route, navigation }) {
               pagingEnabled
               showsHorizontalScrollIndicator={false}
               onMomentumScrollEnd={(event) => {
-                const offset =
-                  event.nativeEvent.contentOffset.x || 0;
-                setActiveMediaIndex(
-                  Math.round(offset / mediaWidth)
-                );
+                const offset = event.nativeEvent.contentOffset.x || 0;
+                setActiveMediaIndex(Math.round(offset / mediaWidth));
               }}
               style={{ width: mediaWidth }}
             >
               {displayMedia.map((item, index) => (
-                <View
-                  key={item.id}
-                  style={[
-                    styles.mediaSlide,
-                    { width: mediaWidth },
-                  ]}
-                >
+                <View key={item.id} style={[styles.mediaSlide, { width: mediaWidth }]}>
                   {item.media_type === 'video' ? (
                     <Video
                       source={{ uri: item.url }}
                       style={styles.media}
                       resizeMode="contain"
-                      shouldPlay={activeMediaIndex === index}
+                      shouldPlay={
+                        activeMediaIndex === index &&
+                        !commentsVisible &&
+                        !ownerMenuVisible
+                      }
                       isLooping
                       useNativeControls
                     />
                   ) : (
-                    <Image
-                      source={{ uri: item.url }}
-                      style={styles.media}
-                      resizeMode="contain"
-                    />
+                    <Image source={{ uri: item.url }} style={styles.media} resizeMode="contain" />
                   )}
                 </View>
               ))}
@@ -259,39 +371,54 @@ export function PostDetailScreen({ route, navigation }) {
               />
             </Pressable>
 
-            <Pressable hitSlop={10} style={styles.actionButton}>
-              <Ionicons
-                name="chatbubble-outline"
-                size={26}
-                color={COLORS.text}
-              />
-            </Pressable>
-
-            <Pressable hitSlop={10} style={styles.actionButton}>
-              <Ionicons
-                name="paper-plane-outline"
-                size={26}
-                color={COLORS.text}
-              />
+            <Pressable onPress={openComments} hitSlop={10} style={styles.actionButton}>
+              <Ionicons name="chatbubble-outline" size={26} color={COLORS.text} />
             </Pressable>
           </View>
 
           <View style={styles.details}>
-            <Text style={styles.likes}>{likes} likes</Text>
+            <Text style={styles.likes}>{likes} {likes === 1 ? 'like' : 'likes'}</Text>
 
             {post.caption ? (
               <Text style={styles.caption}>
                 <Text style={styles.captionName}>
                   {author?.display_name || 'Unknown'}{' '}
                 </Text>
-                <Text style={styles.captionBody}>
-                  {post.caption}
-                </Text>
+                <Text style={styles.captionBody}>{post.caption}</Text>
               </Text>
             ) : null}
+
+            <Pressable onPress={openComments}>
+              <Text style={styles.commentsLink}>
+                {commentCount
+                  ? `View all ${commentCount} ${commentCount === 1 ? 'comment' : 'comments'}`
+                  : 'Add a comment'}
+              </Text>
+            </Pressable>
           </View>
         </View>
       </ScrollView>
+
+      <CommentsModal
+        visible={commentsVisible}
+        comments={comments}
+        loading={commentsLoading}
+        error={commentsError}
+        commentText={commentText}
+        sending={commentSending}
+        onChangeText={setCommentText}
+        onSubmit={submitComment}
+        onRetry={loadComments}
+        onClose={closeComments}
+      />
+
+      <PostOwnerMenu
+        visible={ownerMenuVisible}
+        busy={deleting}
+        onClose={() => !deleting && setOwnerMenuVisible(false)}
+        onEdit={editPost}
+        onDelete={removePost}
+      />
     </SafeAreaView>
   );
 }
@@ -352,17 +479,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
   },
   header: {
+    minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: COLORS.border,
   },
+  headerButton: {
+    width: 54,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerTitle: {
     fontFamily: 'Manrope_700Bold',
-    fontSize: 17,
+    fontSize: 18,
     color: COLORS.text,
   },
   content: {
@@ -444,6 +576,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
   },
   captionBody: {
+    fontFamily: 'Manrope_400Regular',
+  },
+  commentsLink: {
+    marginTop: 8,
+    color: COLORS.subtext,
     fontFamily: 'Manrope_400Regular',
   },
 });

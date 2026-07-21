@@ -29,6 +29,7 @@ export function PostCard({
   onOpenComments,
   onOpenPost,
   onOpenProfile,
+  onOpenMenu,
 }) {
   const [captionExpanded, setCaptionExpanded] = useState(false);
 
@@ -66,13 +67,23 @@ export function PostCard({
           </View>
         </Pressable>
 
-        <Pressable hitSlop={10} disabled>
-          <Ionicons
-            name="ellipsis-horizontal"
-            size={19}
-            color="#888"
-          />
-        </Pressable>
+        {onOpenMenu ? (
+          <Pressable
+            onPress={onOpenMenu}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Manage post"
+            style={styles.menuButton}
+          >
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={20}
+              color={COLORS.text}
+            />
+          </Pressable>
+        ) : (
+          <View style={styles.menuButton} />
+        )}
       </View>
 
       <PostMediaCarousel
@@ -163,6 +174,12 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  menuButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   authorText: {
     marginLeft: 10,

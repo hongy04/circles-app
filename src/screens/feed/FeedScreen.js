@@ -29,10 +29,12 @@ import {
   deleteOwnStory,
   fetchActiveStories,
 } from '../../services/storyService';
+import { deleteOwnPost } from '../../services/postService';
 import { PostCard } from '../../components/feed/PostCard';
 import { CommentsModal } from '../../components/feed/CommentsModal';
 import { StoriesRail } from '../../components/stories/StoriesRail';
 import { StoryViewer } from '../../components/stories/StoryViewer';
+import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 
 const PAGE_SIZE = 10;
 
@@ -50,6 +52,7 @@ export function FeedScreen({ navigation }) {
   const [posts, setPosts] = useState([]);
   const [stories, setStories] = useState([]);
   const [authed, setAuthed] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
 
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -65,6 +68,8 @@ export function FeedScreen({ navigation }) {
   const [commentsError, setCommentsError] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [commentSending, setCommentSending] = useState(false);
+  const [managedPost, setManagedPost] = useState(null);
+  const [deletingPostId, setDeletingPostId] = useState(null);
 
   const [storyOpen, setStoryOpen] = useState(null);
   const [storyIndex, setStoryIndex] = useState(0);
@@ -156,6 +161,7 @@ export function FeedScreen({ navigation }) {
 
         const isAuthed = Boolean(session);
         setAuthed(isAuthed);
+        setCurrentUserId(session?.user?.id || null);
 
         if (!isAuthed) {
           setInitialLoading(false);
@@ -176,7 +182,7 @@ export function FeedScreen({ navigation }) {
           .on(
             'postgres_changes',
             {
-              event: 'INSERT',
+              event: '*',
               schema: 'public',
               table: 'posts',
             },
@@ -459,6 +465,41 @@ export function FeedScreen({ navigation }) {
     refreshStories();
   }, [refreshFeed, refreshStories]);
 
+  const editManagedPost = useCallback(() => {
+    if (!managedPost?.id) return;
+
+    const postId = managedPost.id;
+    setManagedPost(null);
+    navigation.navigate('EditPost', { postId });
+  }, [managedPost, navigation]);
+
+  const removeManagedPost = useCallback(async () => {
+    if (!managedPost?.id || deletingPostId) return;
+
+    const postId = managedPost.id;
+    setDeletingPostId(postId);
+
+    try {
+      await deleteOwnPost(postId);
+
+      if (!mountedRef.current) return;
+
+      setPosts((currentPosts) =>
+        currentPosts.filter((post) => post.id !== postId)
+      );
+
+      if (openPostId === postId) closeComments();
+      setManagedPost(null);
+    } catch (error) {
+      Alert.alert(
+        'Post not deleted',
+        errorMessage(error, 'Please try again.')
+      );
+    } finally {
+      if (mountedRef.current) setDeletingPostId(null);
+    }
+  }, [closeComments, deletingPostId, managedPost, openPostId]);
+
   const openStory = useCallback((userIndex) => {
     setStoryOpen(userIndex);
     setStoryIndex(0);
@@ -585,6 +626,11 @@ export function FeedScreen({ navigation }) {
                     })
                 : undefined
             }
+            onOpenMenu={
+              item.user.id === currentUserId
+                ? () => setManagedPost(item)
+                : undefined
+            }
           />
         )}
         viewabilityConfig={viewabilityConfigRef.current}
@@ -703,6 +749,14 @@ export function FeedScreen({ navigation }) {
         onSubmit={submitComment}
         onRetry={() => openPostId && loadComments(openPostId)}
         onClose={closeComments}
+      />
+
+      <PostOwnerMenu
+        visible={Boolean(managedPost)}
+        busy={Boolean(deletingPostId)}
+        onClose={() => !deletingPostId && setManagedPost(null)}
+        onEdit={editManagedPost}
+        onDelete={removeManagedPost}
       />
 
       <Modal

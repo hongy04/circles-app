@@ -30,6 +30,7 @@ import { AuthNavigator } from './src/navigation/AuthNavigator';
 import { FeedScreen } from './src/screens/feed/FeedScreen';
 import { CreatePostScreen } from './src/screens/posts/CreatePostScreen';
 import { PostDetailScreen } from './src/screens/posts/PostDetailScreen';
+import { EditPostScreen } from './src/screens/posts/EditPostScreen';
 import { StoryComposerScreen } from './src/screens/stories/StoryComposerScreen';
 import { MeScreen } from './src/screens/profile/MeScreen';
 import { ProfileScreen } from './src/screens/profile/ProfileScreen';
@@ -80,6 +81,7 @@ export default function App() {
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
           <RootStack.Screen name="PostDetail" component={PostDetailScreen} />
+          <RootStack.Screen name="EditPost" component={EditPostScreen} />
         </RootStack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

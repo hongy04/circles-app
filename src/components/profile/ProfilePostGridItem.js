@@ -3,7 +3,7 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS } from '../../theme/colors';
 
-export function ProfilePostGridItem({ post, onPress, size }) {
+export function ProfilePostGridItem({ post, onPress, onMenuPress, size }) {
   const [imageFailed, setImageFailed] = useState(false);
   const isVideo = post.mediaType === 'video';
   const canShowImage = Boolean(post.previewUrl) && !isVideo && !imageFailed;
@@ -43,6 +43,24 @@ export function ProfilePostGridItem({ post, onPress, size }) {
         <View style={styles.videoBadge}>
           <Ionicons name="videocam" size={14} color="#fff" />
         </View>
+      ) : null}
+
+      {onMenuPress ? (
+        <Pressable
+          onPress={(event) => {
+            event.stopPropagation?.();
+            onMenuPress();
+          }}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="Manage post"
+          style={({ pressed }) => [
+            styles.menuBadge,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons name="ellipsis-horizontal" size={16} color="#fff" />
+        </Pressable>
       ) : null}
 
       {post.mediaCount > 1 ? (
@@ -86,11 +104,22 @@ const styles = StyleSheet.create({
   videoBadge: {
     position: 'absolute',
     top: 7,
-    right: 7,
+    left: 7,
     width: 25,
     height: 25,
     borderRadius: 13,
     backgroundColor: 'rgba(0,0,0,0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuBadge: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.66)',
     alignItems: 'center',
     justifyContent: 'center',
   },

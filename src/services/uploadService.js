@@ -39,6 +39,44 @@ function sanitizeFolder(folder) {
     .replace(/[^a-zA-Z0-9/_-]/g, '');
 }
 
+
+export function storagePathFromPublicUrl(url, bucket) {
+  if (!url || !bucket) return null;
+
+  const marker = `/storage/v1/object/public/${bucket}/`;
+  const markerIndex = url.indexOf(marker);
+  if (markerIndex < 0) return null;
+
+  const encodedPath = url
+    .slice(markerIndex + marker.length)
+    .split('?')[0];
+
+  try {
+    return decodeURIComponent(encodedPath);
+  } catch {
+    return encodedPath;
+  }
+}
+
+export async function removeStorageUrls(bucket, urls = []) {
+  const paths = Array.from(
+    new Set(
+      urls
+        .map((url) => storagePathFromPublicUrl(url, bucket))
+        .filter(Boolean)
+    )
+  );
+
+  if (!paths.length) return [];
+
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .remove(paths);
+
+  if (error) throw error;
+  return data || [];
+}
+
 export async function uploadToBucket(
   uri,
   bucket,
