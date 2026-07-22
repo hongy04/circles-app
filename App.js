@@ -38,7 +38,10 @@ import { DevAccountsScreen } from './src/screens/dev/DevAccountsScreen';
 import { InboxScreen } from './src/screens/conversations/InboxScreen';
 import { ChatScreen } from './src/screens/conversations/ChatScreen';
 import { CreateGroupScreen } from './src/screens/conversations/CreateGroupScreen';
-import { ConversationDetailsScreen } from './src/screens/conversations/ConversationDetailsScreen';
+import { CircleProfileScreen } from './src/screens/conversations/CircleProfileScreen';
+import { DirectConversationDetailsScreen } from './src/screens/conversations/DirectConversationDetailsScreen';
+import { EditCircleScreen } from './src/screens/conversations/EditCircleScreen';
+import { ConversationMediaViewerScreen } from './src/screens/conversations/ConversationMediaViewerScreen';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W, height: H } = Dimensions.get('window');
@@ -230,7 +233,7 @@ function CirclesStack() {
       <CirclesStackNav.Screen
         name="Chat"
         component={ChatScreen}
-        options={({ route }) => ({ title: route.params?.name || 'Chat' })}
+        options={{ headerShown: false }}
       />
       <CirclesStackNav.Screen
         name="CreateGroup"
@@ -238,9 +241,24 @@ function CirclesStack() {
         options={{ title: 'New Private Group' }}
       />
       <CirclesStackNav.Screen
-        name="ConversationDetails"
-        component={ConversationDetailsScreen}
-        options={{ title: 'Shared Space' }}
+        name="CircleProfile"
+        component={CircleProfileScreen}
+        options={{ title: 'Circle' }}
+      />
+      <CirclesStackNav.Screen
+        name="DirectConversationDetails"
+        component={DirectConversationDetailsScreen}
+        options={{ title: 'Details' }}
+      />
+      <CirclesStackNav.Screen
+        name="EditCircle"
+        component={EditCircleScreen}
+        options={{ title: 'Edit Circle' }}
+      />
+      <CirclesStackNav.Screen
+        name="ConversationMedia"
+        component={ConversationMediaViewerScreen}
+        options={{ headerShown: false, presentation: 'fullScreenModal' }}
       />
     </CirclesStackNav.Navigator>
   );

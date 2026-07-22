@@ -274,6 +274,9 @@ export function InboxScreen({ navigation }) {
       conversationId: conversation.id,
       name: conversation.title,
       kind: conversation.kind,
+      avatarUri: conversation.avatarUri,
+      otherUserId: conversation.otherUserId,
+      isCircle: conversation.isCircle,
     });
   };
 
@@ -303,6 +306,7 @@ export function InboxScreen({ navigation }) {
           conversationId,
           name: invitation.title,
           kind: 'group',
+          avatarUri: null,
         });
       }
     } catch (responseError) {
