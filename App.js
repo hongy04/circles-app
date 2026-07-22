@@ -32,6 +32,7 @@ import { EditPostScreen } from './src/screens/posts/EditPostScreen';
 import { StoryComposerScreen } from './src/screens/stories/StoryComposerScreen';
 import { MeScreen } from './src/screens/profile/MeScreen';
 import { ProfileScreen } from './src/screens/profile/ProfileScreen';
+import { ProfilePostsFeedScreen } from './src/screens/profile/ProfilePostsFeedScreen';
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
 import { DevAccountsScreen } from './src/screens/dev/DevAccountsScreen';
@@ -42,6 +43,11 @@ import { CircleProfileScreen } from './src/screens/conversations/CircleProfileSc
 import { DirectConversationDetailsScreen } from './src/screens/conversations/DirectConversationDetailsScreen';
 import { EditCircleScreen } from './src/screens/conversations/EditCircleScreen';
 import { ConversationMediaViewerScreen } from './src/screens/conversations/ConversationMediaViewerScreen';
+import { CreateCirclePostScreen } from './src/screens/conversations/CreateCirclePostScreen';
+import { CirclePostDetailScreen } from './src/screens/conversations/CirclePostDetailScreen';
+import { CirclePostsFeedScreen } from './src/screens/conversations/CirclePostsFeedScreen';
+import { CircleTimelineFeedScreen } from './src/screens/conversations/CircleTimelineFeedScreen';
+import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W, height: H } = Dimensions.get('window');
@@ -67,6 +73,7 @@ export default function App() {
           <RootStack.Screen name="CreatePost" component={CreatePostScreen} />
           <RootStack.Screen name="CreateStory" component={StoryComposerScreen} />
           <RootStack.Screen name="Profile" component={ProfileScreen} />
+          <RootStack.Screen name="ProfilePostsFeed" component={ProfilePostsFeedScreen} />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
           {IS_DEVELOPMENT ? (
@@ -246,6 +253,16 @@ function CirclesStack() {
         options={{ title: 'Circle' }}
       />
       <CirclesStackNav.Screen
+        name="CirclePostsFeed"
+        component={CirclePostsFeedScreen}
+        options={{ title: 'Posts' }}
+      />
+      <CirclesStackNav.Screen
+        name="CircleTimelineFeed"
+        component={CircleTimelineFeedScreen}
+        options={{ title: 'Timeline' }}
+      />
+      <CirclesStackNav.Screen
         name="DirectConversationDetails"
         component={DirectConversationDetailsScreen}
         options={{ title: 'Details' }}
@@ -254,6 +271,21 @@ function CirclesStack() {
         name="EditCircle"
         component={EditCircleScreen}
         options={{ title: 'Edit Circle' }}
+      />
+      <CirclesStackNav.Screen
+        name="CreateCirclePost"
+        component={CreateCirclePostScreen}
+        options={{ title: 'New Circle Post' }}
+      />
+      <CirclesStackNav.Screen
+        name="CirclePostDetail"
+        component={CirclePostDetailScreen}
+        options={{ title: 'Circle Post' }}
+      />
+      <CirclesStackNav.Screen
+        name="EditCirclePost"
+        component={EditCirclePostScreen}
+        options={{ title: 'Edit Circle Post' }}
       />
       <CirclesStackNav.Screen
         name="ConversationMedia"

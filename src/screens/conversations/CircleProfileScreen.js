@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -21,6 +21,10 @@ import {
   listConversationTimeline,
   subscribeToConversationChanges,
 } from '../../services/conversationService';
+import {
+  listCirclePosts,
+  subscribeToCirclePostChanges,
+} from '../../services/circlePostService';
 
 function Stat({ value, label, onPress }) {
   const content = (
@@ -47,7 +51,7 @@ function TimelineTile({ item, size, onPress }) {
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
-        styles.timelineTile,
+        styles.gridTile,
         { width: size, height: size },
         pressed && styles.pressed,
       ]}
@@ -61,7 +65,7 @@ function TimelineTile({ item, size, onPress }) {
       )}
 
       {item.mediaType === 'video' ? (
-        <View style={styles.videoBadge}>
+        <View style={styles.mediaBadge}>
           <Ionicons name="videocam" size={13} color="#fff" />
         </View>
       ) : null}
@@ -69,15 +73,61 @@ function TimelineTile({ item, size, onPress }) {
   );
 }
 
+function PostTile({ post, size, onPress }) {
+  const firstMedia = post.media?.[0];
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.gridTile,
+        { width: size, height: size },
+        pressed && styles.pressed,
+      ]}
+    >
+      {firstMedia?.mediaType === 'image' ? (
+        <Image source={{ uri: firstMedia.url }} style={styles.tileMedia} />
+      ) : (
+        <View style={styles.videoTile}>
+          <Ionicons
+            name={firstMedia ? 'play' : 'image-outline'}
+            size={28}
+            color="#fff"
+          />
+        </View>
+      )}
+
+      {firstMedia?.mediaType === 'video' ? (
+        <View style={styles.mediaBadge}>
+          <Ionicons name="videocam" size={13} color="#fff" />
+        </View>
+      ) : null}
+
+      {post.media?.length > 1 ? (
+        <View style={styles.multiBadge}>
+          <Ionicons name="copy-outline" size={14} color="#fff" />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
 export function CircleProfileScreen({ route, navigation }) {
-  const { conversationId } = route.params || {};
+  const { conversationId, initialTab = 'posts' } = route.params || {};
   const { width } = useWindowDimensions();
   const [details, setDetails] = useState(null);
   const [timeline, setTimeline] = useState([]);
-  const [activeTab, setActiveTab] = useState('timeline');
+  const [posts, setPosts] = useState([]);
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (initialTab === 'timeline' || initialTab === 'posts') {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!conversationId) return;
@@ -94,9 +144,14 @@ export function CircleProfileScreen({ route, navigation }) {
         throw new Error('This direct chat has no Circle profile.');
       }
 
-      const timelineRows = await listConversationTimeline(conversationId);
+      const [timelineRows, postRows] = await Promise.all([
+        listConversationTimeline(conversationId),
+        listCirclePosts(conversationId),
+      ]);
+
       setDetails(detailRows);
       setTimeline(timelineRows);
+      setPosts(postRows);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this private Circle.');
     } finally {
@@ -123,18 +178,28 @@ export function CircleProfileScreen({ route, navigation }) {
     }, [conversationId, load])
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) return undefined;
+      return subscribeToCirclePostChanges({
+        conversationId,
+        onChange: () => load({ quiet: true }),
+      });
+    }, [conversationId, load])
+  );
+
   const conversation = details?.conversation;
   const members = details?.members || [];
   const gridWidth = Math.min(width, 720);
   const tileSize = Math.floor(gridWidth / 3);
 
-  const viewerItems = useMemo(
-    () => timeline.map((item) => ({
-      ...item,
-      senderName: item.senderName || 'Circle member',
-    })),
-    [timeline]
-  );
+  const createPost = () => {
+    setActiveTab('posts');
+    navigation.navigate('CreateCirclePost', {
+      conversationId,
+      circleName: conversation?.title || 'Circle',
+    });
+  };
 
   const header = conversation ? (
     <>
@@ -162,31 +227,44 @@ export function CircleProfileScreen({ route, navigation }) {
 
         <View style={styles.statsRow}>
           <Stat
+            value={Number(conversation.post_count || posts.length)}
+            label="Posts"
+            onPress={() => setActiveTab('posts')}
+          />
+          <Stat
             value={Number(conversation.timeline_count || timeline.length)}
             label="Timeline"
             onPress={() => setActiveTab('timeline')}
           />
-          <Stat
-            value={Number(conversation.post_count || 0)}
-            label="Posts"
-            onPress={() => setActiveTab('posts')}
-          />
           <Stat value={members.length} label="Members" />
         </View>
 
-        {conversation.can_edit ? (
+        <View style={styles.actionRow}>
           <Pressable
-            onPress={() => navigation.navigate('EditCircle', {
-              conversationId,
-            })}
+            onPress={createPost}
             style={({ pressed }) => [
-              styles.editButton,
+              styles.primaryAction,
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.editButtonText}>Edit Circle</Text>
+            <Ionicons name="add" size={17} color="#fff" />
+            <Text style={styles.primaryActionText}>New Post</Text>
           </Pressable>
-        ) : null}
+
+          {conversation.can_edit ? (
+            <Pressable
+              onPress={() => navigation.navigate('EditCircle', {
+                conversationId,
+              })}
+              style={({ pressed }) => [
+                styles.secondaryAction,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.secondaryActionText}>Edit Circle</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.membersStrip}>
@@ -222,26 +300,6 @@ export function CircleProfileScreen({ route, navigation }) {
 
       <View style={styles.tabs}>
         <Pressable
-          onPress={() => setActiveTab('timeline')}
-          style={[
-            styles.tab,
-            activeTab === 'timeline' && styles.activeTab,
-          ]}
-        >
-          <Ionicons
-            name="time-outline"
-            size={18}
-            color={activeTab === 'timeline' ? COLORS.text : COLORS.subtext}
-          />
-          <Text style={[
-            styles.tabText,
-            activeTab === 'timeline' && styles.activeTabText,
-          ]}>
-            Timeline
-          </Text>
-        </Pressable>
-
-        <Pressable
           onPress={() => setActiveTab('posts')}
           style={[
             styles.tab,
@@ -258,6 +316,26 @@ export function CircleProfileScreen({ route, navigation }) {
             activeTab === 'posts' && styles.activeTabText,
           ]}>
             Posts
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => setActiveTab('timeline')}
+          style={[
+            styles.tab,
+            activeTab === 'timeline' && styles.activeTab,
+          ]}
+        >
+          <Ionicons
+            name="time-outline"
+            size={18}
+            color={activeTab === 'timeline' ? COLORS.text : COLORS.subtext}
+          />
+          <Text style={[
+            styles.tabText,
+            activeTab === 'timeline' && styles.activeTabText,
+          ]}>
+            Timeline
           </Text>
         </Pressable>
       </View>
@@ -285,25 +363,38 @@ export function CircleProfileScreen({ route, navigation }) {
     );
   }
 
-  const timelineData = activeTab === 'timeline' ? timeline : [];
+  const gridData = activeTab === 'timeline' ? timeline : posts;
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
       <View style={styles.contentWidth}>
         <FlatList
-          data={timelineData}
+          data={gridData}
           keyExtractor={(item) => item.id}
           numColumns={3}
           ListHeaderComponent={header}
           renderItem={({ item, index }) => (
-            <TimelineTile
-              item={item}
-              size={tileSize}
-              onPress={() => navigation.navigate('ConversationMedia', {
-                items: viewerItems,
-                startIndex: index,
-              })}
-            />
+            activeTab === 'timeline' ? (
+              <TimelineTile
+                item={item}
+                size={tileSize}
+                onPress={() => navigation.navigate('CircleTimelineFeed', {
+                  conversationId,
+                  initialMediaId: item.id,
+                  circleName: conversation?.title || 'Circle',
+                })}
+              />
+            ) : (
+              <PostTile
+                post={item}
+                size={tileSize}
+                onPress={() => navigation.navigate('CirclePostsFeed', {
+                  conversationId,
+                  initialPostId: item.id,
+                  circleName: conversation?.title || 'Circle',
+                })}
+              />
+            )
           )}
           ListEmptyComponent={(
             <View style={styles.emptyState}>
@@ -322,8 +413,19 @@ export function CircleProfileScreen({ route, navigation }) {
               <Text style={styles.emptyBody}>
                 {activeTab === 'timeline'
                   ? 'Photos and videos sent in Chat will appear here automatically, without being uploaded twice.'
-                  : 'Circle posts will be intentional posts made for this private shared profile. That separate post flow comes next.'}
+                  : 'Posts are intentional moments created for this private Circle. They stay separate from the automatic chat Timeline.'}
               </Text>
+              {activeTab === 'posts' ? (
+                <Pressable
+                  onPress={createPost}
+                  style={({ pressed }) => [
+                    styles.emptyButton,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={styles.emptyButtonText}>Create First Post</Text>
+                </Pressable>
+              ) : null}
             </View>
           )}
           refreshControl={(
@@ -417,19 +519,39 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
-  editButton: {
+  actionRow: {
     width: '100%',
-    maxWidth: 360,
-    minHeight: 38,
+    maxWidth: 390,
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
+  },
+  primaryAction: {
+    flex: 1,
+    minHeight: 40,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
+    gap: 5,
+    borderRadius: 9,
+    backgroundColor: COLORS.primary,
+  },
+  primaryActionText: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+  },
+  secondaryAction: {
+    flex: 1,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: 9,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     backgroundColor: '#f4f4f4',
   },
-  editButtonText: {
+  secondaryActionText: {
     color: COLORS.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
@@ -491,7 +613,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontFamily: 'Manrope_700Bold',
   },
-  timelineTile: {
+  gridTile: {
     overflow: 'hidden',
     borderWidth: 0.5,
     borderColor: COLORS.bg,
@@ -507,10 +629,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#1c1c1e',
   },
-  videoBadge: {
+  mediaBadge: {
     position: 'absolute',
     top: 7,
     right: 7,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.58)',
+  },
+  multiBadge: {
+    position: 'absolute',
+    top: 7,
+    left: 7,
     width: 24,
     height: 24,
     alignItems: 'center',
@@ -537,6 +670,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     textAlign: 'center',
+  },
+  emptyButton: {
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+  },
+  emptyButtonText: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
   },
   centerState: {
     flex: 1,

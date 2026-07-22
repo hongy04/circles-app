@@ -2,21 +2,32 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Video } from 'expo-av';
 import { COLORS } from '../../theme/colors';
 import { Avatar } from '../../components/Avatar';
-import { CommentsModal } from '../../components/feed/CommentsModal';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
+import {
+  InstagramCommentComposer,
+  InstagramCommentRow,
+  InstagramCommentsEmpty,
+  InstagramCommentsError,
+  InstagramCommentsLoading,
+} from '../../components/comments/InstagramComments';
 import {
   addPostComment,
   fetchPostComments,
@@ -35,6 +46,11 @@ function localCommentId() {
 export function PostDetailScreen({ route, navigation }) {
   const { postId } = route.params || {};
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const listRef = useRef(null);
+  const commentInputRef = useRef(null);
+  const mountedRef = useRef(true);
+
   const [post, setPost] = useState(null);
   const [author, setAuthor] = useState(null);
   const [media, setMedia] = useState([]);
@@ -49,14 +65,12 @@ export function PostDetailScreen({ route, navigation }) {
   const [ownerMenuVisible, setOwnerMenuVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const [commentsVisible, setCommentsVisible] = useState(false);
   const [comments, setComments] = useState([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsLoading, setCommentsLoading] = useState(true);
   const [commentsError, setCommentsError] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [commentSending, setCommentSending] = useState(false);
 
-  const mountedRef = useRef(true);
   const mediaWidth = Math.min(width, 720);
 
   const load = useCallback(async ({ silent = false } = {}) => {
@@ -89,19 +103,41 @@ export function PostDetailScreen({ route, navigation }) {
     }
   }, [postId]);
 
+  const loadComments = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setCommentsLoading(true);
+    setCommentsError(null);
+
+    try {
+      const rows = await fetchPostComments(postId);
+      if (!mountedRef.current) return;
+      setComments(rows);
+      setCommentCount(rows.length);
+    } catch (commentsLoadError) {
+      if (!mountedRef.current) return;
+      setCommentsError(
+        commentsLoadError?.message || 'Comments could not be loaded.'
+      );
+    } finally {
+      if (mountedRef.current && !silent) setCommentsLoading(false);
+    }
+  }, [postId]);
+
   useEffect(() => {
     mountedRef.current = true;
     load();
+    loadComments();
 
     const unsubscribe = navigation.addListener('focus', () => {
-      if (mountedRef.current && post) load({ silent: true });
+      if (!mountedRef.current) return;
+      load({ silent: true });
+      loadComments({ silent: true });
     });
 
     return () => {
       mountedRef.current = false;
       unsubscribe();
     };
-  }, [load, navigation, post?.id]);
+  }, [load, loadComments, navigation]);
 
   const onToggleLike = async () => {
     if (liking) return;
@@ -128,55 +164,29 @@ export function PostDetailScreen({ route, navigation }) {
     }
   };
 
-  const loadComments = useCallback(async () => {
-    setCommentsLoading(true);
-    setCommentsError(null);
-
-    try {
-      const rows = await fetchPostComments(postId);
-      if (!mountedRef.current) return;
-      setComments(rows);
-      setCommentCount(rows.length);
-    } catch (commentsLoadError) {
-      if (!mountedRef.current) return;
-      setCommentsError(
-        commentsLoadError?.message || 'Comments could not be loaded.'
-      );
-    } finally {
-      if (mountedRef.current) setCommentsLoading(false);
-    }
-  }, [postId]);
-
-  const openComments = () => {
-    setCommentsVisible(true);
-    setCommentText('');
-    setComments([]);
-    loadComments();
-  };
-
-  const closeComments = () => {
-    setCommentsVisible(false);
-    setCommentsError(null);
-    setCommentText('');
-  };
-
   const submitComment = async () => {
     const text = commentText.trim();
     if (!text || commentSending) return;
 
     const temporaryId = localCommentId();
+    const temporaryComment = {
+      id: temporaryId,
+      userId: null,
+      userName: 'You',
+      avatarUri: null,
+      text,
+      createdAt: new Date().toISOString(),
+      pending: true,
+    };
+
     setCommentSending(true);
     setCommentText('');
-    setComments((current) => [
-      ...current,
-      {
-        id: temporaryId,
-        userName: 'You',
-        avatarUri: null,
-        text,
-        pending: true,
-      },
-    ]);
+    setComments((current) => [...current, temporaryComment]);
+    setCommentCount((current) => current + 1);
+
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd?.({ animated: true });
+    });
 
     try {
       await addPostComment(postId, text);
@@ -190,6 +200,7 @@ export function PostDetailScreen({ route, navigation }) {
         setComments((current) =>
           current.filter((comment) => comment.id !== temporaryId)
         );
+        setCommentCount((current) => Math.max(0, current - 1));
         setCommentText(text);
       }
 
@@ -200,6 +211,13 @@ export function PostDetailScreen({ route, navigation }) {
     } finally {
       if (mountedRef.current) setCommentSending(false);
     }
+  };
+
+  const focusCommentComposer = () => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd?.({ animated: true });
+      setTimeout(() => commentInputRef.current?.focus?.(), 120);
+    });
   };
 
   const editPost = () => {
@@ -268,10 +286,130 @@ export function PostDetailScreen({ route, navigation }) {
     );
   }
 
+  const postHeader = (
+    <View style={styles.card}>
+      <Pressable
+        onPress={() =>
+          author?.id &&
+          navigation.navigate('Profile', {
+            userId: author.id,
+            name: author.display_name,
+          })
+        }
+        style={styles.authorRow}
+      >
+        <Avatar
+          size={40}
+          name={author?.display_name || 'Unknown'}
+          uri={author?.avatar_url}
+        />
+        <View style={styles.authorText}>
+          <Text style={styles.authorName} numberOfLines={1}>
+            {author?.display_name || 'Unknown'}
+          </Text>
+          <Text style={styles.timestamp}>{timeAgo(post.created_at)}</Text>
+        </View>
+      </Pressable>
+
+      <View style={styles.mediaSection}>
+        <FlatList
+          horizontal
+          pagingEnabled
+          data={displayMedia}
+          keyExtractor={(item) => item.id}
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(event) => {
+            const offset = event.nativeEvent.contentOffset.x || 0;
+            setActiveMediaIndex(Math.round(offset / mediaWidth));
+          }}
+          renderItem={({ item, index }) => (
+            <View style={[styles.mediaSlide, { width: mediaWidth }]}>
+              {item.media_type === 'video' ? (
+                <Video
+                  source={{ uri: item.url }}
+                  style={styles.media}
+                  resizeMode="contain"
+                  shouldPlay={
+                    activeMediaIndex === index &&
+                    !ownerMenuVisible
+                  }
+                  isLooping
+                  useNativeControls
+                />
+              ) : (
+                <Image
+                  source={{ uri: item.url }}
+                  style={styles.media}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+          )}
+        />
+
+        {displayMedia.length > 1 ? (
+          <View style={styles.pageBadge}>
+            <Text style={styles.pageBadgeText}>
+              {activeMediaIndex + 1}/{displayMedia.length}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.actions}>
+        <Pressable
+          onPress={onToggleLike}
+          disabled={liking}
+          hitSlop={10}
+          style={styles.actionButton}
+        >
+          <Ionicons
+            name={liked ? 'heart' : 'heart-outline'}
+            size={28}
+            color={liked ? '#e11d48' : COLORS.text}
+          />
+        </Pressable>
+
+        <Pressable
+          onPress={focusCommentComposer}
+          hitSlop={10}
+          style={styles.actionButton}
+        >
+          <Ionicons name="chatbubble-outline" size={26} color={COLORS.text} />
+        </Pressable>
+      </View>
+
+      <View style={styles.details}>
+        <Text style={styles.likes}>
+          {likes} {likes === 1 ? 'like' : 'likes'}
+        </Text>
+
+        {post.caption ? (
+          <Text style={styles.caption}>
+            <Text style={styles.captionName}>
+              {author?.display_name || 'Unknown'}{' '}
+            </Text>
+            <Text style={styles.captionBody}>{post.caption}</Text>
+          </Text>
+        ) : null}
+
+        <Text style={styles.commentCount}>
+          {commentCount} {commentCount === 1 ? 'comment' : 'comments'}
+        </Text>
+      </View>
+
+      <View style={styles.commentsDivider} />
+    </View>
+  );
+
   return (
     <SafeAreaView edges={['top']} style={styles.root}>
       <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={10} style={styles.headerButton}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={10}
+          style={styles.headerButton}
+        >
           <Ionicons name="chevron-back" size={24} color={COLORS.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Post</Text>
@@ -290,127 +428,57 @@ export function PostDetailScreen({ route, navigation }) {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={[styles.card, { maxWidth: mediaWidth }]}>
-          <Pressable
-            onPress={() =>
-              author?.id &&
-              navigation.navigate('Profile', {
-                userId: author.id,
-                name: author.display_name,
-              })
-            }
-            style={styles.authorRow}
-          >
-            <Avatar
-              size={40}
-              name={author?.display_name || 'Unknown'}
-              uri={author?.avatar_url}
-            />
-            <View style={styles.authorText}>
-              <Text style={styles.authorName} numberOfLines={1}>
-                {author?.display_name || 'Unknown'}
-              </Text>
-              <Text style={styles.timestamp}>{timeAgo(post.created_at)}</Text>
-            </View>
-          </Pressable>
-
-          <View style={styles.mediaSection}>
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={(event) => {
-                const offset = event.nativeEvent.contentOffset.x || 0;
-                setActiveMediaIndex(Math.round(offset / mediaWidth));
-              }}
-              style={{ width: mediaWidth }}
-            >
-              {displayMedia.map((item, index) => (
-                <View key={item.id} style={[styles.mediaSlide, { width: mediaWidth }]}>
-                  {item.media_type === 'video' ? (
-                    <Video
-                      source={{ uri: item.url }}
-                      style={styles.media}
-                      resizeMode="contain"
-                      shouldPlay={
-                        activeMediaIndex === index &&
-                        !commentsVisible &&
-                        !ownerMenuVisible
-                      }
-                      isLooping
-                      useNativeControls
-                    />
-                  ) : (
-                    <Image source={{ uri: item.url }} style={styles.media} resizeMode="contain" />
-                  )}
-                </View>
-              ))}
-            </ScrollView>
-
-            {displayMedia.length > 1 ? (
-              <View style={styles.pageBadge}>
-                <Text style={styles.pageBadgeText}>
-                  {activeMediaIndex + 1}/{displayMedia.length}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          <View style={styles.actions}>
-            <Pressable
-              onPress={onToggleLike}
-              disabled={liking}
-              hitSlop={10}
-              style={styles.actionButton}
-            >
-              <Ionicons
-                name={liked ? 'heart' : 'heart-outline'}
-                size={28}
-                color={liked ? '#e11d48' : COLORS.text}
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        <View style={styles.contentWidth}>
+          <FlatList
+            ref={listRef}
+            data={comments}
+            keyExtractor={(item) => item.id}
+            ListHeaderComponent={postHeader}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            contentContainerStyle={styles.listContent}
+            renderItem={({ item }) => (
+              <InstagramCommentRow
+                comment={{
+                  id: item.id,
+                  name: item.userName,
+                  avatarUri: item.avatarUri,
+                  body: item.text,
+                  timeLabel: item.createdAt ? timeAgo(item.createdAt) : '',
+                  pending: item.pending,
+                }}
+                onOpenProfile={item.userId
+                  ? () => navigation.navigate('Profile', { userId: item.userId })
+                  : undefined}
               />
-            </Pressable>
+            )}
+            ListEmptyComponent={commentsLoading ? (
+              <InstagramCommentsLoading />
+            ) : commentsError ? (
+              <InstagramCommentsError
+                message={commentsError}
+                onRetry={() => loadComments()}
+              />
+            ) : (
+              <InstagramCommentsEmpty />
+            )}
+          />
 
-            <Pressable onPress={openComments} hitSlop={10} style={styles.actionButton}>
-              <Ionicons name="chatbubble-outline" size={26} color={COLORS.text} />
-            </Pressable>
-          </View>
-
-          <View style={styles.details}>
-            <Text style={styles.likes}>{likes} {likes === 1 ? 'like' : 'likes'}</Text>
-
-            {post.caption ? (
-              <Text style={styles.caption}>
-                <Text style={styles.captionName}>
-                  {author?.display_name || 'Unknown'}{' '}
-                </Text>
-                <Text style={styles.captionBody}>{post.caption}</Text>
-              </Text>
-            ) : null}
-
-            <Pressable onPress={openComments}>
-              <Text style={styles.commentsLink}>
-                {commentCount
-                  ? `View all ${commentCount} ${commentCount === 1 ? 'comment' : 'comments'}`
-                  : 'Add a comment'}
-              </Text>
-            </Pressable>
-          </View>
+          <InstagramCommentComposer
+            inputRef={commentInputRef}
+            value={commentText}
+            onChangeText={setCommentText}
+            onSubmit={submitComment}
+            sending={commentSending}
+            bottomInset={insets.bottom}
+          />
         </View>
-      </ScrollView>
-
-      <CommentsModal
-        visible={commentsVisible}
-        comments={comments}
-        loading={commentsLoading}
-        error={commentsError}
-        commentText={commentText}
-        sending={commentSending}
-        onChangeText={setCommentText}
-        onSubmit={submitComment}
-        onRetry={loadComments}
-        onClose={closeComments}
-      />
+      </KeyboardAvoidingView>
 
       <PostOwnerMenu
         visible={ownerMenuVisible}
@@ -427,6 +495,15 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: COLORS.bg,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  contentWidth: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
   },
   centerRoot: {
     flex: 1,
@@ -497,8 +574,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: COLORS.text,
   },
-  content: {
-    paddingBottom: 30,
+  listContent: {
+    flexGrow: 1,
+    paddingBottom: 22,
   },
   card: {
     width: '100%',
@@ -562,7 +640,7 @@ const styles = StyleSheet.create({
   details: {
     paddingHorizontal: 12,
     paddingTop: 8,
-    paddingBottom: 16,
+    paddingBottom: 13,
   },
   likes: {
     fontFamily: 'Manrope_700Bold',
@@ -578,9 +656,15 @@ const styles = StyleSheet.create({
   captionBody: {
     fontFamily: 'Manrope_400Regular',
   },
-  commentsLink: {
+  commentCount: {
     marginTop: 8,
     color: COLORS.subtext,
     fontFamily: 'Manrope_400Regular',
+    fontSize: 12,
+  },
+  commentsDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: COLORS.border,
+    marginBottom: 2,
   },
 });

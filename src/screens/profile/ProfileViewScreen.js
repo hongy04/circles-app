@@ -306,7 +306,11 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
             <ProfilePostGridItem
               post={item}
               size={gridWidth > 0 ? Math.floor(gridWidth / 3) : undefined}
-              onPress={() => navigation.navigate('PostDetail', { postId: item.id })}
+              onPress={() => navigation.navigate('ProfilePostsFeed', {
+                userId: profile?.id,
+                profileName: profile?.display_name || 'Posts',
+                initialPostId: item.id,
+              })}
               onMenuPress={
                 resolvedIsSelf ? () => setManagedPost(item) : undefined
               }
