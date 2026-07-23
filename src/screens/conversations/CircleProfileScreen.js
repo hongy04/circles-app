@@ -201,6 +201,13 @@ export function CircleProfileScreen({ route, navigation }) {
     });
   };
 
+  const openPeople = () => {
+    navigation.navigate('CirclePeople', {
+      conversationId,
+      circleName: conversation?.title || 'Circle',
+    });
+  };
+
   const header = conversation ? (
     <>
       <View style={styles.profileHeader}>
@@ -236,7 +243,11 @@ export function CircleProfileScreen({ route, navigation }) {
             label="Timeline"
             onPress={() => setActiveTab('timeline')}
           />
-          <Stat value={members.length} label="Members" />
+          <Stat
+            value={members.length}
+            label="People"
+            onPress={openPeople}
+          />
         </View>
 
         <View style={styles.actionRow}>
@@ -251,6 +262,17 @@ export function CircleProfileScreen({ route, navigation }) {
             <Text style={styles.primaryActionText}>New Post</Text>
           </Pressable>
 
+          <Pressable
+            onPress={openPeople}
+            style={({ pressed }) => [
+              styles.secondaryAction,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons name="people-outline" size={16} color={COLORS.text} />
+            <Text style={styles.secondaryActionText}>People</Text>
+          </Pressable>
+
           {conversation.can_edit ? (
             <Pressable
               onPress={() => navigation.navigate('EditCircle', {
@@ -261,14 +283,24 @@ export function CircleProfileScreen({ route, navigation }) {
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={styles.secondaryActionText}>Edit Circle</Text>
+              <Ionicons name="create-outline" size={16} color={COLORS.text} />
+              <Text style={styles.secondaryActionText}>Edit</Text>
             </Pressable>
           ) : null}
         </View>
       </View>
 
       <View style={styles.membersStrip}>
-        <Text style={styles.membersHeading}>Members</Text>
+        <View style={styles.membersHeadingRow}>
+          <Text style={styles.membersHeading}>People</Text>
+          <Pressable
+            onPress={openPeople}
+            hitSlop={8}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <Text style={styles.seeAllText}>See all</Text>
+          </Pressable>
+        </View>
         <FlatList
           horizontal
           data={members}
@@ -544,8 +576,10 @@ const styles = StyleSheet.create({
   secondaryAction: {
     flex: 1,
     minHeight: 40,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 5,
     borderRadius: 9,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
@@ -562,12 +596,22 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 11,
   },
-  membersHeading: {
-    marginLeft: 14,
+  membersHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 14,
     marginBottom: 9,
+  },
+  membersHeading: {
     color: COLORS.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
+  },
+  seeAllText: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
   },
   membersList: {
     paddingHorizontal: 10,

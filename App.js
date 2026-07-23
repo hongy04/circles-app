@@ -40,6 +40,8 @@ import { InboxScreen } from './src/screens/conversations/InboxScreen';
 import { ChatScreen } from './src/screens/conversations/ChatScreen';
 import { CreateGroupScreen } from './src/screens/conversations/CreateGroupScreen';
 import { CircleProfileScreen } from './src/screens/conversations/CircleProfileScreen';
+import { CirclePeopleScreen } from './src/screens/conversations/CirclePeopleScreen';
+import { InviteCirclePeopleScreen } from './src/screens/conversations/InviteCirclePeopleScreen';
 import { DirectConversationDetailsScreen } from './src/screens/conversations/DirectConversationDetailsScreen';
 import { EditCircleScreen } from './src/screens/conversations/EditCircleScreen';
 import { ConversationMediaViewerScreen } from './src/screens/conversations/ConversationMediaViewerScreen';
@@ -251,6 +253,16 @@ function CirclesStack() {
         name="CircleProfile"
         component={CircleProfileScreen}
         options={{ title: 'Circle' }}
+      />
+      <CirclesStackNav.Screen
+        name="CirclePeople"
+        component={CirclePeopleScreen}
+        options={{ title: 'People' }}
+      />
+      <CirclesStackNav.Screen
+        name="InviteCirclePeople"
+        component={InviteCirclePeopleScreen}
+        options={{ title: 'Invite People' }}
       />
       <CirclesStackNav.Screen
         name="CirclePostsFeed"
