@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
+import { trackLaunchEvent } from './analyticsService';
 import { createConversationMediaSignedUrl } from './conversationMediaService';
 
 function mapMember(row) {
@@ -93,7 +94,14 @@ export async function invitePeopleToCircle(conversationId, userIds) {
     p_user_ids: userIds,
   });
   if (error) throw error;
-  return Number(data || 0);
+  const invitationCount = Number(data || 0);
+
+  void trackLaunchEvent('circle_member_invites_sent', {
+    surface: 'circle_people',
+    invitation_count: invitationCount,
+  });
+
+  return invitationCount;
 }
 
 export async function cancelCircleInvitation(invitationId) {

@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import 'react-native-reanimated';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, Dimensions, Image, Pressable, ScrollView, StyleSheet, Text, View
 } from 'react-native';
@@ -21,6 +21,11 @@ import { COLORS } from './src/theme/colors';
 import { IS_DEVELOPMENT } from './src/config/env';
 import { supabase } from './src/lib/supabase';
 import { ensureAuthed } from './src/services/authService';
+import { trackLaunchEvent } from './src/services/analyticsService';
+import {
+  FEATURE_FLAGS,
+  loadFeatureFlags,
+} from './src/services/featureFlagService';
 import {
   getNotificationBadgeCount,
   subscribeToNotificationChanges,
@@ -510,6 +515,7 @@ function MutualsScreen({ navigation, route }) {
   const [responding, setResponding] = useState({});
   const [tab, setTab] = useState(route?.params?.initialTab || 'mutuals');
   const [authed, setAuthed] = useState(false);
+  const hasTrackedOpen = useRef(false);
 
   useEffect(() => {
     if (route?.params?.initialTab) {
@@ -537,19 +543,53 @@ function MutualsScreen({ navigation, route }) {
         return;
       }
 
-      const [candidateResult, requestResult, connectionResult] = await Promise.all([
+      const [
+        candidateResult,
+        requestResult,
+        connectionResult,
+        featureFlags,
+      ] = await Promise.all([
         supabase.rpc('mutual_candidates'),
         supabase.rpc('incoming_requests'),
         supabase.rpc('get_my_connections'),
+        loadFeatureFlags(),
       ]);
 
       if (candidateResult.error) throw candidateResult.error;
       if (requestResult.error) throw requestResult.error;
       if (connectionResult.error) throw connectionResult.error;
 
-      setCandidates(candidateResult.data || []);
-      setIncoming(requestResult.data || []);
-      setConnections(connectionResult.data || []);
+      const previewEnabled =
+        featureFlags[FEATURE_FLAGS.MUTUAL_PREVIEW_POSTS] !== false;
+      const nextCandidates = (candidateResult.data || []).map((candidate) =>
+        previewEnabled
+          ? candidate
+          : {
+              ...candidate,
+              preview_post_id: null,
+              preview_caption: null,
+              preview_url: null,
+              preview_media_type: null,
+              preview_created_at: null,
+              preview_media_count: 0,
+            }
+      );
+      const nextRequests = requestResult.data || [];
+      const nextConnections = connectionResult.data || [];
+
+      setCandidates(nextCandidates);
+      setIncoming(nextRequests);
+      setConnections(nextConnections);
+
+      if (!hasTrackedOpen.current) {
+        hasTrackedOpen.current = true;
+        void trackLaunchEvent('mutuals_opened', {
+          surface: 'mutuals',
+          candidate_count: nextCandidates.length,
+          request_count: nextRequests.length,
+          connection_count: nextConnections.length,
+        });
+      }
     } catch (err) {
       Alert.alert('Could not load people', err?.message || 'Please try again.');
     } finally {
@@ -584,6 +624,9 @@ function MutualsScreen({ navigation, route }) {
       });
       if (error) throw error;
       setCandidates((current) => current.filter((user) => user.id !== userId));
+      void trackLaunchEvent('connection_request_sent', {
+        surface: 'mutuals',
+      });
     } catch (error) {
       Alert.alert('Could not send request', error?.message || 'Please try again.');
     } finally {
@@ -606,6 +649,10 @@ function MutualsScreen({ navigation, route }) {
         action,
       });
       if (error) throw error;
+      void trackLaunchEvent('connection_request_responded', {
+        surface: 'mutuals',
+        action,
+      });
       await load();
     } catch (error) {
       Alert.alert('Could not update request', error?.message || 'Please try again.');

@@ -1,5 +1,11 @@
 import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
+import { trackLaunchEvent } from './analyticsService';
+import {
+  FEATURE_FLAGS,
+  loadFeatureFlags,
+  requireFeature,
+} from './featureFlagService';
 import { uploadToBucket } from './uploadService';
 
 const REMOTE_URI_PATTERN = /^https?:\/\//i;
@@ -83,6 +89,10 @@ export async function fetchProfilePosts(userId) {
 
 export async function fetchPreConnectionProfileShell(userId) {
   await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.PRECONNECTION_PROFILE_SHELL,
+    'Pre-connection profiles are temporarily unavailable.'
+  );
 
   const { data, error } = await supabase
     .rpc('get_preconnection_profile_shell', {
@@ -96,12 +106,38 @@ export async function fetchPreConnectionProfileShell(userId) {
     throw new Error('This profile is private or unavailable.');
   }
 
-  return {
+  const featureFlags = await loadFeatureFlags();
+  const previewEnabled =
+    featureFlags[FEATURE_FLAGS.MUTUAL_PREVIEW_POSTS] !== false;
+  const shell = {
     ...data,
+    ...(previewEnabled
+      ? {}
+      : {
+          preview_post_id: null,
+          preview_caption: null,
+          preview_url: null,
+          preview_media_type: null,
+          preview_created_at: null,
+          preview_media_count: 0,
+        }),
     mutual_connection_count: Number(data.mutual_connection_count || 0),
     shared_circle_count: Number(data.shared_circle_count || 0),
-    preview_media_count: Number(data.preview_media_count || 0),
+    preview_media_count: previewEnabled
+      ? Number(data.preview_media_count || 0)
+      : 0,
   };
+
+  void trackLaunchEvent('preconnection_profile_opened', {
+    surface: 'preconnection_profile',
+    has_preview: Boolean(shell.preview_post_id),
+    has_mutual_contact: Boolean(shell.has_mutual_contact),
+    mutual_connection_count: shell.mutual_connection_count,
+    shared_circle_count: shell.shared_circle_count,
+    request_state: shell.request_state || 'none',
+  });
+
+  return shell;
 }
 
 export async function fetchProfilePage(userId) {
@@ -141,6 +177,10 @@ export async function fetchMyMutualPreviewPostId() {
 
 export async function setMyMutualPreviewPost(postId = null) {
   await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.MUTUAL_PREVIEW_POSTS,
+    'Mutuals preview posts are temporarily unavailable.'
+  );
 
   const { data, error } = await supabase.rpc(
     'set_my_mutual_preview_post',
@@ -150,6 +190,12 @@ export async function setMyMutualPreviewPost(postId = null) {
   );
 
   if (error) throw error;
+
+  void trackLaunchEvent('mutual_preview_updated', {
+    surface: 'profile',
+    action: postId ? 'set' : 'clear',
+  });
+
   return data || null;
 }
 
@@ -224,6 +270,10 @@ export async function sendProfileConnectionRequest(userId) {
   });
 
   if (error) throw error;
+
+  void trackLaunchEvent('connection_request_sent', {
+    surface: 'preconnection_profile',
+  });
 }
 
 export async function respondToProfileRequest(requestId, action) {
@@ -233,6 +283,11 @@ export async function respondToProfileRequest(requestId, action) {
   });
 
   if (error) throw error;
+
+  void trackLaunchEvent('connection_request_responded', {
+    surface: 'preconnection_profile',
+    action,
+  });
 }
 
 export async function getAccountSession() {
