@@ -208,6 +208,13 @@ export function CircleProfileScreen({ route, navigation }) {
     });
   };
 
+  const openEvents = () => {
+    navigation.navigate('CircleEvents', {
+      conversationId,
+      circleName: conversation?.title || 'Circle',
+    });
+  };
+
   const openNotificationSettings = () => {
     navigation.navigate('ConversationNotificationSettings', {
       conversationId,
@@ -294,6 +301,25 @@ export function CircleProfileScreen({ route, navigation }) {
             </Pressable>
           ) : null}
         </View>
+
+        <Pressable
+          onPress={openEvents}
+          style={({ pressed }) => [
+            styles.plansRow,
+            pressed && styles.pressed,
+          ]}
+        >
+          <View style={styles.plansIcon}>
+            <Ionicons name="calendar-outline" size={20} color={COLORS.text} />
+          </View>
+          <View style={styles.plansCopy}>
+            <Text style={styles.plansTitle}>Plans & Events</Text>
+            <Text style={styles.plansBody}>
+              Make a real plan and let every Circle member RSVP.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
+        </Pressable>
 
         <Pressable
           onPress={openNotificationSettings}
@@ -614,6 +640,44 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
+  },
+  plansRow: {
+    width: '100%',
+    maxWidth: 520,
+    minHeight: 74,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: '#f8f8f8',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  plansIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eeeeee',
+  },
+  plansCopy: {
+    flex: 1,
+    marginHorizontal: 11,
+  },
+  plansTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+  },
+  plansBody: {
+    marginTop: 2,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
   },
   notificationSettingsRow: {
     width: '100%',

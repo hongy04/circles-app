@@ -5,6 +5,7 @@ export const FEATURE_FLAGS = Object.freeze({
   MUTUAL_PREVIEW_POSTS: 'mutual_preview_posts',
   PRECONNECTION_PROFILE_SHELL: 'preconnection_profile_shell',
   LAUNCH_ANALYTICS: 'launch_analytics',
+  CIRCLE_EVENTS: 'circle_events',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -12,6 +13,7 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.MUTUAL_PREVIEW_POSTS]: true,
   [FEATURE_FLAGS.PRECONNECTION_PROFILE_SHELL]: true,
   [FEATURE_FLAGS.LAUNCH_ANALYTICS]: true,
+  [FEATURE_FLAGS.CIRCLE_EVENTS]: true,
 });
 
 const CACHE_TTL_MS = 60_000;

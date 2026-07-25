@@ -14,6 +14,9 @@ const ALLOWED_EVENT_NAMES = new Set([
   'connection_request_sent',
   'connection_request_responded',
   'circle_member_invites_sent',
+  'event_created',
+  'event_opened',
+  'event_rsvp_updated',
 ]);
 
 const ALLOWED_PROPERTY_KEYS = new Set([
@@ -33,6 +36,9 @@ const ALLOWED_PROPERTY_KEYS = new Set([
   'mutual_connection_count',
   'shared_circle_count',
   'invitation_count',
+  'rsvp_status',
+  'has_location',
+  'has_description',
 ]);
 
 function sanitizeProperties(properties = {}) {
@@ -56,7 +62,7 @@ function sanitizeProperties(properties = {}) {
  * Best-effort first-party analytics. Tracking must never block or break a user
  * action, and the database RPC independently strips non-allowlisted fields.
  */
-export async function trackLaunchEvent(eventName, properties = {}) {
+export async function trackAppEvent(eventName, properties = {}) {
   if (!ALLOWED_EVENT_NAMES.has(eventName)) return false;
 
   try {
@@ -71,3 +77,6 @@ export async function trackLaunchEvent(eventName, properties = {}) {
     return false;
   }
 }
+
+// Backward-compatible name retained for the Phase 1 call sites.
+export const trackLaunchEvent = trackAppEvent;

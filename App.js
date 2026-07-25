@@ -62,6 +62,9 @@ import { CreateCirclePostScreen } from './src/screens/conversations/CreateCircle
 import { CirclePostDetailScreen } from './src/screens/conversations/CirclePostDetailScreen';
 import { CirclePostsFeedScreen } from './src/screens/conversations/CirclePostsFeedScreen';
 import { CircleTimelineFeedScreen } from './src/screens/conversations/CircleTimelineFeedScreen';
+import { CircleEventsScreen } from './src/screens/conversations/CircleEventsScreen';
+import { CreateEventScreen } from './src/screens/conversations/CreateEventScreen';
+import { EventDetailScreen } from './src/screens/conversations/EventDetailScreen';
 import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
 import { getInviteLinkingPrefixes } from './src/services/inviteService';
 import { timeAgo } from './src/utils/timeAgo';
@@ -297,6 +300,21 @@ function CirclesStack() {
         name="CirclePeople"
         component={CirclePeopleScreen}
         options={{ title: 'People' }}
+      />
+      <CirclesStackNav.Screen
+        name="CircleEvents"
+        component={CircleEventsScreen}
+        options={{ title: 'Plans & Events' }}
+      />
+      <CirclesStackNav.Screen
+        name="CreateEvent"
+        component={CreateEventScreen}
+        options={{ title: 'New Event' }}
+      />
+      <CirclesStackNav.Screen
+        name="EventDetail"
+        component={EventDetailScreen}
+        options={{ title: 'Event' }}
       />
       <CirclesStackNav.Screen
         name="InviteCirclePeople"
