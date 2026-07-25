@@ -1,0 +1,1622 @@
+diff -ruN '--exclude=node_modules' /mnt/data/circles_step6_baseline/circles-app/README_STORIES_POLISH_STEP_6.md /mnt/data/circles_step6_work/circles-app/README_STORIES_POLISH_STEP_6.md
+--- /mnt/data/circles_step6_baseline/circles-app/README_STORIES_POLISH_STEP_6.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step6_work/circles-app/README_STORIES_POLISH_STEP_6.md	2026-07-20 21:11:33.719265701 +0000
+@@ -0,0 +1,95 @@
++# Circles Step 6 — Stories Polish
++
++This checkpoint polishes the complete story flow while keeping the existing 30-second / 25 MB story-video limits.
++
++## What changed
++
++### Story rail
++
++- Your active story is now combined with the **Your Story** item instead of appearing twice.
++- The small plus badge opens the composer to add another story.
++- Opening a story marks its ring as seen for the current app session.
++- Story changes refresh through Supabase Realtime.
++
++### Story viewer
++
++- Tap left or right to move between stories.
++- Press and hold to pause both photos and videos.
++- Photo stories advance automatically after five seconds.
++- Videos show real playback progress and advance when finished.
++- Video mute/unmute control.
++- Story media pauses while the app is in the background.
++- Full-photo rendering uses `contain` so portrait and landscape photos are not aggressively cropped.
++- Loading, retry, failed-media, and deleting states.
++- Your own stories have a delete action.
++- Top and bottom safe areas are respected on iPhone.
++
++### Story composer
++
++- Staged progress bar for preparing, uploading, and publishing.
++- New uploads use user-owned paths:
++
++  `stories/<user-id>/<filename>`
++
++The progress bar represents upload stages rather than byte-level network progress. A later resumable-upload checkpoint can add exact transfer percentages for larger videos.
++
++### Expiration
++
++- Stories are kept in chronological order for each person.
++- The Feed schedules a refresh when the next active story reaches its 24-hour expiration.
++- Insert and delete events also refresh the rail automatically.
++
++### Privacy and deletion
++
++The migration removes old permissive development policies for the `stories` table and restores explicit rules:
++
++- users may insert only their own stories;
++- users may view their own or accepted connections' active stories;
++- users may delete only their own stories;
++- users may delete only Storage objects they uploaded to the `stories` bucket.
++
++## Apply
++
++Copy the package contents into the Circles project root and allow Windows to replace or merge files.
++
++## Required migration
++
++Run this file in the Supabase SQL Editor before testing story deletion:
++
++`supabase/migrations/20260720_005_story_deletion_policy.sql`
++
++## Test on iPhone 14
++
++```powershell
++cd C:\Users\honge\Dev\circles-app
++npx expo start --tunnel --clear
++```
++
++1. Add a photo story and confirm the staged progress bar appears.
++2. Confirm **Your Story** shows the uploaded media with a small plus badge.
++3. Open the story and confirm the full photo is visible without unwanted cropping.
++4. Hold the story for at least a moment and confirm progress pauses.
++5. Release and confirm progress resumes.
++6. Add a second story and test left/right tapping between both items.
++7. Add a video under 25 MB and 30 seconds.
++8. Test pause, mute/unmute, and automatic advance at the end.
++9. Put the app in the background briefly and confirm playback does not continue.
++10. Delete one of your stories and confirm it disappears from the rail.
++11. Close and reopen the Feed and confirm the deletion persisted.
++
++## Test on web
++
++```powershell
++npx expo start --web --clear
++```
++
++Confirm story creation, viewing, retry states, navigation, mute, and deletion still work.
++
++## Commit
++
++```powershell
++git status
++git add App.js src supabase/migrations README_STORIES_POLISH_STEP_6.md
++git commit -m "Polish story viewing and deletion"
++git push
++```
+diff -ruN '--exclude=node_modules' /mnt/data/circles_step6_baseline/circles-app/src/components/stories/StoriesRail.js /mnt/data/circles_step6_work/circles-app/src/components/stories/StoriesRail.js
+--- /mnt/data/circles_step6_baseline/circles-app/src/components/stories/StoriesRail.js	2026-07-19 18:17:39.000000000 +0000
++++ /mnt/data/circles_step6_work/circles-app/src/components/stories/StoriesRail.js	2026-07-20 21:07:25.639068343 +0000
+@@ -1,99 +1,207 @@
+ import React from 'react';
+-import { Image, Pressable, ScrollView, Text, View } from 'react-native';
++import {
++  Image,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { COLORS } from '../../theme/colors';
+ import { getInitials } from '../../utils/getInitials';
+ 
+-export function StoriesRail({ stories, onAddYourStory, onOpen }) {
++function StoryAvatar({ story, seen }) {
+   return (
+-    <View style={{ paddingVertical: 10 }}>
++    <View
++      style={[
++        styles.ring,
++        seen ? styles.seenRing : styles.unseenRing,
++      ]}
++    >
++      <View style={styles.avatarInner}>
++        {story?.avatar ? (
++          <Image source={{ uri: story.avatar }} style={styles.avatarImage} />
++        ) : (
++          <Text style={styles.initials}>
++            {getInitials(story?.userName || 'You')}
++          </Text>
++        )}
++      </View>
++    </View>
++  );
++}
++
++export function StoriesRail({
++  stories,
++  onAddYourStory,
++  onOpen,
++  seenStoryUserIds = new Set(),
++}) {
++  const ownIndex = stories.findIndex((story) => story.isMine);
++  const ownStory = ownIndex >= 0 ? stories[ownIndex] : null;
++
++  return (
++    <View style={styles.root}>
+       <ScrollView
+         horizontal
+         showsHorizontalScrollIndicator={false}
+-        contentContainerStyle={{ paddingHorizontal: 12 }}
++        contentContainerStyle={styles.content}
+       >
+-        <Pressable
+-          onPress={onAddYourStory}
+-          style={{ alignItems: 'center', marginRight: 14 }}
+-        >
+-          <View
+-            style={{
+-              width: 64,
+-              height: 64,
+-              borderRadius: 32,
+-              borderWidth: 2,
+-              borderColor: COLORS.primary,
+-              alignItems: 'center',
+-              justifyContent: 'center',
+-              backgroundColor: '#f6f6f6',
+-            }}
++        <View style={styles.item}>
++          <Pressable
++            onPress={() =>
++              ownStory ? onOpen(ownIndex) : onAddYourStory()
++            }
++            accessibilityRole="button"
++            accessibilityLabel={
++              ownStory ? 'View your story' : 'Add your story'
++            }
++            style={({ pressed }) => [pressed && styles.pressed]}
+           >
+-            <Ionicons name="add" size={28} color={COLORS.primary} />
+-          </View>
++            {ownStory ? (
++              <StoryAvatar
++                story={ownStory}
++                seen={seenStoryUserIds.has(ownStory.userId)}
++              />
++            ) : (
++              <View style={[styles.ring, styles.emptyRing]}>
++                <View style={styles.emptyAvatar}>
++                  <Ionicons
++                    name="person-outline"
++                    size={25}
++                    color={COLORS.subtext}
++                  />
++                </View>
++              </View>
++            )}
++          </Pressable>
+ 
+-          <Text
+-            style={{
+-              fontFamily: 'Manrope_600SemiBold',
+-              fontSize: 12,
+-              marginTop: 6,
+-              color: COLORS.text,
+-            }}
++          <Pressable
++            onPress={onAddYourStory}
++            accessibilityRole="button"
++            accessibilityLabel="Add another story"
++            hitSlop={8}
++            style={({ pressed }) => [
++              styles.addBadge,
++              pressed && styles.pressed,
++            ]}
+           >
++            <Ionicons name="add" size={16} color="#fff" />
++          </Pressable>
++
++          <Text numberOfLines={1} style={styles.label}>
+             Your Story
+           </Text>
+-        </Pressable>
++        </View>
+ 
+-        {stories.map((story, index) => (
+-          <Pressable
+-            key={story.userId}
+-            onPress={() => onOpen(index)}
+-            style={{ alignItems: 'center', marginRight: 14 }}
+-          >
+-            <View
+-              style={{
+-                width: 64,
+-                height: 64,
+-                borderRadius: 32,
+-                borderWidth: 2,
+-                borderColor: COLORS.primary,
+-                overflow: 'hidden',
+-              }}
+-            >
+-              {story.avatar ? (
+-                <Image
+-                  source={{ uri: story.avatar }}
+-                  style={{ width: '100%', height: '100%' }}
+-                />
+-              ) : (
+-                <View
+-                  style={{
+-                    flex: 1,
+-                    alignItems: 'center',
+-                    justifyContent: 'center',
+-                  }}
+-                >
+-                  <Text style={{ fontFamily: 'Manrope_700Bold' }}>
+-                    {getInitials(story.userName)}
+-                  </Text>
+-                </View>
+-              )}
+-            </View>
++        {stories.map((story, index) => {
++          if (story.isMine) return null;
+ 
+-            <Text
+-              numberOfLines={1}
+-              style={{
+-                maxWidth: 70,
+-                fontFamily: 'Manrope_600SemiBold',
+-                fontSize: 12,
+-                marginTop: 6,
+-                color: COLORS.text,
+-              }}
++          return (
++            <Pressable
++              key={story.userId}
++              onPress={() => onOpen(index)}
++              accessibilityRole="button"
++              accessibilityLabel={`View ${story.userName}'s story`}
++              style={({ pressed }) => [
++                styles.item,
++                pressed && styles.pressed,
++              ]}
+             >
+-              {story.userName}
+-            </Text>
+-          </Pressable>
+-        ))}
++              <StoryAvatar
++                story={story}
++                seen={seenStoryUserIds.has(story.userId)}
++              />
++
++              <Text numberOfLines={1} style={styles.label}>
++                {story.userName}
++              </Text>
++            </Pressable>
++          );
++        })}
+       </ScrollView>
+     </View>
+   );
+ }
++
++const styles = StyleSheet.create({
++  root: {
++    paddingVertical: 10,
++  },
++  content: {
++    paddingHorizontal: 12,
++  },
++  item: {
++    position: 'relative',
++    width: 72,
++    alignItems: 'center',
++    marginRight: 10,
++  },
++  ring: {
++    width: 66,
++    height: 66,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 33,
++    borderWidth: 2,
++  },
++  unseenRing: {
++    borderColor: COLORS.primary,
++  },
++  seenRing: {
++    borderColor: '#c7c7cc',
++  },
++  emptyRing: {
++    borderColor: '#d1d1d6',
++  },
++  avatarInner: {
++    width: 58,
++    height: 58,
++    overflow: 'hidden',
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 29,
++    backgroundColor: '#f2f2f2',
++  },
++  avatarImage: {
++    width: '100%',
++    height: '100%',
++  },
++  initials: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  emptyAvatar: {
++    width: 58,
++    height: 58,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 29,
++    backgroundColor: '#f2f2f2',
++  },
++  addBadge: {
++    position: 'absolute',
++    top: 43,
++    right: 1,
++    width: 23,
++    height: 23,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 12,
++    borderWidth: 2,
++    borderColor: COLORS.bg,
++    backgroundColor: COLORS.primary,
++  },
++  label: {
++    maxWidth: 72,
++    marginTop: 6,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 12,
++    textAlign: 'center',
++  },
++  pressed: {
++    opacity: 0.7,
++  },
++});
+diff -ruN '--exclude=node_modules' /mnt/data/circles_step6_baseline/circles-app/src/components/stories/StoryViewer.js /mnt/data/circles_step6_work/circles-app/src/components/stories/StoryViewer.js
+--- /mnt/data/circles_step6_baseline/circles-app/src/components/stories/StoryViewer.js	2026-07-19 18:17:39.000000000 +0000
++++ /mnt/data/circles_step6_work/circles-app/src/components/stories/StoryViewer.js	2026-07-20 21:07:25.631934583 +0000
+@@ -1,13 +1,36 @@
+ import React, { useEffect, useRef, useState } from 'react';
+ import {
+-  Dimensions,
++  ActivityIndicator,
++  Alert,
++  AppState,
+   Image,
+   Pressable,
++  StyleSheet,
+   Text,
+   View,
+ } from 'react-native';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { Video } from 'expo-av';
++import { getInitials } from '../../utils/getInitials';
++
++const IMAGE_DURATION_MS = 5000;
++
++function shortAge(iso) {
++  const timestamp = new Date(iso).getTime();
++  if (!Number.isFinite(timestamp)) return '';
++
++  const seconds = Math.max(
++    1,
++    Math.floor((Date.now() - timestamp) / 1000)
++  );
++
++  if (seconds < 60) return `${seconds}s`;
++
++  const minutes = Math.floor(seconds / 60);
++  if (minutes < 60) return `${minutes}m`;
++
++  return `${Math.floor(minutes / 60)}h`;
++}
+ 
+ export function StoryViewer({
+   user,
+@@ -15,167 +38,482 @@
+   onClose,
+   onNext,
+   onPrev,
++  onDelete,
++  deleting = false,
+ }) {
+   const item = user?.items?.[index];
+   const isImage = item?.media_type === 'image';
++  const isVideo = item?.media_type === 'video';
++
+   const [progress, setProgress] = useState(0);
+-  const progressRef = useRef(null);
++  const [holding, setHolding] = useState(false);
++  const [appActive, setAppActive] = useState(true);
++  const [muted, setMuted] = useState(false);
++  const [mediaLoading, setMediaLoading] = useState(true);
++  const [mediaError, setMediaError] = useState(null);
++  const [retryKey, setRetryKey] = useState(0);
++
++  const elapsedImageMsRef = useRef(0);
++  const didHoldRef = useRef(false);
++  const finishHandledRef = useRef(false);
++  const onNextRef = useRef(onNext);
++
++  const paused = holding || !appActive || deleting || Boolean(mediaError);
+ 
+   useEffect(() => {
++    onNextRef.current = onNext;
++  }, [onNext]);
++
++  useEffect(() => {
++    const subscription = AppState.addEventListener(
++      'change',
++      (nextState) => setAppActive(nextState === 'active')
++    );
++
++    return () => subscription.remove();
++  }, []);
++
++  useEffect(() => {
++    elapsedImageMsRef.current = 0;
++    finishHandledRef.current = false;
+     setProgress(0);
++    setHolding(false);
++    setMediaError(null);
++    setMediaLoading(true);
++  }, [item?.id, retryKey]);
+ 
+-    if (isImage) {
+-      clearInterval(progressRef.current);
+-      const start = Date.now();
+-
+-      progressRef.current = setInterval(() => {
+-        const elapsed = (Date.now() - start) / 5000;
+-
+-        if (elapsed >= 1) {
+-          clearInterval(progressRef.current);
+-          onNext();
+-        } else {
+-          setProgress(elapsed);
+-        }
+-      }, 50);
+-    }
++  useEffect(() => {
++    if (!item || !isImage || paused || mediaLoading) return undefined;
+ 
+-    return () => clearInterval(progressRef.current);
+-  }, [item?.id]);
++    const startedAt = Date.now();
++    const interval = setInterval(() => {
++      const elapsed =
++        elapsedImageMsRef.current + (Date.now() - startedAt);
++      const nextProgress = Math.min(1, elapsed / IMAGE_DURATION_MS);
++
++      setProgress(nextProgress);
++
++      if (nextProgress >= 1) {
++        clearInterval(interval);
++        elapsedImageMsRef.current = 0;
++        onNextRef.current?.();
++      }
++    }, 40);
++
++    return () => {
++      clearInterval(interval);
++      elapsedImageMsRef.current += Date.now() - startedAt;
++    };
++  }, [isImage, item, mediaLoading, paused]);
+ 
+   if (!user || !item) return null;
+ 
++  const holdHandlers = {
++    delayLongPress: 170,
++    onLongPress: () => {
++      didHoldRef.current = true;
++      setHolding(true);
++    },
++    onPressOut: () => {
++      setHolding(false);
++      setTimeout(() => {
++        didHoldRef.current = false;
++      }, 0);
++    },
++  };
++
++  const navigateAfterTap = (direction) => {
++    if (didHoldRef.current) {
++      didHoldRef.current = false;
++      return;
++    }
++
++    direction?.();
++  };
++
++  const retryMedia = () => {
++    elapsedImageMsRef.current = 0;
++    setProgress(0);
++    setMediaError(null);
++    setMediaLoading(true);
++    setRetryKey((value) => value + 1);
++  };
++
++  const confirmDelete = () => {
++    if (!onDelete || deleting) return;
++
++    Alert.alert(
++      'Delete this story?',
++      'It will disappear immediately and cannot be restored.',
++      [
++        { text: 'Cancel', style: 'cancel' },
++        {
++          text: 'Delete',
++          style: 'destructive',
++          onPress: () => onDelete(item),
++        },
++      ]
++    );
++  };
++
+   return (
+-    <View style={{ flex: 1 }}>
+-      <View
+-        style={{
+-          position: 'absolute',
+-          top: 12,
+-          left: 12,
+-          right: 12,
+-          zIndex: 10,
+-        }}
+-      >
+-        <View
+-          style={{
+-            flexDirection: 'row',
+-            gap: 6,
+-            marginBottom: 8,
+-          }}
+-        >
+-          {user.items.map((_, itemIndex) => (
+-            <View
+-              key={itemIndex}
+-              style={{
+-                flex: 1,
+-                height: 3,
+-                backgroundColor: 'rgba(255,255,255,0.3)',
+-                borderRadius: 2,
+-                overflow: 'hidden',
+-              }}
+-            >
++    <View style={styles.root}>
++      <View style={styles.progressHeader} pointerEvents="box-none">
++        <View style={styles.progressRow}>
++          {user.items.map((storyItem, itemIndex) => (
++            <View key={storyItem.id || itemIndex} style={styles.progressTrack}>
+               <View
+-                style={{
+-                  width: `${
+-                    itemIndex < index
+-                      ? 100
+-                      : itemIndex > index
+-                        ? 0
+-                        : progress * 100
+-                  }%`,
+-                  height: '100%',
+-                  backgroundColor: '#fff',
+-                }}
++                style={[
++                  styles.progressFill,
++                  {
++                    width: `${
++                      itemIndex < index
++                        ? 100
++                        : itemIndex > index
++                          ? 0
++                          : progress * 100
++                    }%`,
++                  },
++                ]}
+               />
+             </View>
+           ))}
+         </View>
+ 
+-        <View
+-          style={{
+-            flexDirection: 'row',
+-            alignItems: 'center',
+-            justifyContent: 'space-between',
+-          }}
+-        >
+-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+-            <View
+-              style={{
+-                width: 32,
+-                height: 32,
+-                borderRadius: 16,
+-                overflow: 'hidden',
+-                borderWidth: 1,
+-                borderColor: '#fff',
+-              }}
+-            >
++        <View style={styles.identityRow}>
++          <View style={styles.identity}>
++            <View style={styles.avatar}>
+               {user.avatar ? (
+                 <Image
+                   source={{ uri: user.avatar }}
+-                  style={{ width: '100%', height: '100%' }}
++                  style={styles.avatarImage}
+                 />
+-              ) : null}
++              ) : (
++                <Text style={styles.avatarInitials}>
++                  {getInitials(user.userName)}
++                </Text>
++              )}
+             </View>
+ 
+-            <Text
+-              style={{
+-                color: '#fff',
+-                marginLeft: 8,
+-                fontFamily: 'Manrope_700Bold',
+-              }}
+-            >
+-              {user.userName}
+-            </Text>
++            <View style={styles.identityText}>
++              <Text style={styles.userName} numberOfLines={1}>
++                {user.isMine ? 'Your Story' : user.userName}
++              </Text>
++              <Text style={styles.storyAge}>{shortAge(item.created_at)}</Text>
++            </View>
+           </View>
+ 
+-          <Pressable onPress={onClose}>
+-            <Ionicons name="close" size={26} color="#fff" />
+-          </Pressable>
++          <View style={styles.headerActions}>
++            {isVideo ? (
++              <Pressable
++                onPress={() => setMuted((value) => !value)}
++                accessibilityRole="button"
++                accessibilityLabel={muted ? 'Unmute story' : 'Mute story'}
++                style={({ pressed }) => [
++                  styles.headerButton,
++                  pressed && styles.pressed,
++                ]}
++              >
++                <Ionicons
++                  name={muted ? 'volume-mute' : 'volume-high'}
++                  size={22}
++                  color="#fff"
++                />
++              </Pressable>
++            ) : null}
++
++            {user.isMine && onDelete ? (
++              <Pressable
++                onPress={confirmDelete}
++                disabled={deleting}
++                accessibilityRole="button"
++                accessibilityLabel="Delete story"
++                style={({ pressed }) => [
++                  styles.headerButton,
++                  pressed && styles.pressed,
++                ]}
++              >
++                <Ionicons name="trash-outline" size={21} color="#fff" />
++              </Pressable>
++            ) : null}
++
++            <Pressable
++              onPress={onClose}
++              accessibilityRole="button"
++              accessibilityLabel="Close stories"
++              style={({ pressed }) => [
++                styles.headerButton,
++                pressed && styles.pressed,
++              ]}
++            >
++              <Ionicons name="close" size={27} color="#fff" />
++            </Pressable>
++          </View>
+         </View>
+       </View>
+ 
+-      <Pressable style={{ flex: 1, flexDirection: 'row' }}>
+-        <Pressable style={{ flex: 1 }} onPress={onPrev} />
+-
+-        <View
+-          style={{
+-            width: Math.min(800, Dimensions.get('window').width),
+-            aspectRatio: 9 / 16,
+-            alignSelf: 'center',
+-          }}
+-        >
+-          {isImage ? (
+-            <Image
+-              source={{ uri: item.url }}
+-              style={{ width: '100%', height: '100%' }}
+-              resizeMode="cover"
+-            />
+-          ) : (
+-            <Video
+-              source={{ uri: item.url }}
+-              style={{ width: '100%', height: '100%' }}
+-              resizeMode="cover"
+-              shouldPlay
+-              onPlaybackStatusUpdate={(status) => {
+-                if (!status || !status.isLoaded) return;
+-                if (status.didJustFinish) onNext();
+-
+-                if (status.durationMillis) {
+-                  setProgress(
+-                    Math.min(
+-                      1,
+-                      (status.positionMillis || 0) /
+-                        status.durationMillis
+-                    )
+-                  );
++      <View style={styles.mediaStage}>
++        {isImage ? (
++          <Image
++            key={`${item.id}-${retryKey}`}
++            source={{ uri: item.url }}
++            style={styles.media}
++            resizeMode="contain"
++            onLoadStart={() => setMediaLoading(true)}
++            onLoad={() => {
++              setMediaLoading(false);
++              setMediaError(null);
++            }}
++            onError={() => {
++              setMediaLoading(false);
++              setMediaError('This photo could not be loaded.');
++            }}
++          />
++        ) : (
++          <Video
++            key={`${item.id}-${retryKey}`}
++            source={{ uri: item.url }}
++            style={styles.media}
++            resizeMode="contain"
++            shouldPlay={!paused}
++            isMuted={muted}
++            onPlaybackStatusUpdate={(status) => {
++              if (!status) return;
++
++              if (!status.isLoaded) {
++                if (status.error) {
++                  setMediaLoading(false);
++                  setMediaError('This video could not be loaded.');
+                 }
+-              }}
+-            />
+-          )}
++                return;
++              }
++
++              setMediaLoading(false);
++              setMediaError(null);
++
++              if (status.durationMillis) {
++                setProgress(
++                  Math.min(
++                    1,
++                    (status.positionMillis || 0) / status.durationMillis
++                  )
++                );
++              }
++
++              if (status.didJustFinish && !finishHandledRef.current) {
++                finishHandledRef.current = true;
++                onNextRef.current?.();
++              }
++            }}
++          />
++        )}
++
++        <View style={styles.tapLayer} pointerEvents="box-none">
++          <Pressable
++            {...holdHandlers}
++            onPress={() => navigateAfterTap(onPrev)}
++            accessibilityRole="button"
++            accessibilityLabel="Previous story"
++            style={styles.leftTapZone}
++          />
++          <Pressable
++            {...holdHandlers}
++            onPress={() => navigateAfterTap(onNext)}
++            accessibilityRole="button"
++            accessibilityLabel="Next story"
++            style={styles.rightTapZone}
++          />
+         </View>
+ 
+-        <Pressable style={{ flex: 1 }} onPress={onNext} />
+-      </Pressable>
++        {mediaLoading && !mediaError ? (
++          <View style={styles.centerOverlay} pointerEvents="none">
++            <ActivityIndicator color="#fff" />
++            <Text style={styles.overlayText}>Loading story…</Text>
++          </View>
++        ) : null}
++
++        {mediaError ? (
++          <View style={styles.centerOverlay}>
++            <Ionicons name="alert-circle-outline" size={36} color="#fff" />
++            <Text style={styles.errorText}>{mediaError}</Text>
++            <Pressable
++              onPress={retryMedia}
++              style={({ pressed }) => [
++                styles.retryButton,
++                pressed && styles.pressed,
++              ]}
++            >
++              <Text style={styles.retryText}>Try again</Text>
++            </Pressable>
++          </View>
++        ) : null}
++
++        {deleting ? (
++          <View style={styles.centerOverlay}>
++            <ActivityIndicator color="#fff" />
++            <Text style={styles.overlayText}>Deleting story…</Text>
++          </View>
++        ) : null}
++      </View>
++
++      <Text style={styles.hint} pointerEvents="none">
++        Tap to move • Hold to pause
++      </Text>
+     </View>
+   );
+ }
++
++const styles = StyleSheet.create({
++  root: {
++    flex: 1,
++    backgroundColor: '#000',
++  },
++  progressHeader: {
++    position: 'absolute',
++    top: 8,
++    left: 10,
++    right: 10,
++    zIndex: 20,
++  },
++  progressRow: {
++    flexDirection: 'row',
++    gap: 5,
++  },
++  progressTrack: {
++    flex: 1,
++    height: 3,
++    overflow: 'hidden',
++    borderRadius: 3,
++    backgroundColor: 'rgba(255,255,255,0.32)',
++  },
++  progressFill: {
++    height: '100%',
++    borderRadius: 3,
++    backgroundColor: '#fff',
++  },
++  identityRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    marginTop: 10,
++  },
++  identity: {
++    flex: 1,
++    flexDirection: 'row',
++    alignItems: 'center',
++    marginRight: 8,
++  },
++  avatar: {
++    width: 36,
++    height: 36,
++    overflow: 'hidden',
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 18,
++    borderWidth: 1,
++    borderColor: 'rgba(255,255,255,0.9)',
++    backgroundColor: '#2c2c2e',
++  },
++  avatarImage: {
++    width: '100%',
++    height: '100%',
++  },
++  avatarInitials: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 12,
++  },
++  identityText: {
++    flex: 1,
++    marginLeft: 9,
++  },
++  userName: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 14,
++  },
++  storyAge: {
++    marginTop: 1,
++    color: 'rgba(255,255,255,0.72)',
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++  },
++  headerActions: {
++    flexDirection: 'row',
++    alignItems: 'center',
++  },
++  headerButton: {
++    width: 42,
++    height: 42,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 21,
++  },
++  mediaStage: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: '#000',
++  },
++  media: {
++    width: '100%',
++    height: '100%',
++  },
++  tapLayer: {
++    ...StyleSheet.absoluteFillObject,
++    flexDirection: 'row',
++    paddingTop: 72,
++  },
++  leftTapZone: {
++    width: '34%',
++    height: '100%',
++  },
++  rightTapZone: {
++    flex: 1,
++    height: '100%',
++  },
++  centerOverlay: {
++    ...StyleSheet.absoluteFillObject,
++    zIndex: 12,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 36,
++    backgroundColor: 'rgba(0,0,0,0.58)',
++  },
++  overlayText: {
++    marginTop: 10,
++    color: '#fff',
++    fontFamily: 'Manrope_600SemiBold',
++  },
++  errorText: {
++    marginTop: 10,
++    color: '#fff',
++    fontFamily: 'Manrope_600SemiBold',
++    textAlign: 'center',
++  },
++  retryButton: {
++    marginTop: 16,
++    paddingHorizontal: 17,
++    paddingVertical: 10,
++    borderRadius: 11,
++    backgroundColor: '#fff',
++  },
++  retryText: {
++    color: '#000',
++    fontFamily: 'Manrope_700Bold',
++  },
++  hint: {
++    position: 'absolute',
++    left: 0,
++    right: 0,
++    bottom: 12,
++    color: 'rgba(255,255,255,0.68)',
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
++    textAlign: 'center',
++    zIndex: 20,
++  },
++  pressed: {
++    opacity: 0.65,
++  },
++});
+diff -ruN '--exclude=node_modules' /mnt/data/circles_step6_baseline/circles-app/src/screens/feed/FeedScreen.js /mnt/data/circles_step6_work/circles-app/src/screens/feed/FeedScreen.js
+--- /mnt/data/circles_step6_baseline/circles-app/src/screens/feed/FeedScreen.js	2026-07-20 20:27:56.888001231 +0000
++++ /mnt/data/circles_step6_work/circles-app/src/screens/feed/FeedScreen.js	2026-07-20 21:08:20.960526885 +0000
+@@ -25,7 +25,10 @@
+   fetchPostComments,
+   togglePostLike,
+ } from '../../services/feedService';
+-import { fetchActiveStories } from '../../services/storyService';
++import {
++  deleteOwnStory,
++  fetchActiveStories,
++} from '../../services/storyService';
+ import { PostCard } from '../../components/feed/PostCard';
+ import { CommentsModal } from '../../components/feed/CommentsModal';
+ import { StoriesRail } from '../../components/stories/StoriesRail';
+@@ -65,6 +68,10 @@
+ 
+   const [storyOpen, setStoryOpen] = useState(null);
+   const [storyIndex, setStoryIndex] = useState(0);
++  const [storyDeletingId, setStoryDeletingId] = useState(null);
++  const [seenStoryUserIds, setSeenStoryUserIds] = useState(
++    () => new Set()
++  );
+   const [visiblePostIds, setVisiblePostIds] = useState(() => new Set());
+ 
+   const mountedRef = useRef(true);
+@@ -135,6 +142,7 @@
+   useEffect(() => {
+     mountedRef.current = true;
+     let feedChannel = null;
++    let storyChannel = null;
+ 
+     const start = async () => {
+       try {
+@@ -175,6 +183,19 @@
+             () => refreshFeed('silent')
+           )
+           .subscribe();
++
++        storyChannel = supabase
++          .channel('stories_rt')
++          .on(
++            'postgres_changes',
++            {
++              event: '*',
++              schema: 'public',
++              table: 'stories',
++            },
++            () => refreshStories()
++          )
++          .subscribe();
+       } catch (error) {
+         if (!mountedRef.current) return;
+         setInitialLoading(false);
+@@ -190,6 +211,7 @@
+     return () => {
+       mountedRef.current = false;
+       if (feedChannel) supabase.removeChannel(feedChannel);
++      if (storyChannel) supabase.removeChannel(storyChannel);
+     };
+   }, [refreshFeed, refreshStories]);
+ 
+@@ -204,6 +226,40 @@
+     return unsubscribe;
+   }, [authed, navigation, refreshFeed, refreshStories]);
+ 
++
++  useEffect(() => {
++    const expirationTimes = stories
++      .flatMap((story) => story.items || [])
++      .map((item) => new Date(item.expires_at).getTime())
++      .filter((timestamp) => Number.isFinite(timestamp));
++
++    if (!expirationTimes.length) return undefined;
++
++    const nextExpiration = Math.min(...expirationTimes);
++    const delay = Math.max(1000, nextExpiration - Date.now() + 500);
++    const timer = setTimeout(
++      () => refreshStories(),
++      Math.min(delay, 2_147_000_000)
++    );
++
++    return () => clearTimeout(timer);
++  }, [refreshStories, stories]);
++
++  useEffect(() => {
++    if (storyOpen === null) return;
++
++    const currentStory = stories[storyOpen];
++    if (!currentStory?.userId) return;
++
++    setSeenStoryUserIds((currentSeen) => {
++      if (currentSeen.has(currentStory.userId)) return currentSeen;
++
++      const nextSeen = new Set(currentSeen);
++      nextSeen.add(currentStory.userId);
++      return nextSeen;
++    });
++  }, [stories, storyOpen]);
++
+   const onRefresh = useCallback(async () => {
+     await Promise.all([
+       refreshFeed('refresh'),
+@@ -408,6 +464,33 @@
+     setStoryIndex(0);
+   }, []);
+ 
++  const closeStory = useCallback(() => {
++    setStoryOpen(null);
++    setStoryIndex(0);
++  }, []);
++
++  const deleteStory = useCallback(
++    async (storyItem) => {
++      if (!storyItem?.id || storyDeletingId) return;
++
++      setStoryDeletingId(storyItem.id);
++
++      try {
++        await deleteOwnStory(storyItem);
++        closeStory();
++        await refreshStories();
++      } catch (error) {
++        Alert.alert(
++          'Story not deleted',
++          errorMessage(error, 'Please try again.')
++        );
++      } finally {
++        if (mountedRef.current) setStoryDeletingId(null);
++      }
++    },
++    [closeStory, refreshStories, storyDeletingId]
++  );
++
+   const nextStory = useCallback(() => {
+     setStoryOpen((currentUserIndex) => {
+       if (currentUserIndex === null) return null;
+@@ -534,7 +617,7 @@
+ 
+             <StoriesRail
+               stories={stories}
+-              isAdding={false}
++              seenStoryUserIds={seenStoryUserIds}
+               onAddYourStory={() =>
+                 navigation.navigate('CreateStory')
+               }
+@@ -542,7 +625,22 @@
+             />
+ 
+             {storyError ? (
+-              <Text style={styles.inlineNotice}>{storyError}</Text>
++              <Pressable
++                onPress={refreshStories}
++                style={({ pressed }) => [
++                  styles.storyNotice,
++                  pressed && styles.storyNoticePressed,
++                ]}
++              >
++                <Ionicons
++                  name="alert-circle-outline"
++                  size={16}
++                  color={COLORS.subtext}
++                />
++                <Text style={styles.inlineNotice}>
++                  {storyError} Tap to retry.
++                </Text>
++              </Pressable>
+             ) : null}
+ 
+             {feedError ? (
+@@ -610,19 +708,24 @@
+       <Modal
+         visible={storyOpen !== null}
+         animationType="fade"
+-        onRequestClose={() => setStoryOpen(null)}
++        onRequestClose={closeStory}
+       >
+         <SafeAreaView
+-          edges={['top']}
++          edges={['top', 'bottom']}
+           style={styles.storyModal}
+         >
+           {storyOpen !== null && stories[storyOpen] ? (
+             <StoryViewer
+               user={stories[storyOpen]}
+               index={storyIndex}
+-              onClose={() => setStoryOpen(null)}
++              onClose={closeStory}
+               onNext={nextStory}
+               onPrev={previousStory}
++              onDelete={deleteStory}
++              deleting={
++                storyDeletingId ===
++                stories[storyOpen]?.items?.[storyIndex]?.id
++              }
+             />
+           ) : null}
+         </SafeAreaView>
+@@ -693,9 +796,22 @@
+     fontFamily: 'Manrope_700Bold',
+     fontSize: 24,
+   },
++  storyNotice: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    marginHorizontal: 12,
++    marginBottom: 8,
++    paddingHorizontal: 10,
++    paddingVertical: 8,
++    borderRadius: 10,
++    backgroundColor: '#f4f4f4',
++  },
++  storyNoticePressed: {
++    opacity: 0.7,
++  },
+   inlineNotice: {
+-    paddingHorizontal: 14,
+-    paddingBottom: 8,
++    flex: 1,
++    marginLeft: 7,
+     color: COLORS.subtext,
+     fontFamily: 'Manrope_400Regular',
+     fontSize: 12,
+diff -ruN '--exclude=node_modules' /mnt/data/circles_step6_baseline/circles-app/src/screens/stories/StoryComposerScreen.js /mnt/data/circles_step6_work/circles-app/src/screens/stories/StoryComposerScreen.js
+--- /mnt/data/circles_step6_baseline/circles-app/src/screens/stories/StoryComposerScreen.js	2026-07-20 19:42:47.556121869 +0000
++++ /mnt/data/circles_step6_work/circles-app/src/screens/stories/StoryComposerScreen.js	2026-07-20 21:07:43.112005619 +0000
+@@ -43,6 +43,8 @@
+   const { width, height } = useWindowDimensions();
+   const [asset, setAsset] = useState(null);
+   const [posting, setPosting] = useState(false);
++  const [uploadProgress, setUploadProgress] = useState(0);
++  const [uploadStage, setUploadStage] = useState('');
+ 
+   const previewWidth = Math.min(width - 32, 430);
+   const previewHeight = Math.min(
+@@ -102,9 +104,16 @@
+     }
+ 
+     setPosting(true);
++    setUploadProgress(0.05);
++    setUploadStage('Preparing media…');
+ 
+     try {
+-      await createStoryFromAsset(asset);
++      await createStoryFromAsset(asset, {
++        onProgress: ({ progress, label }) => {
++          setUploadProgress(progress);
++          setUploadStage(label);
++        },
++      });
+       navigation.goBack();
+     } catch (error) {
+       Alert.alert(
+@@ -113,11 +122,13 @@
+       );
+     } finally {
+       setPosting(false);
++      setUploadProgress(0);
++      setUploadStage('');
+     }
+   };
+ 
+   return (
+-    <SafeAreaView edges={['top']} style={styles.root}>
++    <SafeAreaView edges={['top', 'bottom']} style={styles.root}>
+       <View style={styles.header}>
+         <Pressable
+           onPress={() => navigation.goBack()}
+@@ -241,6 +252,27 @@
+           </View>
+         ) : null}
+ 
++        {posting ? (
++          <View style={styles.uploadProgressWrap}>
++            <View style={styles.uploadProgressHeader}>
++              <Text style={styles.uploadProgressLabel}>
++                {uploadStage || 'Posting story…'}
++              </Text>
++              <Text style={styles.uploadProgressPercent}>
++                {Math.round(uploadProgress * 100)}%
++              </Text>
++            </View>
++            <View style={styles.uploadProgressTrack}>
++              <View
++                style={[
++                  styles.uploadProgressFill,
++                  { width: `${Math.max(4, uploadProgress * 100)}%` },
++                ]}
++              />
++            </View>
++          </View>
++        ) : null}
++
+         <Pressable
+           onPress={asset ? postStory : pickMedia}
+           disabled={posting}
+@@ -252,7 +284,9 @@
+           {posting ? (
+             <View style={styles.postingRow}>
+               <ActivityIndicator color="#fff" size="small" />
+-              <Text style={styles.primaryButtonText}>Posting story…</Text>
++              <Text style={styles.primaryButtonText}>
++                {uploadStage || 'Posting story…'}
++              </Text>
+             </View>
+           ) : (
+             <Text style={styles.primaryButtonText}>
+@@ -383,6 +417,37 @@
+     color: COLORS.text,
+     fontFamily: 'Manrope_700Bold',
+   },
++  uploadProgressWrap: {
++    width: '100%',
++    marginTop: 18,
++  },
++  uploadProgressHeader: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    marginBottom: 7,
++  },
++  uploadProgressLabel: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 12,
++  },
++  uploadProgressPercent: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 12,
++  },
++  uploadProgressTrack: {
++    height: 8,
++    overflow: 'hidden',
++    borderRadius: 4,
++    backgroundColor: '#e5e5ea',
++  },
++  uploadProgressFill: {
++    height: '100%',
++    borderRadius: 4,
++    backgroundColor: COLORS.primary,
++  },
+   primaryButton: {
+     width: '100%',
+     alignItems: 'center',
+diff -ruN '--exclude=node_modules' /mnt/data/circles_step6_baseline/circles-app/src/services/storyService.js /mnt/data/circles_step6_work/circles-app/src/services/storyService.js
+--- /mnt/data/circles_step6_baseline/circles-app/src/services/storyService.js	2026-07-20 19:42:47.583148606 +0000
++++ /mnt/data/circles_step6_work/circles-app/src/services/storyService.js	2026-07-20 21:10:17.068005315 +0000
+@@ -3,6 +3,39 @@
+ import { uploadToBucket } from './uploadService';
+ import { validateStoryAsset } from '../utils/mediaValidation';
+ 
++const STORY_LIFETIME_MS = 24 * 60 * 60 * 1000;
++
++function emitProgress(onProgress, progress, label) {
++  onProgress?.({ progress, label });
++}
++
++function deriveExpiration(row) {
++  if (row.expire_at) return row.expire_at;
++
++  const createdAt = new Date(row.created_at).getTime();
++  if (!Number.isFinite(createdAt)) return null;
++
++  return new Date(createdAt + STORY_LIFETIME_MS).toISOString();
++}
++
++function storagePathFromPublicUrl(url, bucket) {
++  if (!url || !bucket) return null;
++
++  const marker = `/storage/v1/object/public/${bucket}/`;
++  const markerIndex = url.indexOf(marker);
++  if (markerIndex < 0) return null;
++
++  const encodedPath = url
++    .slice(markerIndex + marker.length)
++    .split('?')[0];
++
++  try {
++    return decodeURIComponent(encodedPath);
++  } catch {
++    return encodedPath;
++  }
++}
++
+ export async function fetchActiveStories() {
+   const {
+     data: { session },
+@@ -16,6 +49,7 @@
+   if (error) throw error;
+ 
+   const storiesByUser = new Map();
++  const currentUserId = session.user.id;
+ 
+   (data || []).forEach((row) => {
+     if (!storiesByUser.has(row.user_id)) {
+@@ -23,46 +57,66 @@
+         userId: row.user_id,
+         userName: row.display_name || 'Someone',
+         avatar: row.avatar_url || null,
++        isMine: row.user_id === currentUserId,
+         items: [],
+       });
+     }
+ 
+     storiesByUser.get(row.user_id).items.push({
+       id: row.id,
++      user_id: row.user_id,
+       url: row.url,
+       media_type: row.media_type,
+       created_at: row.created_at,
++      expires_at: deriveExpiration(row),
+     });
+   });
+ 
+   const groups = Array.from(storiesByUser.values());
+-  const currentUserId = session.user.id;
++
++  groups.forEach((group) => {
++    group.items.sort(
++      (left, right) =>
++        new Date(left.created_at).getTime() -
++        new Date(right.created_at).getTime()
++    );
++  });
+ 
+   groups.sort((left, right) => {
+-    if (left.userId === currentUserId) return -1;
+-    if (right.userId === currentUserId) return 1;
+-    return 0;
++    if (left.isMine) return -1;
++    if (right.isMine) return 1;
++
++    const leftNewest = left.items.at(-1)?.created_at || '';
++    const rightNewest = right.items.at(-1)?.created_at || '';
++    return new Date(rightNewest).getTime() - new Date(leftNewest).getTime();
+   });
+ 
+   return groups;
+ }
+ 
+-export async function createStoryFromAsset(asset) {
++export async function createStoryFromAsset(asset, options = {}) {
+   const validationError = validateStoryAsset(asset);
+   if (validationError) throw new Error(validationError);
+ 
++  emitProgress(options.onProgress, 0.08, 'Preparing media…');
++
+   const { user } = await ensureAuthed();
+   const mediaType = asset.type === 'video' ? 'video' : 'image';
+   const mimeType =
+     asset.mimeType ||
+     (mediaType === 'video' ? 'video/mp4' : 'image/jpeg');
+ 
++  emitProgress(options.onProgress, 0.2, 'Uploading story…');
++
+   const url = await uploadToBucket(
+     asset.uri,
+     'stories',
+-    mimeType
++    mimeType,
++    { folder: user.id }
+   );
+ 
++  emitProgress(options.onProgress, 0.82, 'Publishing story…');
++
+   const { data, error } = await supabase
+     .from('stories')
+     .insert({
+@@ -70,9 +124,49 @@
+       url,
+       media_type: mediaType,
+     })
+-    .select('id, user_id, url, media_type, created_at')
++    .select('id, user_id, url, media_type, created_at, expire_at')
+     .single();
+ 
+-  if (error) throw error;
++  if (error) {
++    const uploadedPath = storagePathFromPublicUrl(url, 'stories');
++    if (uploadedPath) {
++      await supabase.storage.from('stories').remove([uploadedPath]);
++    }
++    throw error;
++  }
++
++  emitProgress(options.onProgress, 1, 'Story posted');
+   return data;
+ }
++
++export async function deleteOwnStory(story) {
++  if (!story?.id) throw new Error('This story could not be identified.');
++
++  const { user } = await ensureAuthed();
++
++  const { data, error } = await supabase
++    .from('stories')
++    .delete()
++    .eq('id', story.id)
++    .eq('user_id', user.id)
++    .select('id');
++
++  if (error) throw error;
++  if (!data?.length) {
++    throw new Error('The story was not deleted. Refresh and try again.');
++  }
++
++  const storagePath = storagePathFromPublicUrl(story.url, 'stories');
++
++  if (storagePath) {
++    const { error: cleanupError } = await supabase.storage
++      .from('stories')
++      .remove([storagePath]);
++
++    if (cleanupError) {
++      console.warn('Story record deleted, but media cleanup failed.', cleanupError);
++    }
++  }
++
++  return story.id;
++}
+diff -ruN '--exclude=node_modules' /mnt/data/circles_step6_baseline/circles-app/supabase/migrations/20260720_005_story_deletion_policy.sql /mnt/data/circles_step6_work/circles-app/supabase/migrations/20260720_005_story_deletion_policy.sql
+--- /mnt/data/circles_step6_baseline/circles-app/supabase/migrations/20260720_005_story_deletion_policy.sql	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step6_work/circles-app/supabase/migrations/20260720_005_story_deletion_policy.sql	2026-07-20 21:10:37.745940077 +0000
+@@ -0,0 +1,58 @@
++-- Circles Step 6 — Story privacy and deletion permissions
++-- Removes permissive development policies, preserves normal story access,
++-- and lets authenticated users remove only their own story media.
++
++alter table public.stories enable row level security;
++
++-- Remove permissive development policies restored from the old project.
++drop policy if exists dev_stories_all_delete on public.stories;
++drop policy if exists dev_stories_all_insert on public.stories;
++drop policy if exists dev_stories_all_select on public.stories;
++drop policy if exists dev_stories_all_update on public.stories;
++
++-- Replace older story policies with explicit Circles policies.
++drop policy if exists stories_insert on public.stories;
++drop policy if exists stories_select on public.stories;
++drop policy if exists stories_delete on public.stories;
++drop policy if exists "Circles insert own stories" on public.stories;
++drop policy if exists "Circles view connected stories" on public.stories;
++drop policy if exists "Circles delete own stories" on public.stories;
++
++create policy "Circles insert own stories"
++on public.stories
++for insert
++to authenticated
++with check (user_id = auth.uid());
++
++create policy "Circles view connected stories"
++on public.stories
++for select
++to authenticated
++using (
++  expire_at > now()
++  and (
++    user_id = auth.uid()
++    or public.is_connected(auth.uid(), user_id)
++  )
++);
++
++create policy "Circles delete own stories"
++on public.stories
++for delete
++to authenticated
++using (user_id = auth.uid());
++
++drop policy if exists "Circles delete own story uploads"
++on storage.objects;
++
++create policy "Circles delete own story uploads"
++on storage.objects
++for delete
++to authenticated
++using (
++  bucket_id = 'stories'
++  and (
++    owner_id = auth.uid()::text
++    or owner = auth.uid()
++  )
++);

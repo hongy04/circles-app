@@ -149,6 +149,16 @@ export function AccountSettingsScreen({ navigation }) {
             />
           </View>
 
+          <Text style={styles.sectionLabel}>PEOPLE</Text>
+          <View style={styles.section}>
+            <SettingRow
+              icon="person-add-outline"
+              title="Invite people"
+              subtitle="Share a private invitation or text someone from your contacts"
+              onPress={() => navigation.navigate('InvitePeople')}
+            />
+          </View>
+
           <Text style={styles.sectionLabel}>ACCOUNT</Text>
           <View style={styles.section}>
             <SettingRow
@@ -160,7 +170,7 @@ export function AccountSettingsScreen({ navigation }) {
             <SettingRow
               icon="lock-closed-outline"
               title="Private by design"
-              subtitle="Profiles and posts are intended for mutuals and accepted connections."
+              subtitle="Profiles and posts remain private until a connection is accepted."
             />
           </View>
 

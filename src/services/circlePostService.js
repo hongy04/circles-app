@@ -35,6 +35,8 @@ function mapPost(row) {
     caption: row.caption || '',
     media: (row.media || []).map(mapMedia),
     commentCount: Number(row.comment_count || 0),
+    likeCount: Number(row.like_count || 0),
+    likedByMe: Boolean(row.liked_by_me),
     canEdit: Boolean(row.can_edit),
     createdAt: row.created_at,
     editedAt: row.edited_at || null,
@@ -149,6 +151,21 @@ export async function updateOwnCirclePostCaption(postId, caption) {
   if (error) throw error;
 }
 
+
+export async function toggleCirclePostLike(postId) {
+  await ensureAuthed();
+  const { data, error } = await supabase.rpc('toggle_circle_post_like', {
+    p_post_id: postId,
+  });
+  if (error) throw error;
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    liked: Boolean(row?.liked),
+    likeCount: Number(row?.like_count || 0),
+  };
+}
+
 export async function deleteOwnCirclePost(postId) {
   await ensureAuthed();
   const { data, error } = await supabase.rpc('delete_own_circle_post', {
@@ -199,6 +216,11 @@ export function subscribeToCirclePostChanges({
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'conversation_post_comments' },
+      onChange
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'conversation_post_likes' },
       onChange
     )
     .subscribe();

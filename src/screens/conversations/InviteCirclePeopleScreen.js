@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -21,6 +22,7 @@ import {
   invitePeopleToCircle,
   listCircleInviteCandidates,
 } from '../../services/circlePeopleService';
+import { createCircleInvite, shareInvite } from '../../services/inviteService';
 
 export function InviteCirclePeopleScreen({ route, navigation }) {
   const { conversationId, circleName = 'Circle' } = route.params || {};
@@ -30,6 +32,7 @@ export function InviteCirclePeopleScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [sharingLink, setSharingLink] = useState(false);
 
   const load = useCallback(async () => {
     if (!conversationId) return;
@@ -73,6 +76,23 @@ export function InviteCirclePeopleScreen({ route, navigation }) {
       else next.add(userId);
       return next;
     });
+  };
+
+  const shareCircleLink = async () => {
+    if (!conversationId || sharingLink) return;
+    setSharingLink(true);
+
+    try {
+      const invite = await createCircleInvite(conversationId);
+      await shareInvite(invite);
+    } catch (shareError) {
+      Alert.alert(
+        'Could not share Circle invite',
+        shareError?.message || 'Please try again.'
+      );
+    } finally {
+      setSharingLink(false);
+    }
   };
 
   const send = async () => {
@@ -140,6 +160,30 @@ export function InviteCirclePeopleScreen({ route, navigation }) {
             </Text>
           </View>
 
+          <View style={styles.linkInviteCard}>
+            <View style={styles.linkInviteCopy}>
+              <Text style={styles.linkInviteTitle}>Invite beyond your connections</Text>
+              <Text style={styles.linkInviteBody}>
+                Share a private Circle link in an existing group chat. Each person
+                still reviews the invitation before joining.
+              </Text>
+            </View>
+            <Pressable
+              onPress={shareCircleLink}
+              disabled={sharingLink}
+              style={({ pressed }) => [
+                styles.linkInviteButton,
+                (pressed || sharingLink) && styles.pressed,
+              ]}
+            >
+              {sharingLink ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Ionicons name="share-outline" size={19} color="#fff" />
+              )}
+            </Pressable>
+          </View>
+
           <View style={styles.searchBox}>
             <Ionicons name="search" size={18} color={COLORS.subtext} />
             <TextInput
@@ -148,6 +192,8 @@ export function InviteCirclePeopleScreen({ route, navigation }) {
               placeholder="Search connections"
               placeholderTextColor="#8e8e93"
               autoCorrect={false}
+              returnKeyType="search"
+              onSubmitEditing={Keyboard.dismiss}
               style={styles.searchInput}
             />
             {query ? (
@@ -194,7 +240,8 @@ export function InviteCirclePeopleScreen({ route, navigation }) {
         <FlatList
           data={filteredPeople}
           keyExtractor={(person) => person.userId}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={(
             <View style={styles.emptyState}>
@@ -333,6 +380,40 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 17,
+  },
+  linkInviteCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    padding: 13,
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  linkInviteCopy: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  linkInviteTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+  },
+  linkInviteBody: {
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  linkInviteButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   searchBox: {
     minHeight: 43,

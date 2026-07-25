@@ -17,7 +17,6 @@
       "infoPlist": {
         "NSContactsUsageDescription": "Circles uses your contacts to find mutual connections. You can exclude any contact."
       }
-      
     },
     "android": {
       "adaptiveIcon": {
@@ -25,7 +24,9 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["READ_CONTACTS"]
+      "permissions": [
+        "READ_CONTACTS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -33,6 +34,7 @@
     "plugins": [
       "expo-font",
       "expo-localization"
-    ]
+    ],
+    "scheme": "circles"
   }
 }

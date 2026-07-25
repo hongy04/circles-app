@@ -19,7 +19,8 @@ function getRegionCode() {
   return locale?.regionCode || Localization?.region || 'US';
 }
 
-export function AuthPhoneScreen({ navigation }) {
+export function AuthPhoneScreen({ route, navigation }) {
+  const inviteToken = route?.params?.inviteToken || null;
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const region = getRegionCode();
@@ -37,7 +38,7 @@ export function AuthPhoneScreen({ navigation }) {
       const e164 = parsed?.isValid() ? parsed.number : phone.trim();
 
       if (IS_DEVELOPMENT) {
-        navigation.replace('AuthOtp', { phone: e164 });
+        navigation.replace('AuthOtp', { phone: e164, inviteToken });
         return;
       }
 
@@ -47,7 +48,7 @@ export function AuthPhoneScreen({ navigation }) {
 
       if (error) throw error;
 
-      navigation.replace('AuthOtp', { phone: e164 });
+      navigation.replace('AuthOtp', { phone: e164, inviteToken });
     } catch (error) {
       Alert.alert(
         'Could not send code',

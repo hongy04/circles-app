@@ -1,0 +1,2533 @@
+diff -ruN circles_phase1a_original/circles-app/.env.example circles_phase1a_work/circles-app/.env.example
+--- circles_phase1a_original/circles-app/.env.example	2026-07-25 02:50:43.109117625 +0000
++++ circles_phase1a_work/circles-app/.env.example	2026-07-25 02:42:04.933100613 +0000
+@@ -7,6 +7,12 @@
+ EXPO_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+ EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
+ 
++
++# Optional stable HTTPS invitation base for production, for example:
++# EXPO_PUBLIC_INVITE_BASE_URL=https://circles.example/invite
++# Leave blank during Expo Go development; Circles will create a tunnel-aware link.
++EXPO_PUBLIC_INVITE_BASE_URL=
++
+ # Primary development-only login. Leave these unset in production.
+ EXPO_PUBLIC_DEV_EMAIL=dev@circles.local
+ EXPO_PUBLIC_DEV_PASSWORD=YOUR_PRIMARY_DEV_ACCOUNT_PASSWORD
+diff -ruN circles_phase1a_original/circles-app/App.js circles_phase1a_work/circles-app/App.js
+--- circles_phase1a_original/circles-app/App.js	2026-07-25 02:50:43.109117625 +0000
++++ circles_phase1a_work/circles-app/App.js	2026-07-25 02:46:54.549110121 +0000
+@@ -39,6 +39,8 @@
+ import { ProfilePostsFeedScreen } from './src/screens/profile/ProfilePostsFeedScreen';
+ import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
+ import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
++import { InvitePeopleScreen } from './src/screens/profile/InvitePeopleScreen';
++import { InvitationLandingScreen } from './src/screens/invitations/InvitationLandingScreen';
+ import { DevAccountsScreen } from './src/screens/dev/DevAccountsScreen';
+ import { InboxScreen } from './src/screens/conversations/InboxScreen';
+ import { NotificationsScreen } from './src/screens/conversations/NotificationsScreen';
+@@ -56,6 +58,7 @@
+ import { CirclePostsFeedScreen } from './src/screens/conversations/CirclePostsFeedScreen';
+ import { CircleTimelineFeedScreen } from './src/screens/conversations/CircleTimelineFeedScreen';
+ import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
++import { getInviteLinkingPrefixes } from './src/services/inviteService';
+ 
+ /* ---------------- Layout & helpers ---------------- */
+ const { width: W, height: H } = Dimensions.get('window');
+@@ -66,6 +69,15 @@
+ const CirclesStackNav = createNativeStackNavigator();
+ const Tabs = createBottomTabNavigator();
+ 
++const APP_LINKING = {
++  prefixes: getInviteLinkingPrefixes(),
++  config: {
++    screens: {
++      Invite: 'invite/:token',
++    },
++  },
++};
++
+ /* ---------------- App ---------------- */
+ export default function App() {
+   const [fontsLoaded] = useFonts({ Manrope_400Regular, Manrope_600SemiBold, Manrope_700Bold });
+@@ -73,9 +85,10 @@
+ 
+   return (
+     <SafeAreaProvider>
+-      <NavigationContainer>
++      <NavigationContainer linking={APP_LINKING}>
+         <RootStack.Navigator screenOptions={{ headerShown: false }}>
+           <RootStack.Screen name="Gate" component={GateScreen} />
++          <RootStack.Screen name="Invite" component={InvitationLandingScreen} />
+           <RootStack.Screen name="Auth" component={AuthNavigator} />
+           <RootStack.Screen name="MainTabs" component={AppTabs} />
+           <RootStack.Screen name="CreatePost" component={CreatePostScreen} />
+@@ -84,6 +97,7 @@
+           <RootStack.Screen name="ProfilePostsFeed" component={ProfilePostsFeedScreen} />
+           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
+           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
++          <RootStack.Screen name="InvitePeople" component={InvitePeopleScreen} />
+           {IS_DEVELOPMENT ? (
+             <RootStack.Screen name="DevAccounts" component={DevAccountsScreen} />
+           ) : null}
+@@ -334,66 +348,121 @@
+ const MOCK_INCOMING = [
+   { id: 'r1', from_user: 'uZ', display_name: 'Taylor Brooks', avatar_url: 'https://i.pravatar.cc/150?img=47', note: null, created_at: new Date().toISOString() },
+ ];
++const MOCK_CONNECTIONS = [
++  { user_id: 'c1', display_name: 'Alex Rivera', username: 'alex', avatar_url: 'https://i.pravatar.cc/150?img=12' },
++];
+ 
+-function MutualsScreen({ navigation }) {
++function MutualsScreen({ navigation, route }) {
+   const [loading, setLoading] = useState(true);
+   const [candidates, setCandidates] = useState([]);
+   const [incoming, setIncoming] = useState([]);
++  const [connections, setConnections] = useState([]);
+   const [sending, setSending] = useState({});
+   const [responding, setResponding] = useState({});
+-  const [tab, setTab] = useState('forYou');
++  const [tab, setTab] = useState(route?.params?.initialTab || 'mutuals');
+   const [authed, setAuthed] = useState(false);
+ 
+-  useEffect(() => { (async () => { const { data: { session } } = await supabase.auth.getSession(); setAuthed(!!session); })(); }, []);
++  useEffect(() => {
++    if (route?.params?.initialTab) {
++      setTab(route.params.initialTab);
++    }
++  }, [route?.params?.initialTab]);
++
++  useEffect(() => {
++    (async () => {
++      const { data: { session } } = await supabase.auth.getSession();
++      setAuthed(!!session);
++    })();
++  }, []);
+ 
+   const load = async () => {
+     setLoading(true);
+     try {
+       const { data: { session } } = await supabase.auth.getSession();
+-      if (!session) { if (IS_DEVELOPMENT) { setCandidates(MOCK_CANDIDATES); setIncoming(MOCK_INCOMING); } return; }
+-      const [{ data: cand }, { data: reqs }] = await Promise.all([
++      if (!session) {
++        if (IS_DEVELOPMENT) {
++          setCandidates(MOCK_CANDIDATES);
++          setIncoming(MOCK_INCOMING);
++          setConnections(MOCK_CONNECTIONS);
++        }
++        return;
++      }
++
++      const [candidateResult, requestResult, connectionResult] = await Promise.all([
+         supabase.rpc('mutual_candidates'),
+         supabase.rpc('incoming_requests'),
++        supabase.rpc('get_my_connections'),
+       ]);
+-      setCandidates(cand || []);
+-      setIncoming(reqs || []);
++
++      if (candidateResult.error) throw candidateResult.error;
++      if (requestResult.error) throw requestResult.error;
++      if (connectionResult.error) throw connectionResult.error;
++
++      setCandidates(candidateResult.data || []);
++      setIncoming(requestResult.data || []);
++      setConnections(connectionResult.data || []);
+     } catch (err) {
+-      alert(err.message || 'Failed to load mutuals');
+-    } finally { setLoading(false); }
++      Alert.alert('Could not load people', err?.message || 'Please try again.');
++    } finally {
++      setLoading(false);
++    }
+   };
+ 
+   useEffect(() => { load(); }, []);
+   useEffect(() => {
+     if (!authed) return;
+     const ch = supabase
+-      .channel('connreqs_mutuals')
++      .channel('people_relationship_changes')
+       .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests' }, () => load())
++      .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, () => load())
+       .subscribe();
+     return () => { supabase.removeChannel(ch); };
+   }, [authed]);
+ 
+   const sendRequest = async (userId) => {
+-    if (!authed && IS_DEVELOPMENT) { setCandidates(prev => prev.filter(u => u.id !== userId)); Alert.alert('DEV', 'Simulated request.'); return; }
+-    setSending(s => ({ ...s, [userId]: true }));
++    if (!authed && IS_DEVELOPMENT) {
++      setCandidates((current) => current.filter((user) => user.id !== userId));
++      Alert.alert('DEV', 'Simulated request.');
++      return;
++    }
++
++    setSending((current) => ({ ...current, [userId]: true }));
+     try {
+       await ensureAuthed();
+-      const { error } = await supabase.rpc('send_connection_request', { to_user_id: userId });
++      const { error } = await supabase.rpc('send_connection_request', {
++        to_user_id: userId,
++        note: null,
++      });
+       if (error) throw error;
+-      setCandidates(prev => prev.filter(u => u.id !== userId));
+-    } catch (e) { alert(e.message || 'Failed to send request'); }
+-    finally { setSending(s => ({ ...s, [userId]: false })); }
++      setCandidates((current) => current.filter((user) => user.id !== userId));
++    } catch (error) {
++      Alert.alert('Could not send request', error?.message || 'Please try again.');
++    } finally {
++      setSending((current) => ({ ...current, [userId]: false }));
++    }
+   };
+ 
+-  const respond = async (reqId, action) => {
+-    if (!authed && IS_DEVELOPMENT) { setIncoming(prev => prev.filter(r => r.id !== reqId)); Alert.alert('DEV', `Simulated ${action}.`); return; }
+-    setResponding(s => ({ ...s, [reqId]: true }));
++  const respond = async (requestId, action) => {
++    if (!authed && IS_DEVELOPMENT) {
++      setIncoming((current) => current.filter((request) => request.id !== requestId));
++      Alert.alert('DEV', `Simulated ${action}.`);
++      return;
++    }
++
++    setResponding((current) => ({ ...current, [requestId]: true }));
+     try {
+       await ensureAuthed();
+-      const { error } = await supabase.rpc('respond_connection_request', { req_id: reqId, action });
++      const { error } = await supabase.rpc('respond_connection_request', {
++        req_id: requestId,
++        action,
++      });
+       if (error) throw error;
+-      setIncoming(prev => prev.filter(r => r.id !== reqId));
+-    } catch (e) { alert(e.message || 'Failed to update request'); }
+-    finally { setResponding(s => ({ ...s, [reqId]: false })); }
++      await load();
++    } catch (error) {
++      Alert.alert('Could not update request', error?.message || 'Please try again.');
++    } finally {
++      setResponding((current) => ({ ...current, [requestId]: false }));
++    }
+   };
+ 
+   if (loading) {
+@@ -404,83 +473,207 @@
+     );
+   }
+ 
++  const segmentItems = [
++    { key: 'mutuals', label: 'Mutuals' },
++    { key: 'requests', label: incoming.length ? `Requests (${incoming.length})` : 'Requests' },
++    { key: 'connections', label: 'Connections' },
++  ];
++
+   return (
+     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
++      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 8 }}>
++        <View style={{ flex: 1 }}>
++          <Text style={{ color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 24 }}>People</Text>
++          <Text style={{ color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, marginTop: 2 }}>
++            Mutual context first. Access only after connection.
++          </Text>
++        </View>
++        <Pressable
++          onPress={() => navigation.navigate('InvitePeople')}
++          style={({ pressed }) => ({
++            minHeight: 40,
++            borderRadius: 12,
++            borderWidth: 1,
++            borderColor: COLORS.border,
++            flexDirection: 'row',
++            alignItems: 'center',
++            gap: 6,
++            paddingHorizontal: 12,
++            opacity: pressed ? 0.65 : 1,
++          })}
++        >
++          <Ionicons name="person-add-outline" size={18} color={COLORS.text} />
++          <Text style={{ color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12 }}>Invite</Text>
++        </Pressable>
++      </View>
++
+       <View style={{ flexDirection: 'row', margin: 12, backgroundColor: '#f2f2f2', borderRadius: 10 }}>
+-        {(['forYou','requests']).map(k => (
+-          <Pressable key={k} onPress={() => setTab(k)} style={({pressed}) => ({
+-            flex:1, paddingVertical:10, alignItems:'center',
+-            backgroundColor: tab===k ? COLORS.primary : 'transparent',
+-            borderRadius:10, opacity: pressed?0.9:1
+-          })}>
+-            <Text style={{ color: tab===k ? '#fff' : COLORS.text, fontFamily:'Manrope_700Bold' }}>
+-              {k==='forYou' ? 'For You' : `Requests${incoming.length ? ` (${incoming.length})` : ''}`}
++        {segmentItems.map((item) => (
++          <Pressable
++            key={item.key}
++            onPress={() => setTab(item.key)}
++            style={({ pressed }) => ({
++              flex: 1,
++              paddingVertical: 10,
++              alignItems: 'center',
++              backgroundColor: tab === item.key ? COLORS.primary : 'transparent',
++              borderRadius: 10,
++              opacity: pressed ? 0.9 : 1,
++            })}
++          >
++            <Text
++              numberOfLines={1}
++              style={{
++                color: tab === item.key ? '#fff' : COLORS.text,
++                fontFamily: 'Manrope_700Bold',
++                fontSize: 12,
++              }}
++            >
++              {item.label}
+             </Text>
+           </Pressable>
+         ))}
+       </View>
+ 
+-      {tab==='forYou' ? (
+-        <ScrollView contentContainerStyle={{ padding:12, gap:12 }}>
++      {tab === 'mutuals' ? (
++        <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }}>
+           {candidates.length === 0 ? (
+-            <Text style={{ textAlign:'center', color:COLORS.subtext, fontFamily:'Manrope_400Regular' }}>
+-              No mutuals yet. Upload contacts to grow your circle.
+-            </Text>
+-          ) : candidates.map(u => (
+-            <View key={u.id} style={{ flexDirection:'row', alignItems:'center', padding:12, borderWidth:StyleSheet.hairlineWidth, borderColor:COLORS.divider, borderRadius:12 }}>
++            <View style={{ alignItems: 'center', paddingVertical: 38, paddingHorizontal: 24 }}>
++              <Ionicons name="people-outline" size={38} color={COLORS.subtext} />
++              <Text style={{ marginTop: 10, textAlign: 'center', color: COLORS.text, fontFamily: 'Manrope_700Bold' }}>
++                No mutuals yet
++              </Text>
++              <Text style={{ marginTop: 5, textAlign: 'center', color: COLORS.subtext, fontFamily: 'Manrope_400Regular', lineHeight: 19 }}>
++                Sync contacts or invite people you already know. Profiles remain private until both people connect.
++              </Text>
++              <Pressable
++                onPress={() => navigation.navigate('InvitePeople')}
++                style={({ pressed }) => ({
++                  marginTop: 16,
++                  minHeight: 42,
++                  borderRadius: 11,
++                  backgroundColor: COLORS.primary,
++                  alignItems: 'center',
++                  justifyContent: 'center',
++                  paddingHorizontal: 18,
++                  opacity: pressed ? 0.7 : 1,
++                })}
++              >
++                <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Invite people</Text>
++              </Pressable>
++            </View>
++          ) : candidates.map((user) => (
++            <View key={user.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider, borderRadius: 12 }}>
+               <Pressable
+-                onPress={() => navigation.navigate('Profile', { userId: u.id })}
+-                style={{ flex:1, flexDirection:'row', alignItems:'center' }}
++                onPress={() => navigation.navigate('Profile', { userId: user.id })}
++                style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+               >
+-                <Avatar size={48} name={u.display_name || 'Unknown'} uri={u.avatar_url} />
+-                <View style={{ flex:1, marginHorizontal:12 }}>
+-                  <Text style={{ fontFamily:'Manrope_700Bold', color:COLORS.text }} numberOfLines={1}>{u.display_name || 'Unknown'}</Text>
+-                  <Text style={{ fontFamily:'Manrope_400Regular', color:COLORS.subtext, fontSize:12 }}>Mutual contact</Text>
++                <Avatar size={48} name={user.display_name || 'Unknown'} uri={user.avatar_url} />
++                <View style={{ flex: 1, marginHorizontal: 12 }}>
++                  <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>{user.display_name || 'Unknown'}</Text>
++                  <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }}>Mutual contact</Text>
+                 </View>
+               </Pressable>
+-              <Pressable onPress={() => sendRequest(u.id)} disabled={!!sending[u.id]} style={({pressed}) => ({
+-                paddingHorizontal:14, paddingVertical:8, borderRadius:10,
+-                backgroundColor:COLORS.primary, opacity: pressed||sending[u.id] ? 0.7 : 1
+-              })}>
+-                {sending[u.id] ? <ActivityIndicator color="#fff" /> : <Text style={{ color:'#fff', fontFamily:'Manrope_700Bold' }}>Request</Text>}
++              <Pressable
++                onPress={() => sendRequest(user.id)}
++                disabled={Boolean(sending[user.id])}
++                style={({ pressed }) => ({
++                  paddingHorizontal: 14,
++                  paddingVertical: 8,
++                  borderRadius: 10,
++                  backgroundColor: COLORS.primary,
++                  opacity: pressed || sending[user.id] ? 0.7 : 1,
++                })}
++              >
++                {sending[user.id] ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Request</Text>}
+               </Pressable>
+             </View>
+           ))}
+         </ScrollView>
+-      ) : (
+-        <ScrollView contentContainerStyle={{ padding:12, gap:12 }}>
++      ) : tab === 'requests' ? (
++        <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }}>
+           {incoming.length === 0 ? (
+-            <Text style={{ textAlign:'center', color:COLORS.subtext, fontFamily:'Manrope_400Regular' }}>No requests right now.</Text>
+-          ) : incoming.map(r => (
+-            <View key={r.id} style={{ padding:12, borderWidth:StyleSheet.hairlineWidth, borderColor:COLORS.divider, borderRadius:12 }}>
++            <Text style={{ textAlign: 'center', color: COLORS.subtext, fontFamily: 'Manrope_400Regular', paddingTop: 38 }}>No requests right now.</Text>
++          ) : incoming.map((request) => (
++            <View key={request.id} style={{ padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider, borderRadius: 12 }}>
+               <Pressable
+-                onPress={() => navigation.navigate('Profile', { userId: r.from_user })}
+-                style={{ flexDirection:'row', alignItems:'center' }}
++                onPress={() => navigation.navigate('Profile', { userId: request.from_user })}
++                style={{ flexDirection: 'row', alignItems: 'center' }}
+               >
+-                <Avatar size={48} name={r.display_name || 'Unknown'} uri={r.avatar_url} />
+-                <View style={{ flex:1, marginHorizontal:12 }}>
+-                  <Text style={{ fontFamily:'Manrope_700Bold', color:COLORS.text }} numberOfLines={1}>{r.display_name || 'Unknown'}</Text>
+-                  <Text style={{ fontFamily:'Manrope_400Regular', color:COLORS.subtext, fontSize:12 }}>wants to connect</Text>
++                <Avatar size={48} name={request.display_name || 'Unknown'} uri={request.avatar_url} />
++                <View style={{ flex: 1, marginHorizontal: 12 }}>
++                  <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>{request.display_name || 'Unknown'}</Text>
++                  <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }}>wants to connect</Text>
+                 </View>
+                 <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
+               </Pressable>
+-              <View style={{ flexDirection:'row', gap:10, marginTop:10 }}>
+-                <Pressable onPress={() => respond(r.id,'accept')} disabled={!!responding[r.id]} style={({pressed}) => ({
+-                  flex:1, paddingVertical:10, borderRadius:10, backgroundColor:COLORS.primary, alignItems:'center',
+-                  opacity: pressed||responding[r.id] ? 0.7 : 1
+-                })}>
+-                  {responding[r.id] ? <ActivityIndicator color="#fff" /> : <Text style={{ color:'#fff', fontFamily:'Manrope_700Bold' }}>Accept</Text>}
++              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
++                <Pressable
++                  onPress={() => respond(request.id, 'accept')}
++                  disabled={Boolean(responding[request.id])}
++                  style={({ pressed }) => ({
++                    flex: 1,
++                    paddingVertical: 10,
++                    borderRadius: 10,
++                    backgroundColor: COLORS.primary,
++                    alignItems: 'center',
++                    opacity: pressed || responding[request.id] ? 0.7 : 1,
++                  })}
++                >
++                  {responding[request.id] ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Accept</Text>}
+                 </Pressable>
+-                <Pressable onPress={() => respond(r.id,'decline')} disabled={!!responding[r.id]} style={({pressed}) => ({
+-                  flex:1, paddingVertical:10, borderRadius:10, borderWidth:1, borderColor:COLORS.border, alignItems:'center',
+-                  opacity: pressed||responding[r.id] ? 0.7 : 1
+-                })}>
+-                  <Text style={{ color:COLORS.text, fontFamily:'Manrope_700Bold' }}>Decline</Text>
++                <Pressable
++                  onPress={() => respond(request.id, 'decline')}
++                  disabled={Boolean(responding[request.id])}
++                  style={({ pressed }) => ({
++                    flex: 1,
++                    paddingVertical: 10,
++                    borderRadius: 10,
++                    borderWidth: 1,
++                    borderColor: COLORS.border,
++                    alignItems: 'center',
++                    opacity: pressed || responding[request.id] ? 0.7 : 1,
++                  })}
++                >
++                  <Text style={{ color: COLORS.text, fontFamily: 'Manrope_700Bold' }}>Decline</Text>
+                 </Pressable>
+               </View>
+             </View>
+           ))}
+         </ScrollView>
++      ) : (
++        <ScrollView contentContainerStyle={{ padding: 12, gap: 10 }}>
++          {connections.length === 0 ? (
++            <Text style={{ textAlign: 'center', color: COLORS.subtext, fontFamily: 'Manrope_400Regular', paddingTop: 38 }}>
++              Accepted connections will appear here.
++            </Text>
++          ) : connections.map((person) => (
++            <Pressable
++              key={person.user_id}
++              onPress={() => navigation.navigate('Profile', { userId: person.user_id })}
++              style={({ pressed }) => ({
++                flexDirection: 'row',
++                alignItems: 'center',
++                padding: 12,
++                borderWidth: StyleSheet.hairlineWidth,
++                borderColor: COLORS.divider,
++                borderRadius: 12,
++                opacity: pressed ? 0.7 : 1,
++              })}
++            >
++              <Avatar size={48} name={person.display_name || 'Connection'} uri={person.avatar_url} />
++              <View style={{ flex: 1, marginHorizontal: 12 }}>
++                <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>
++                  {person.display_name || 'Connection'}
++                </Text>
++                <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }} numberOfLines={1}>
++                  {person.username ? `@${person.username}` : 'Accepted connection'}
++                </Text>
++              </View>
++              <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
++            </Pressable>
++          ))}
++        </ScrollView>
+       )}
+     </SafeAreaView>
+   );
+diff -ruN circles_phase1a_original/circles-app/app.json circles_phase1a_work/circles-app/app.json
+--- circles_phase1a_original/circles-app/app.json	2026-07-25 02:50:43.109117625 +0000
++++ circles_phase1a_work/circles-app/app.json	2026-07-25 02:47:03.381110411 +0000
+@@ -1,38 +1,40 @@
+-{
+-  "expo": {
+-    "name": "my-app",
+-    "slug": "my-app",
+-    "version": "1.0.0",
+-    "orientation": "portrait",
+-    "icon": "./assets/icon.png",
+-    "userInterfaceStyle": "light",
+-    "newArchEnabled": true,
+-    "splash": {
+-      "image": "./assets/splash-icon.png",
+-      "resizeMode": "contain",
+-      "backgroundColor": "#ffffff"
+-    },
+-    "ios": {
+-      "supportsTablet": true,
+-      "infoPlist": {
+-        "NSContactsUsageDescription": "Circles uses your contacts to find mutual connections. You can exclude any contact."
+-      }
+-      
+-    },
+-    "android": {
+-      "adaptiveIcon": {
+-        "foregroundImage": "./assets/adaptive-icon.png",
+-        "backgroundColor": "#ffffff"
+-      },
+-      "edgeToEdgeEnabled": true,
+-      "permissions": ["READ_CONTACTS"]
+-    },
+-    "web": {
+-      "favicon": "./assets/favicon.png"
+-    },
+-    "plugins": [
+-      "expo-font",
+-      "expo-localization"
+-    ]
+-  }
+-}
++{
++  "expo": {
++    "name": "my-app",
++    "slug": "my-app",
++    "version": "1.0.0",
++    "orientation": "portrait",
++    "icon": "./assets/icon.png",
++    "userInterfaceStyle": "light",
++    "newArchEnabled": true,
++    "splash": {
++      "image": "./assets/splash-icon.png",
++      "resizeMode": "contain",
++      "backgroundColor": "#ffffff"
++    },
++    "ios": {
++      "supportsTablet": true,
++      "infoPlist": {
++        "NSContactsUsageDescription": "Circles uses your contacts to find mutual connections. You can exclude any contact."
++      }
++    },
++    "android": {
++      "adaptiveIcon": {
++        "foregroundImage": "./assets/adaptive-icon.png",
++        "backgroundColor": "#ffffff"
++      },
++      "edgeToEdgeEnabled": true,
++      "permissions": [
++        "READ_CONTACTS"
++      ]
++    },
++    "web": {
++      "favicon": "./assets/favicon.png"
++    },
++    "plugins": [
++      "expo-font",
++      "expo-localization"
++    ],
++    "scheme": "circles"
++  }
++}
+diff -ruN circles_phase1a_original/circles-app/package.json circles_phase1a_work/circles-app/package.json
+--- circles_phase1a_original/circles-app/package.json	2026-07-25 02:50:43.133117626 +0000
++++ circles_phase1a_work/circles-app/package.json	2026-07-25 02:47:03.381110411 +0000
+@@ -1,53 +1,55 @@
+-{
+-  "name": "my-app",
+-  "license": "0BSD",
+-  "version": "1.0.0",
+-  "main": "index.js",
+-  "scripts": {
+-    "start": "expo start",
+-    "android": "expo start --android",
+-    "ios": "expo start --ios",
+-    "web": "expo start --web"
+-  },
+-  "dependencies": {
+-    "@expo-google-fonts/manrope": "^0.4.2",
+-    "@expo/metro-runtime": "~6.1.2",
+-    "@expo/vector-icons": "^15.0.2",
+-    "@react-navigation/bottom-tabs": "^7.4.7",
+-    "@react-navigation/native": "^7.1.17",
+-    "@react-navigation/native-stack": "^7.3.26",
+-    "@supabase/supabase-js": "^2.58.0",
+-    "base64-arraybuffer": "^1.0.2",
+-    "expo": "~54.0.36",
+-    "expo-av": "~16.0.8",
+-    "expo-contacts": "~15.0.11",
+-    "expo-file-system": "~19.0.15",
+-    "expo-font": "~14.0.8",
+-    "expo-haptics": "~15.0.8",
+-    "expo-image-manipulator": "~14.0.8",
+-    "expo-image-picker": "~17.0.11",
+-    "expo-linear-gradient": "~15.0.8",
+-    "expo-localization": "~17.0.9",
+-    "expo-media-library": "~18.2.1",
+-    "expo-status-bar": "~3.0.9",
+-    "libphonenumber-js": "^1.12.23",
+-    "moti": "^0.29.0",
+-    "react": "19.1.0",
+-    "react-dom": "19.1.0",
+-    "react-native": "0.81.5",
+-    "react-native-gesture-handler": "~2.28.0",
+-    "react-native-reanimated": "~4.1.1",
+-    "react-native-safe-area-context": "~5.6.0",
+-    "react-native-screens": "~4.16.0",
+-    "react-native-web": "^0.21.0",
+-    "react-native-worklets": "0.5.1"
+-  },
+-  "private": true,
+-  "devDependencies": {
+-    "babel-preset-expo": "~54.0.10"
+-  },
+-  "overrides": {
+-    "react": "19.1.0",
+-    "react-dom": "19.1.0"
+-  }
+-}
++{
++  "name": "my-app",
++  "license": "0BSD",
++  "version": "1.0.0",
++  "main": "index.js",
++  "scripts": {
++    "start": "expo start",
++    "android": "expo start --android",
++    "ios": "expo start --ios",
++    "web": "expo start --web"
++  },
++  "dependencies": {
++    "@expo-google-fonts/manrope": "^0.4.2",
++    "@expo/metro-runtime": "~6.1.2",
++    "@expo/vector-icons": "^15.0.2",
++    "@react-navigation/bottom-tabs": "^7.4.7",
++    "@react-navigation/native": "^7.1.17",
++    "@react-navigation/native-stack": "^7.3.26",
++    "@supabase/supabase-js": "^2.58.0",
++    "base64-arraybuffer": "^1.0.2",
++    "expo": "~54.0.36",
++    "expo-av": "~16.0.8",
++    "expo-contacts": "~15.0.11",
++    "expo-file-system": "~19.0.15",
++    "expo-font": "~14.0.8",
++    "expo-haptics": "~15.0.8",
++    "expo-image-manipulator": "~14.0.8",
++    "expo-image-picker": "~17.0.11",
++    "expo-linear-gradient": "~15.0.8",
++    "expo-linking": "~8.0.12",
++    "expo-localization": "~17.0.9",
++    "expo-media-library": "~18.2.1",
++    "expo-sms": "~14.0.8",
++    "expo-status-bar": "~3.0.9",
++    "libphonenumber-js": "^1.12.23",
++    "moti": "^0.29.0",
++    "react": "19.1.0",
++    "react-dom": "19.1.0",
++    "react-native": "0.81.5",
++    "react-native-gesture-handler": "~2.28.0",
++    "react-native-reanimated": "~4.1.1",
++    "react-native-safe-area-context": "~5.6.0",
++    "react-native-screens": "~4.16.0",
++    "react-native-web": "^0.21.0",
++    "react-native-worklets": "0.5.1"
++  },
++  "private": true,
++  "devDependencies": {
++    "babel-preset-expo": "~54.0.10"
++  },
++  "overrides": {
++    "react": "19.1.0",
++    "react-dom": "19.1.0"
++  }
++}
+diff -ruN circles_phase1a_original/circles-app/src/config/env.js circles_phase1a_work/circles-app/src/config/env.js
+--- circles_phase1a_original/circles-app/src/config/env.js	2026-07-25 02:50:43.137117626 +0000
++++ circles_phase1a_work/circles-app/src/config/env.js	2026-07-25 02:42:04.933100613 +0000
+@@ -15,6 +15,10 @@
+ 
+ export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+ 
++export const INVITE_BASE_URL = (
++  process.env.EXPO_PUBLIC_INVITE_BASE_URL || ''
++).trim();
++
+ export const SUPABASE_KEY =
+   process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+diff -ruN circles_phase1a_original/circles-app/src/navigation/AuthNavigator.js circles_phase1a_work/circles-app/src/navigation/AuthNavigator.js
+--- circles_phase1a_original/circles-app/src/navigation/AuthNavigator.js	2026-07-25 02:50:43.137117626 +0000
++++ circles_phase1a_work/circles-app/src/navigation/AuthNavigator.js	2026-07-25 02:44:49.949106031 +0000
+@@ -10,7 +10,8 @@
+ 
+ const Stack = createNativeStackNavigator();
+ 
+-export function AuthNavigator() {
++export function AuthNavigator({ route }) {
++  const inviteToken = route?.params?.inviteToken || null;
+   return (
+     <Stack.Navigator
+       screenOptions={{
+@@ -18,7 +19,11 @@
+         contentStyle: { backgroundColor: COLORS.bg },
+       }}
+     >
+-      <Stack.Screen name="AuthPhone" component={AuthPhoneScreen} />
++      <Stack.Screen
++        name="AuthPhone"
++        component={AuthPhoneScreen}
++        initialParams={{ inviteToken }}
++      />
+       <Stack.Screen name="AuthOtp" component={AuthOtpScreen} />
+       <Stack.Screen
+         name="ContactsIntro"
+diff -ruN circles_phase1a_original/circles-app/src/screens/auth/AuthOtpScreen.js circles_phase1a_work/circles-app/src/screens/auth/AuthOtpScreen.js
+--- circles_phase1a_original/circles-app/src/screens/auth/AuthOtpScreen.js	2026-07-25 02:50:43.137117626 +0000
++++ circles_phase1a_work/circles-app/src/screens/auth/AuthOtpScreen.js	2026-07-25 02:44:49.949106031 +0000
+@@ -11,14 +11,34 @@
+ import { DEV_BYPASS_CODE, IS_DEVELOPMENT } from '../../config/env';
+ import { supabase } from '../../lib/supabase';
+ import { ensureDevSession } from '../../services/authService';
++import { redeemAppInvite } from '../../services/inviteService';
+ import { authStyles } from './authStyles';
+ 
+ export function AuthOtpScreen({ route, navigation }) {
+-  const { phone } = route.params || {};
++  const { phone, inviteToken } = route.params || {};
+ 
+   const [code, setCode] = useState('');
+   const [loading, setLoading] = useState(false);
+ 
++
++  const finishAfterAuthentication = async () => {
++    let inviteResult = null;
++    let inviteError = '';
++
++    if (inviteToken) {
++      try {
++        inviteResult = await redeemAppInvite(inviteToken);
++      } catch (error) {
++        inviteError = error?.message || 'The invitation could not be applied.';
++      }
++    }
++
++    navigation.replace('ContactsIntro', {
++      inviteResult,
++      inviteError,
++    });
++  };
++
+   const onVerify = async () => {
+     const token = code.trim();
+ 
+@@ -39,7 +59,7 @@
+           );
+         }
+ 
+-        navigation.replace('ContactsIntro');
++        await finishAfterAuthentication();
+         return;
+       }
+ 
+@@ -61,7 +81,7 @@
+ 
+       if (ensureError) throw ensureError;
+ 
+-      navigation.replace('ContactsIntro');
++      await finishAfterAuthentication();
+     } catch (error) {
+       Alert.alert(
+         'Verification failed',
+@@ -106,7 +126,7 @@
+ 
+       <Pressable
+         style={{ marginTop: 12 }}
+-        onPress={() => navigation.replace('AuthPhone')}
++        onPress={() => navigation.replace('AuthPhone', { inviteToken })}
+       >
+         <Text style={authStyles.linkText}>Use a different number</Text>
+       </Pressable>
+diff -ruN circles_phase1a_original/circles-app/src/screens/auth/AuthPhoneScreen.js circles_phase1a_work/circles-app/src/screens/auth/AuthPhoneScreen.js
+--- circles_phase1a_original/circles-app/src/screens/auth/AuthPhoneScreen.js	2026-07-25 02:50:43.137117626 +0000
++++ circles_phase1a_work/circles-app/src/screens/auth/AuthPhoneScreen.js	2026-07-25 02:44:49.949106031 +0000
+@@ -19,7 +19,8 @@
+   return locale?.regionCode || Localization?.region || 'US';
+ }
+ 
+-export function AuthPhoneScreen({ navigation }) {
++export function AuthPhoneScreen({ route, navigation }) {
++  const inviteToken = route?.params?.inviteToken || null;
+   const [phone, setPhone] = useState('');
+   const [loading, setLoading] = useState(false);
+   const region = getRegionCode();
+@@ -37,7 +38,7 @@
+       const e164 = parsed?.isValid() ? parsed.number : phone.trim();
+ 
+       if (IS_DEVELOPMENT) {
+-        navigation.replace('AuthOtp', { phone: e164 });
++        navigation.replace('AuthOtp', { phone: e164, inviteToken });
+         return;
+       }
+ 
+@@ -47,7 +48,7 @@
+ 
+       if (error) throw error;
+ 
+-      navigation.replace('AuthOtp', { phone: e164 });
++      navigation.replace('AuthOtp', { phone: e164, inviteToken });
+     } catch (error) {
+       Alert.alert(
+         'Could not send code',
+diff -ruN circles_phase1a_original/circles-app/src/screens/auth/ContactsIntroScreen.js circles_phase1a_work/circles-app/src/screens/auth/ContactsIntroScreen.js
+--- circles_phase1a_original/circles-app/src/screens/auth/ContactsIntroScreen.js	2026-07-25 02:50:43.137117626 +0000
++++ circles_phase1a_work/circles-app/src/screens/auth/ContactsIntroScreen.js	2026-07-25 02:44:49.949106031 +0000
+@@ -10,7 +10,9 @@
+ import { replaceWithMainTabs } from '../../navigation/navigationActions';
+ import { authStyles } from './authStyles';
+ 
+-export function ContactsIntroScreen({ navigation }) {
++export function ContactsIntroScreen({ route, navigation }) {
++  const inviteResult = route?.params?.inviteResult || null;
++  const inviteError = route?.params?.inviteError || '';
+   const isWeb = Platform.OS === 'web';
+ 
+   const continueFromIntro = () => {
+@@ -40,6 +42,25 @@
+           </Text>
+         </View>
+       ) : null}
++
++
++      {inviteResult ? (
++        <View style={authStyles.webNotice}>
++          <Text style={authStyles.caption}>
++            {inviteResult.kind === 'circle'
++              ? `Your invitation to ${inviteResult.circleName} is ready. You can review it after contact setup.`
++              : `${inviteResult.inviterName}'s connection request is ready. You can review it after contact setup.`}
++          </Text>
++        </View>
++      ) : null}
++
++      {inviteError ? (
++        <View style={authStyles.webNotice}>
++          <Text style={authStyles.caption}>
++            You are signed in, but the invitation could not be applied: {inviteError}
++          </Text>
++        </View>
++      ) : null}
+ 
+       <View style={{ height: 16 }} />
+ 
+diff -ruN circles_phase1a_original/circles-app/src/screens/conversations/InviteCirclePeopleScreen.js circles_phase1a_work/circles-app/src/screens/conversations/InviteCirclePeopleScreen.js
+--- circles_phase1a_original/circles-app/src/screens/conversations/InviteCirclePeopleScreen.js	2026-07-25 02:50:43.137117626 +0000
++++ circles_phase1a_work/circles-app/src/screens/conversations/InviteCirclePeopleScreen.js	2026-07-25 02:45:33.973107476 +0000
+@@ -21,6 +21,7 @@
+   invitePeopleToCircle,
+   listCircleInviteCandidates,
+ } from '../../services/circlePeopleService';
++import { createCircleInvite, shareInvite } from '../../services/inviteService';
+ 
+ export function InviteCirclePeopleScreen({ route, navigation }) {
+   const { conversationId, circleName = 'Circle' } = route.params || {};
+@@ -30,6 +31,7 @@
+   const [loading, setLoading] = useState(true);
+   const [sending, setSending] = useState(false);
+   const [error, setError] = useState('');
++  const [sharingLink, setSharingLink] = useState(false);
+ 
+   const load = useCallback(async () => {
+     if (!conversationId) return;
+@@ -75,6 +77,23 @@
+     });
+   };
+ 
++  const shareCircleLink = async () => {
++    if (!conversationId || sharingLink) return;
++    setSharingLink(true);
++
++    try {
++      const invite = await createCircleInvite(conversationId);
++      await shareInvite(invite);
++    } catch (shareError) {
++      Alert.alert(
++        'Could not share Circle invite',
++        shareError?.message || 'Please try again.'
++      );
++    } finally {
++      setSharingLink(false);
++    }
++  };
++
+   const send = async () => {
+     if (!selectedIds.size || sending) return;
+     setSending(true);
+@@ -140,6 +159,30 @@
+             </Text>
+           </View>
+ 
++          <View style={styles.linkInviteCard}>
++            <View style={styles.linkInviteCopy}>
++              <Text style={styles.linkInviteTitle}>Invite beyond your connections</Text>
++              <Text style={styles.linkInviteBody}>
++                Share a private Circle link in an existing group chat. Each person
++                still reviews the invitation before joining.
++              </Text>
++            </View>
++            <Pressable
++              onPress={shareCircleLink}
++              disabled={sharingLink}
++              style={({ pressed }) => [
++                styles.linkInviteButton,
++                (pressed || sharingLink) && styles.pressed,
++              ]}
++            >
++              {sharingLink ? (
++                <ActivityIndicator color="#fff" size="small" />
++              ) : (
++                <Ionicons name="share-outline" size={19} color="#fff" />
++              )}
++            </Pressable>
++          </View>
++
+           <View style={styles.searchBox}>
+             <Ionicons name="search" size={18} color={COLORS.subtext} />
+             <TextInput
+@@ -334,6 +377,40 @@
+     fontSize: 11,
+     lineHeight: 17,
+   },
++  linkInviteCard: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    borderRadius: 14,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++    padding: 13,
++    marginTop: 10,
++    marginBottom: 10,
++  },
++  linkInviteCopy: {
++    flex: 1,
++    paddingRight: 12,
++  },
++  linkInviteTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  linkInviteBody: {
++    marginTop: 3,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 17,
++  },
++  linkInviteButton: {
++    width: 42,
++    height: 42,
++    borderRadius: 12,
++    backgroundColor: COLORS.primary,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
+   searchBox: {
+     minHeight: 43,
+     flexDirection: 'row',
+diff -ruN circles_phase1a_original/circles-app/src/screens/invitations/InvitationLandingScreen.js circles_phase1a_work/circles-app/src/screens/invitations/InvitationLandingScreen.js
+--- circles_phase1a_original/circles-app/src/screens/invitations/InvitationLandingScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ circles_phase1a_work/circles-app/src/screens/invitations/InvitationLandingScreen.js	2026-07-25 02:49:50.745115906 +0000
+@@ -0,0 +1,313 @@
++import React, { useCallback, useEffect, useState } from 'react';
++import {
++  ActivityIndicator,
++  Pressable,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++
++import { Avatar } from '../../components/Avatar';
++import { MonoRingWithRipples } from '../../components/MonoRingWithRipples';
++import { COLORS } from '../../theme/colors';
++import { supabase } from '../../lib/supabase';
++import {
++  previewAppInvite,
++  redeemAppInvite,
++} from '../../services/inviteService';
++
++function unavailableMessage(reason) {
++  switch (reason) {
++    case 'expired':
++      return 'This invitation has expired. Ask the sender for a new link.';
++    case 'revoked':
++      return 'This invitation is no longer active.';
++    case 'used_up':
++      return 'This invitation has reached its limit.';
++    case 'circle_unavailable':
++      return 'This Circle is no longer available.';
++    case 'inviter_no_longer_can_invite':
++      return 'The sender can no longer invite people to this Circle.';
++    default:
++      return 'This invitation could not be found or is no longer available.';
++  }
++}
++
++function resultCopy(result) {
++  if (!result) return '';
++
++  if (result.kind === 'circle') {
++    if (result.outcome === 'already_member') {
++      return `You are already a member of ${result.circleName}.`;
++    }
++
++    if (result.outcome === 'circle_invitation_exists') {
++      return `An invitation to ${result.circleName} is already waiting for you in Circles.`;
++    }
++
++    return `Your invitation to ${result.circleName} is ready. Review it in Circles before joining.`;
++  }
++
++  if (result.outcome === 'already_connected') {
++    return `You and ${result.inviterName} are already connected.`;
++  }
++
++  if (result.outcome === 'request_exists') {
++    return `A connection request between you and ${result.inviterName} is already waiting.`;
++  }
++
++  return `${result.inviterName}'s connection request is ready. Review it in Mutuals before connecting.`;
++}
++
++export function InvitationLandingScreen({ route, navigation }) {
++  const token = route.params?.token || '';
++  const [preview, setPreview] = useState(null);
++  const [result, setResult] = useState(null);
++  const [loading, setLoading] = useState(true);
++  const [redeeming, setRedeeming] = useState(false);
++  const [error, setError] = useState('');
++
++  const loadPreview = useCallback(async () => {
++    setLoading(true);
++    setError('');
++
++    try {
++      setPreview(await previewAppInvite(token));
++    } catch (loadError) {
++      setError(loadError?.message || 'Could not open this invitation.');
++    } finally {
++      setLoading(false);
++    }
++  }, [token]);
++
++  useEffect(() => {
++    loadPreview();
++  }, [loadPreview]);
++
++  const continueWithInvite = async () => {
++    if (!preview?.valid || redeeming) return;
++    setRedeeming(true);
++    setError('');
++
++    try {
++      const {
++        data: { session },
++        error: sessionError,
++      } = await supabase.auth.getSession();
++
++      if (sessionError) throw sessionError;
++
++      if (!session) {
++        navigation.replace('Auth', { inviteToken: token });
++        return;
++      }
++
++      setResult(await redeemAppInvite(token));
++    } catch (redeemError) {
++      setError(redeemError?.message || 'Could not apply this invitation.');
++    } finally {
++      setRedeeming(false);
++    }
++  };
++
++  const openCircles = () => {
++    const targetTab = result?.kind === 'personal' ? 'Mutuals' : 'Circles';
++    navigation.replace('MainTabs', {
++      screen: targetTab,
++      params: result?.kind === 'personal'
++        ? { initialTab: 'requests' }
++        : undefined,
++    });
++  };
++
++  if (loading) {
++    return (
++      <SafeAreaView style={styles.centered}>
++        <ActivityIndicator />
++        <Text style={styles.loadingText}>Opening invitation…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  if (result) {
++    return (
++      <SafeAreaView style={styles.screen}>
++        <View style={styles.content}>
++          <View style={styles.successIcon}>
++            <Ionicons name="checkmark" size={34} color="#fff" />
++          </View>
++          <Text style={styles.title}>Invitation saved</Text>
++          <Text style={styles.body}>{resultCopy(result)}</Text>
++          <Pressable
++            onPress={openCircles}
++            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
++          >
++            <Text style={styles.primaryButtonText}>Open Circles</Text>
++          </Pressable>
++        </View>
++      </SafeAreaView>
++    );
++  }
++
++  const isCircle = preview?.kind === 'circle';
++  const available = Boolean(preview?.valid);
++
++  return (
++    <SafeAreaView style={styles.screen}>
++      <View style={styles.content}>
++        <MonoRingWithRipples size={86} />
++
++        {available ? (
++          <>
++            <Text style={styles.eyebrow}>CIRCLES INVITATION</Text>
++            <Avatar
++              size={70}
++              name={preview.inviterName}
++              uri={preview.inviterAvatar}
++            />
++            <Text style={styles.title}>
++              {isCircle
++                ? `${preview.inviterName} invited you to join ${preview.circleName}`
++                : `${preview.inviterName} invited you to connect`}
++            </Text>
++            <Text style={styles.body}>
++              {isCircle
++                ? `Join a private Circle with ${preview.memberCount || 'their'} existing member${preview.memberCount === 1 ? '' : 's'}. You will still review the invitation before entering.`
++                : 'Circles keeps profiles private. Joining creates a connection request that you can review before accepting.'}
++            </Text>
++
++            {error ? <Text style={styles.errorText}>{error}</Text> : null}
++
++            <Pressable
++              onPress={continueWithInvite}
++              disabled={redeeming}
++              style={({ pressed }) => [
++                styles.primaryButton,
++                (pressed || redeeming) && styles.pressed,
++              ]}
++            >
++              {redeeming ? (
++                <ActivityIndicator color="#fff" />
++              ) : (
++                <Text style={styles.primaryButtonText}>Continue to Circles</Text>
++              )}
++            </Pressable>
++          </>
++        ) : (
++          <>
++            <View style={styles.unavailableIcon}>
++              <Ionicons name="link-outline" size={30} color={COLORS.text} />
++            </View>
++            <Text style={styles.title}>Invitation unavailable</Text>
++            <Text style={styles.body}>
++              {error || unavailableMessage(preview?.reason)}
++            </Text>
++            <Pressable
++              onPress={() => navigation.replace('Gate')}
++              style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
++            >
++              <Text style={styles.secondaryButtonText}>Open Circles</Text>
++            </Pressable>
++          </>
++        )}
++      </View>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: { flex: 1, backgroundColor: COLORS.bg },
++  centered: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: COLORS.bg,
++  },
++  loadingText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  content: {
++    flex: 1,
++    width: '100%',
++    maxWidth: 560,
++    alignSelf: 'center',
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    paddingBottom: 30,
++  },
++  eyebrow: {
++    marginTop: 32,
++    marginBottom: 16,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 11,
++    letterSpacing: 1.2,
++  },
++  title: {
++    marginTop: 18,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 24,
++    lineHeight: 31,
++    textAlign: 'center',
++  },
++  body: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 15,
++    lineHeight: 22,
++    textAlign: 'center',
++  },
++  errorText: {
++    marginTop: 14,
++    color: '#a61b12',
++    fontFamily: 'Manrope_600SemiBold',
++    textAlign: 'center',
++  },
++  primaryButton: {
++    width: '100%',
++    minHeight: 50,
++    marginTop: 24,
++    borderRadius: 14,
++    backgroundColor: COLORS.primary,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 18,
++  },
++  primaryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
++  secondaryButton: {
++    width: '100%',
++    minHeight: 50,
++    marginTop: 24,
++    borderRadius: 14,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 18,
++  },
++  secondaryButtonText: { color: COLORS.text, fontFamily: 'Manrope_700Bold' },
++  successIcon: {
++    width: 72,
++    height: 72,
++    borderRadius: 36,
++    backgroundColor: COLORS.primary,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  unavailableIcon: {
++    width: 68,
++    height: 68,
++    borderRadius: 34,
++    backgroundColor: '#f1f1f1',
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  pressed: { opacity: 0.7 },
++});
+diff -ruN circles_phase1a_original/circles-app/src/screens/profile/AccountSettingsScreen.js circles_phase1a_work/circles-app/src/screens/profile/AccountSettingsScreen.js
+--- circles_phase1a_original/circles-app/src/screens/profile/AccountSettingsScreen.js	2026-07-25 02:50:43.141117626 +0000
++++ circles_phase1a_work/circles-app/src/screens/profile/AccountSettingsScreen.js	2026-07-25 02:45:07.761106615 +0000
+@@ -149,6 +149,16 @@
+             />
+           </View>
+ 
++          <Text style={styles.sectionLabel}>PEOPLE</Text>
++          <View style={styles.section}>
++            <SettingRow
++              icon="person-add-outline"
++              title="Invite people"
++              subtitle="Share a private invitation or text someone from your contacts"
++              onPress={() => navigation.navigate('InvitePeople')}
++            />
++          </View>
++
+           <Text style={styles.sectionLabel}>ACCOUNT</Text>
+           <View style={styles.section}>
+             <SettingRow
+@@ -160,7 +170,7 @@
+             <SettingRow
+               icon="lock-closed-outline"
+               title="Private by design"
+-              subtitle="Profiles and posts are intended for mutuals and accepted connections."
++              subtitle="Profiles and posts remain private until a connection is accepted."
+             />
+           </View>
+ 
+diff -ruN circles_phase1a_original/circles-app/src/screens/profile/InvitePeopleScreen.js circles_phase1a_work/circles-app/src/screens/profile/InvitePeopleScreen.js
+--- circles_phase1a_original/circles-app/src/screens/profile/InvitePeopleScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ circles_phase1a_work/circles-app/src/screens/profile/InvitePeopleScreen.js	2026-07-25 02:49:50.745115906 +0000
+@@ -0,0 +1,509 @@
++import React, { useCallback, useMemo, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  FlatList,
++  Platform,
++  Pressable,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { useFocusEffect } from '@react-navigation/native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import * as Contacts from 'expo-contacts';
++
++import { Avatar } from '../../components/Avatar';
++import { COLORS } from '../../theme/colors';
++import { getRegionCode, normalizeToE164 } from '../../utils/contactPhones';
++import {
++  createPersonalInvite,
++  shareInvite,
++  textInviteToContact,
++} from '../../services/inviteService';
++
++function mapContacts(data, region) {
++  const seenNumbers = new Set();
++  const mapped = [];
++
++  (data || []).forEach((contact) => {
++    const normalizedNumbers = (contact.phoneNumbers || [])
++      .map((phone) => normalizeToE164(phone.number, region))
++      .filter(Boolean);
++
++    const phoneNumber = normalizedNumbers.find((number) => {
++      if (seenNumbers.has(number)) return false;
++      seenNumbers.add(number);
++      return true;
++    });
++
++    if (!phoneNumber) return;
++
++    mapped.push({
++      id: contact.id || `${contact.name}-${phoneNumber}`,
++      name: contact.name || 'Unknown',
++      phoneNumber,
++    });
++  });
++
++  return mapped.sort((a, b) => a.name.localeCompare(b.name));
++}
++
++export function InvitePeopleScreen({ navigation }) {
++  const [invite, setInvite] = useState(null);
++  const [loadingInvite, setLoadingInvite] = useState(true);
++  const [inviteError, setInviteError] = useState('');
++  const [sharing, setSharing] = useState(false);
++  const [contacts, setContacts] = useState([]);
++  const [contactsLoaded, setContactsLoaded] = useState(false);
++  const [loadingContacts, setLoadingContacts] = useState(false);
++  const [query, setQuery] = useState('');
++  const [sendingId, setSendingId] = useState(null);
++  const [invitedIds, setInvitedIds] = useState(new Set());
++
++  const loadInvite = useCallback(async () => {
++    setLoadingInvite(true);
++    setInviteError('');
++    try {
++      setInvite(await createPersonalInvite());
++    } catch (error) {
++      setInviteError(error?.message || 'Could not create your invitation.');
++    } finally {
++      setLoadingInvite(false);
++    }
++  }, []);
++
++  useFocusEffect(
++    useCallback(() => {
++      loadInvite();
++    }, [loadInvite])
++  );
++
++  const filteredContacts = useMemo(() => {
++    const normalized = query.trim().toLowerCase();
++    if (!normalized) return contacts;
++    return contacts.filter((contact) =>
++      contact.name.toLowerCase().includes(normalized)
++      || contact.phoneNumber.includes(normalized)
++    );
++  }, [contacts, query]);
++
++  const openContacts = async () => {
++    if (Platform.OS === 'web') {
++      Alert.alert(
++        'Contacts are mobile-only',
++        'Use the share button to send your invitation from the browser.'
++      );
++      return;
++    }
++
++    setLoadingContacts(true);
++    try {
++      const { status } = await Contacts.requestPermissionsAsync();
++      if (status !== 'granted') {
++        Alert.alert(
++          'Contacts unavailable',
++          'Contacts permission was not granted. You can still share your invitation link.'
++        );
++        return;
++      }
++
++      const { data } = await Contacts.getContactsAsync({
++        fields: [Contacts.Fields.PhoneNumbers],
++        pageSize: 2000,
++      });
++
++      setContacts(mapContacts(data, getRegionCode()));
++      setContactsLoaded(true);
++    } catch (error) {
++      Alert.alert(
++        'Could not load contacts',
++        error?.message || 'Please try again.'
++      );
++    } finally {
++      setLoadingContacts(false);
++    }
++  };
++
++  const shareGeneralInvite = async () => {
++    if (!invite || sharing) return;
++    setSharing(true);
++    try {
++      await shareInvite(invite);
++    } catch (error) {
++      Alert.alert('Could not share invite', error?.message || 'Please try again.');
++    } finally {
++      setSharing(false);
++    }
++  };
++
++  const inviteContact = async (contact) => {
++    if (!invite || sendingId) return;
++    setSendingId(contact.id);
++
++    try {
++      const response = await textInviteToContact(contact.phoneNumber, invite);
++      if (response?.result === 'sent' || response?.result === 'unknown') {
++        setInvitedIds((current) => new Set([...current, contact.id]));
++      }
++    } catch (error) {
++      Alert.alert(
++        'Could not prepare message',
++        error?.message || 'Please try again.'
++      );
++    } finally {
++      setSendingId(null);
++    }
++  };
++
++  const header = (
++    <View>
++      <View style={styles.heroCard}>
++        <View style={styles.heroIcon}>
++          <Ionicons name="people-outline" size={26} color={COLORS.text} />
++        </View>
++        <Text style={styles.heroTitle}>Bring your real people to Circles</Text>
++        <Text style={styles.heroBody}>
++          Your link creates social context, not automatic access. Each person
++          still chooses whether to connect with you.
++        </Text>
++
++        <Pressable
++          onPress={shareGeneralInvite}
++          disabled={!invite || loadingInvite || sharing}
++          style={({ pressed }) => [
++            styles.primaryButton,
++            (!invite || loadingInvite) && styles.disabled,
++            (pressed || sharing) && styles.pressed,
++          ]}
++        >
++          {loadingInvite || sharing ? (
++            <ActivityIndicator color="#fff" />
++          ) : (
++            <>
++              <Ionicons name="share-outline" size={19} color="#fff" />
++              <Text style={styles.primaryButtonText}>Share invite link</Text>
++            </>
++          )}
++        </Pressable>
++
++        {inviteError ? (
++          <View style={styles.errorBox}>
++            <Text style={styles.errorText}>{inviteError}</Text>
++            <Pressable onPress={loadInvite} hitSlop={8}>
++              <Text style={styles.retryText}>Try again</Text>
++            </Pressable>
++          </View>
++        ) : null}
++
++        {invite?.url ? (
++          <Text style={styles.linkPreview} selectable numberOfLines={2}>
++            {invite.url}
++          </Text>
++        ) : null}
++      </View>
++
++      <View style={styles.sectionHeadingRow}>
++        <View style={{ flex: 1 }}>
++          <Text style={styles.sectionTitle}>Invite from contacts</Text>
++          <Text style={styles.sectionBody}>
++            Circles opens one private message at a time—never a group text.
++          </Text>
++        </View>
++
++        {!contactsLoaded ? (
++          <Pressable
++            onPress={openContacts}
++            disabled={loadingContacts}
++            style={({ pressed }) => [
++              styles.secondaryButton,
++              pressed && styles.pressed,
++            ]}
++          >
++            {loadingContacts ? (
++              <ActivityIndicator />
++            ) : (
++              <Text style={styles.secondaryButtonText}>Choose</Text>
++            )}
++          </Pressable>
++        ) : null}
++      </View>
++
++      {contactsLoaded ? (
++        <View style={styles.searchBox}>
++          <Ionicons name="search" size={18} color={COLORS.subtext} />
++          <TextInput
++            value={query}
++            onChangeText={setQuery}
++            placeholder="Search contacts"
++            placeholderTextColor="#8e8e93"
++            autoCorrect={false}
++            style={styles.searchInput}
++          />
++          {query ? (
++            <Pressable onPress={() => setQuery('')} hitSlop={8}>
++              <Ionicons name="close-circle" size={18} color="#a3a3a3" />
++            </Pressable>
++          ) : null}
++        </View>
++      ) : null}
++    </View>
++  );
++
++  return (
++    <SafeAreaView edges={['top']} style={styles.screen}>
++      <View style={styles.topBar}>
++        <Pressable
++          onPress={() => navigation.goBack()}
++          hitSlop={10}
++          style={styles.topBarSide}
++        >
++          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
++        </Pressable>
++        <Text style={styles.topBarTitle}>Invite People</Text>
++        <View style={styles.topBarSide} />
++      </View>
++
++      <FlatList
++        data={contactsLoaded ? filteredContacts : []}
++        keyExtractor={(item) => item.id}
++        ListHeaderComponent={header}
++        contentContainerStyle={styles.content}
++        keyboardShouldPersistTaps="handled"
++        showsVerticalScrollIndicator={false}
++        ListEmptyComponent={contactsLoaded ? (
++          <View style={styles.emptyState}>
++            <Ionicons name="person-add-outline" size={34} color={COLORS.subtext} />
++            <Text style={styles.emptyTitle}>
++              {query ? 'No matching contacts' : 'No phone contacts found'}
++            </Text>
++          </View>
++        ) : null}
++        renderItem={({ item }) => {
++          const sent = invitedIds.has(item.id);
++          const busy = sendingId === item.id;
++          return (
++            <View style={styles.contactRow}>
++              <Avatar size={46} name={item.name} />
++              <View style={styles.contactCopy}>
++                <Text style={styles.contactName} numberOfLines={1}>
++                  {item.name}
++                </Text>
++                <Text style={styles.contactPhone} numberOfLines={1}>
++                  {item.phoneNumber}
++                </Text>
++              </View>
++              <Pressable
++                onPress={() => inviteContact(item)}
++                disabled={!invite || busy}
++                style={({ pressed }) => [
++                  styles.inviteButton,
++                  sent && styles.invitedButton,
++                  (pressed || busy) && styles.pressed,
++                ]}
++              >
++                {busy ? (
++                  <ActivityIndicator size="small" color={sent ? COLORS.text : '#fff'} />
++                ) : (
++                  <Text style={sent ? styles.invitedText : styles.inviteText}>
++                    {sent ? 'Invited' : 'Invite'}
++                  </Text>
++                )}
++              </Pressable>
++            </View>
++          );
++        }}
++      />
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: { flex: 1, backgroundColor: '#f7f7f7' },
++  topBar: {
++    minHeight: 52,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 10,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  topBarSide: {
++    width: 52,
++    height: 42,
++    alignItems: 'flex-start',
++    justifyContent: 'center',
++  },
++  topBarTitle: {
++    flex: 1,
++    textAlign: 'center',
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 16,
++  },
++  content: {
++    width: '100%',
++    maxWidth: 680,
++    alignSelf: 'center',
++    paddingHorizontal: 14,
++    paddingTop: 14,
++    paddingBottom: 44,
++  },
++  heroCard: {
++    borderRadius: 18,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++    padding: 18,
++  },
++  heroIcon: {
++    width: 48,
++    height: 48,
++    borderRadius: 24,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: '#f1f1f1',
++  },
++  heroTitle: {
++    marginTop: 14,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 20,
++  },
++  heroBody: {
++    marginTop: 7,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    lineHeight: 20,
++  },
++  primaryButton: {
++    minHeight: 48,
++    marginTop: 18,
++    borderRadius: 13,
++    backgroundColor: COLORS.primary,
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    gap: 8,
++    paddingHorizontal: 16,
++  },
++  primaryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
++  disabled: { opacity: 0.45 },
++  pressed: { opacity: 0.7 },
++  errorBox: {
++    marginTop: 12,
++    borderRadius: 10,
++    backgroundColor: '#fff1f0',
++    padding: 11,
++  },
++  errorText: {
++    color: '#8a1c13',
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++  },
++  retryText: {
++    marginTop: 6,
++    color: '#8a1c13',
++    fontFamily: 'Manrope_700Bold',
++  },
++  linkPreview: {
++    marginTop: 12,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++    lineHeight: 16,
++  },
++  sectionHeadingRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    marginTop: 24,
++    marginBottom: 12,
++    paddingHorizontal: 2,
++    gap: 12,
++  },
++  sectionTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 17,
++  },
++  sectionBody: {
++    marginTop: 3,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 17,
++  },
++  secondaryButton: {
++    minWidth: 82,
++    minHeight: 40,
++    borderRadius: 11,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 14,
++  },
++  secondaryButtonText: { color: COLORS.text, fontFamily: 'Manrope_700Bold' },
++  searchBox: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    minHeight: 44,
++    borderRadius: 12,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++    paddingHorizontal: 12,
++    marginBottom: 10,
++  },
++  searchInput: {
++    flex: 1,
++    marginHorizontal: 8,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++  },
++  contactRow: {
++    minHeight: 68,
++    flexDirection: 'row',
++    alignItems: 'center',
++    borderRadius: 14,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++    paddingHorizontal: 12,
++    marginBottom: 9,
++  },
++  contactCopy: { flex: 1, marginHorizontal: 11 },
++  contactName: { color: COLORS.text, fontFamily: 'Manrope_700Bold' },
++  contactPhone: {
++    marginTop: 2,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++  },
++  inviteButton: {
++    minWidth: 78,
++    minHeight: 36,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 12,
++  },
++  invitedButton: {
++    backgroundColor: '#f1f1f1',
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++  },
++  inviteText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 12 },
++  invitedText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },
++  emptyState: { alignItems: 'center', paddingVertical: 42 },
++  emptyTitle: {
++    marginTop: 10,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++});
+diff -ruN circles_phase1a_original/circles-app/src/services/inviteService.js circles_phase1a_work/circles-app/src/services/inviteService.js
+--- circles_phase1a_original/circles-app/src/services/inviteService.js	1970-01-01 00:00:00.000000000 +0000
++++ circles_phase1a_work/circles-app/src/services/inviteService.js	2026-07-25 02:42:05.045100617 +0000
+@@ -0,0 +1,159 @@
++import { Platform, Share } from 'react-native';
++import * as Linking from 'expo-linking';
++import * as SMS from 'expo-sms';
++
++import { INVITE_BASE_URL } from '../config/env';
++import { supabase } from '../lib/supabase';
++import { ensureAuthed } from './authService';
++
++function cleanBaseUrl(value = '') {
++  return value.trim().replace(/\/+$/, '');
++}
++
++export function getInviteLinkingPrefixes() {
++  const prefixes = [Linking.createURL('/'), 'circles://'];
++  const configuredBase = cleanBaseUrl(INVITE_BASE_URL);
++
++  if (configuredBase) {
++    try {
++      const parsed = new URL(configuredBase);
++      prefixes.push(`${parsed.protocol}//${parsed.host}`);
++    } catch {
++      // Invalid optional production configuration should not break development.
++    }
++  }
++
++  return Array.from(new Set(prefixes.filter(Boolean)));
++}
++
++export function buildInviteUrl(token) {
++  const cleanToken = String(token || '').trim();
++  if (!cleanToken) throw new Error('Invitation token is missing.');
++
++  const configuredBase = cleanBaseUrl(INVITE_BASE_URL);
++  if (configuredBase) {
++    return `${configuredBase}/${encodeURIComponent(cleanToken)}`;
++  }
++
++  return Linking.createURL(`invite/${encodeURIComponent(cleanToken)}`);
++}
++
++function buildInviteMessage(invite, url) {
++  if (invite.kind === 'circle') {
++    return `${invite.inviterName} invited you to join ${invite.circleName} on Circles—a private space for people who actually know each other.\n\n${url}`;
++  }
++
++  return `${invite.inviterName} invited you to connect on Circles—a private space for the people you actually know.\n\n${url}`;
++}
++
++function mapInvite(data) {
++  if (!data?.token) throw new Error('Circles could not create an invitation.');
++
++  const invite = {
++    token: data.token,
++    kind: data.kind,
++    expiresAt: data.expires_at || null,
++    inviterName: data.inviter_name || 'A friend',
++    inviterAvatar: data.inviter_avatar || null,
++    conversationId: data.conversation_id || null,
++    circleName: data.circle_name || 'Circle',
++    memberCount: Number(data.member_count || 0),
++  };
++
++  invite.url = buildInviteUrl(invite.token);
++  invite.message = buildInviteMessage(invite, invite.url);
++  return invite;
++}
++
++export async function createPersonalInvite() {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('create_app_invite', {
++    p_kind: 'personal',
++    p_conversation_id: null,
++  });
++
++  if (error) throw error;
++  return mapInvite(data);
++}
++
++export async function createCircleInvite(conversationId) {
++  await ensureAuthed();
++  if (!conversationId) throw new Error('Circle is missing.');
++
++  const { data, error } = await supabase.rpc('create_app_invite', {
++    p_kind: 'circle',
++    p_conversation_id: conversationId,
++  });
++
++  if (error) throw error;
++  return mapInvite(data);
++}
++
++export async function previewAppInvite(token) {
++  const { data, error } = await supabase.rpc('preview_app_invite', {
++    p_token: token,
++  });
++
++  if (error) throw error;
++
++  return {
++    valid: Boolean(data?.valid),
++    reason: data?.reason || null,
++    kind: data?.kind || null,
++    expiresAt: data?.expires_at || null,
++    inviterName: data?.inviter_name || 'A friend',
++    inviterAvatar: data?.inviter_avatar || null,
++    conversationId: data?.conversation_id || null,
++    circleName: data?.circle_name || 'Circle',
++    memberCount: Number(data?.member_count || 0),
++  };
++}
++
++export async function redeemAppInvite(token) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('redeem_app_invite', {
++    p_token: token,
++  });
++
++  if (error) throw error;
++
++  return {
++    kind: data?.kind || 'personal',
++    outcome: data?.outcome || 'request_exists',
++    inviterName: data?.inviter_name || 'A friend',
++    conversationId: data?.conversation_id || null,
++    circleName: data?.circle_name || 'Circle',
++  };
++}
++
++export async function shareInvite(invite) {
++  if (!invite?.message) throw new Error('Invitation is not ready.');
++
++  return Share.share(
++    {
++      title: invite.kind === 'circle'
++        ? `Join ${invite.circleName} on Circles`
++        : 'Join me on Circles',
++      message: invite.message,
++      ...(Platform.OS === 'ios' ? { url: invite.url } : {}),
++    },
++    {
++      subject: invite.kind === 'circle'
++        ? `Join ${invite.circleName} on Circles`
++        : 'Join me on Circles',
++    }
++  );
++}
++
++export async function textInviteToContact(phoneNumber, invite) {
++  if (!phoneNumber) throw new Error('This contact has no usable phone number.');
++  if (!invite?.message) throw new Error('Invitation is not ready.');
++
++  const available = await SMS.isAvailableAsync();
++  if (!available) {
++    await shareInvite(invite);
++    return { result: 'share-sheet' };
++  }
++
++  return SMS.sendSMSAsync(phoneNumber, invite.message);
++}
+diff -ruN circles_phase1a_original/circles-app/src/utils/contactPhones.js circles_phase1a_work/circles-app/src/utils/contactPhones.js
+--- circles_phase1a_original/circles-app/src/utils/contactPhones.js	1970-01-01 00:00:00.000000000 +0000
++++ circles_phase1a_work/circles-app/src/utils/contactPhones.js	2026-07-25 02:43:31.665103460 +0000
+@@ -0,0 +1,22 @@
++import * as Localization from 'expo-localization';
++import { parsePhoneNumberFromString } from 'libphonenumber-js';
++
++export function getRegionCode() {
++  const locale = Localization.getLocales?.()?.[0];
++  return locale?.regionCode || Localization?.region || 'US';
++}
++
++export function normalizeToE164(raw, region = getRegionCode()) {
++  try {
++    const parsed = parsePhoneNumberFromString(raw, region);
++    if (parsed?.isValid()) return parsed.number;
++  } catch {
++    // Fall through to a conservative digit-only normalization.
++  }
++
++  const digits = String(raw || '').replace(/\D+/g, '');
++  if (!digits) return null;
++  if (digits.startsWith('1') && digits.length === 11) return `+${digits}`;
++  if (digits.length === 10) return `+1${digits}`;
++  return `+${digits}`;
++}
+diff -ruN circles_phase1a_original/circles-app/supabase/migrations/20260725_018_launch_invitations_connections.sql circles_phase1a_work/circles-app/supabase/migrations/20260725_018_launch_invitations_connections.sql
+--- circles_phase1a_original/circles-app/supabase/migrations/20260725_018_launch_invitations_connections.sql	1970-01-01 00:00:00.000000000 +0000
++++ circles_phase1a_work/circles-app/supabase/migrations/20260725_018_launch_invitations_connections.sql	2026-07-25 02:41:27.581099387 +0000
+@@ -0,0 +1,522 @@
++-- Circles Phase 1A — launch invitations and Connections foundation
++--
++-- Adds reusable invitation links for personal connections and group Circles,
++-- invitation redemption with explicit acceptance still required, and a private
++-- RPC for listing accepted Connections.
++
++create extension if not exists pgcrypto;
++
++create table if not exists public.app_invites (
++  id uuid primary key default gen_random_uuid(),
++  token text not null unique,
++  inviter_id uuid not null references public.users(id) on delete cascade,
++  kind text not null check (kind in ('personal', 'circle')),
++  conversation_id uuid references public.conversations(id) on delete cascade,
++  created_at timestamptz not null default now(),
++  expires_at timestamptz not null default (now() + interval '30 days'),
++  revoked_at timestamptz,
++  max_uses integer not null default 50 check (max_uses between 1 and 500),
++  use_count integer not null default 0 check (use_count >= 0),
++  constraint app_invites_kind_shape_check check (
++    (kind = 'personal' and conversation_id is null)
++    or
++    (kind = 'circle' and conversation_id is not null)
++  )
++);
++
++create index if not exists app_invites_active_lookup_index
++  on public.app_invites (inviter_id, kind, conversation_id, expires_at desc);
++
++create table if not exists public.app_invite_redemptions (
++  id uuid primary key default gen_random_uuid(),
++  invite_id uuid not null references public.app_invites(id) on delete cascade,
++  redeemer_id uuid not null references public.users(id) on delete cascade,
++  outcome text not null,
++  created_at timestamptz not null default now(),
++  unique (invite_id, redeemer_id)
++);
++
++create index if not exists app_invite_redemptions_user_index
++  on public.app_invite_redemptions (redeemer_id, created_at desc);
++
++alter table public.app_invites enable row level security;
++alter table public.app_invite_redemptions enable row level security;
++
++-- No direct table policies are added. Invitation access is intentionally
++-- mediated through the security-definer functions below.
++
++create or replace function public.get_my_connections()
++returns table (
++  user_id uuid,
++  display_name text,
++  username text,
++  avatar_url text,
++  connected_since timestamptz
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select
++    connected_user.id as user_id,
++    connected_user.display_name,
++    connected_user.username,
++    connected_user.avatar_url,
++    connection_row.created_at as connected_since
++  from public.connections connection_row
++  join public.users connected_user
++    on connected_user.id = connection_row.other_user_id
++  where connection_row.user_id = auth.uid()
++    and connection_row.other_user_id <> auth.uid()
++  order by connected_user.display_name nulls last, connected_user.id;
++$$;
++
++revoke all on function public.get_my_connections() from public;
++grant execute on function public.get_my_connections() to authenticated;
++
++create or replace function public.create_app_invite(
++  p_kind text,
++  p_conversation_id uuid default null
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_invite public.app_invites%rowtype;
++  v_inviter public.users%rowtype;
++  v_circle public.conversations%rowtype;
++  v_role text;
++  v_member_count integer := 0;
++  v_token text;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if p_kind not in ('personal', 'circle') then
++    raise exception 'Invite kind must be personal or circle';
++  end if;
++
++  if p_kind = 'personal' and p_conversation_id is not null then
++    raise exception 'Personal invitations cannot target a Circle';
++  end if;
++
++  if p_kind = 'circle' then
++    if p_conversation_id is null then
++      raise exception 'A Circle invitation requires a Circle';
++    end if;
++
++    select conversation_row.*
++    into v_circle
++    from public.conversations conversation_row
++    where conversation_row.id = p_conversation_id
++      and conversation_row.kind = 'group';
++
++    if not found then
++      raise exception 'Circle not found';
++    end if;
++
++    v_role := public.circle_group_member_role(
++      p_conversation_id,
++      v_viewer_id
++    );
++
++    if v_role is null or v_role not in ('owner', 'admin') then
++      raise exception 'Only the owner or an admin can share a Circle invitation';
++    end if;
++  end if;
++
++  select invite_row.*
++  into v_invite
++  from public.app_invites invite_row
++  where invite_row.inviter_id = v_viewer_id
++    and invite_row.kind = p_kind
++    and invite_row.conversation_id is not distinct from p_conversation_id
++    and invite_row.revoked_at is null
++    and invite_row.expires_at > now()
++    and invite_row.use_count < invite_row.max_uses
++  order by invite_row.created_at desc
++  limit 1;
++
++  if not found then
++    loop
++      v_token := encode(gen_random_bytes(18), 'hex');
++      begin
++        insert into public.app_invites (
++          token,
++          inviter_id,
++          kind,
++          conversation_id,
++          expires_at,
++          max_uses
++        )
++        values (
++          v_token,
++          v_viewer_id,
++          p_kind,
++          p_conversation_id,
++          now() + interval '30 days',
++          case when p_kind = 'circle' then 20 else 100 end
++        )
++        returning * into v_invite;
++        exit;
++      exception
++        when unique_violation then
++          -- Cryptographic collisions are extraordinarily unlikely, but retry
++          -- rather than surfacing a failure if one ever occurs.
++      end;
++    end loop;
++  end if;
++
++  select user_row.*
++  into v_inviter
++  from public.users user_row
++  where user_row.id = v_viewer_id;
++
++  if p_kind = 'circle' then
++    select count(*)
++    into v_member_count
++    from public.conversation_members member_row
++    where member_row.conversation_id = p_conversation_id;
++  end if;
++
++  return jsonb_build_object(
++    'token', v_invite.token,
++    'kind', v_invite.kind,
++    'expires_at', v_invite.expires_at,
++    'inviter_name', coalesce(v_inviter.display_name, 'A friend'),
++    'inviter_avatar', v_inviter.avatar_url,
++    'conversation_id', v_invite.conversation_id,
++    'circle_name', case
++      when p_kind = 'circle' then coalesce(nullif(btrim(v_circle.title), ''), 'Circle')
++      else null
++    end,
++    'member_count', v_member_count
++  );
++end;
++$$;
++
++revoke all on function public.create_app_invite(text, uuid) from public;
++grant execute on function public.create_app_invite(text, uuid) to authenticated;
++
++create or replace function public.preview_app_invite(p_token text)
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $$
++declare
++  v_invite public.app_invites%rowtype;
++  v_inviter public.users%rowtype;
++  v_circle public.conversations%rowtype;
++  v_member_count integer := 0;
++  v_available boolean := false;
++  v_reason text := 'not_found';
++  v_role text;
++begin
++  select invite_row.*
++  into v_invite
++  from public.app_invites invite_row
++  where invite_row.token = nullif(btrim(p_token), '')
++  limit 1;
++
++  if not found then
++    return jsonb_build_object('valid', false, 'reason', v_reason);
++  end if;
++
++  if v_invite.revoked_at is not null then
++    v_reason := 'revoked';
++  elsif v_invite.expires_at <= now() then
++    v_reason := 'expired';
++  elsif v_invite.use_count >= v_invite.max_uses then
++    v_reason := 'used_up';
++  else
++    v_available := true;
++    v_reason := null;
++  end if;
++
++  select user_row.*
++  into v_inviter
++  from public.users user_row
++  where user_row.id = v_invite.inviter_id;
++
++  if v_invite.kind = 'circle' then
++    select conversation_row.*
++    into v_circle
++    from public.conversations conversation_row
++    where conversation_row.id = v_invite.conversation_id
++      and conversation_row.kind = 'group';
++
++    if not found then
++      v_available := false;
++      v_reason := 'circle_unavailable';
++    else
++      v_role := public.circle_group_member_role(
++        v_invite.conversation_id,
++        v_invite.inviter_id
++      );
++
++      if v_role is null or v_role not in ('owner', 'admin') then
++        v_available := false;
++        v_reason := 'inviter_no_longer_can_invite';
++      end if;
++
++      select count(*)
++      into v_member_count
++      from public.conversation_members member_row
++      where member_row.conversation_id = v_invite.conversation_id;
++    end if;
++  end if;
++
++  return jsonb_build_object(
++    'valid', v_available,
++    'reason', v_reason,
++    'kind', v_invite.kind,
++    'expires_at', v_invite.expires_at,
++    'inviter_name', coalesce(v_inviter.display_name, 'A friend'),
++    'inviter_avatar', v_inviter.avatar_url,
++    'conversation_id', v_invite.conversation_id,
++    'circle_name', case
++      when v_invite.kind = 'circle' then coalesce(nullif(btrim(v_circle.title), ''), 'Circle')
++      else null
++    end,
++    'member_count', v_member_count
++  );
++end;
++$$;
++
++revoke all on function public.preview_app_invite(text) from public;
++grant execute on function public.preview_app_invite(text) to anon, authenticated;
++
++create or replace function public.redeem_app_invite(p_token text)
++returns jsonb
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_invite public.app_invites%rowtype;
++  v_existing_redemption public.app_invite_redemptions%rowtype;
++  v_inviter public.users%rowtype;
++  v_circle public.conversations%rowtype;
++  v_role text;
++  v_outcome text;
++  v_member_count integer := 0;
++  v_pending_count integer := 0;
++begin
++  if v_viewer_id is null then
++    raise exception 'Please sign in to use this invitation';
++  end if;
++
++  select invite_row.*
++  into v_invite
++  from public.app_invites invite_row
++  where invite_row.token = nullif(btrim(p_token), '')
++  for update;
++
++  if not found then
++    raise exception 'Invitation not found';
++  end if;
++
++  if v_invite.inviter_id = v_viewer_id then
++    raise exception 'You cannot redeem your own invitation';
++  end if;
++
++  if v_invite.revoked_at is not null then
++    raise exception 'This invitation is no longer available';
++  end if;
++
++  if v_invite.expires_at <= now() then
++    raise exception 'This invitation has expired';
++  end if;
++
++  select user_row.*
++  into v_inviter
++  from public.users user_row
++  where user_row.id = v_invite.inviter_id;
++
++  select redemption_row.*
++  into v_existing_redemption
++  from public.app_invite_redemptions redemption_row
++  where redemption_row.invite_id = v_invite.id
++    and redemption_row.redeemer_id = v_viewer_id;
++
++  if found then
++    if v_invite.kind = 'circle' then
++      select conversation_row.*
++      into v_circle
++      from public.conversations conversation_row
++      where conversation_row.id = v_invite.conversation_id;
++    end if;
++
++    return jsonb_build_object(
++      'kind', v_invite.kind,
++      'outcome', v_existing_redemption.outcome,
++      'inviter_name', coalesce(v_inviter.display_name, 'A friend'),
++      'conversation_id', v_invite.conversation_id,
++      'circle_name', case
++        when v_invite.kind = 'circle' then coalesce(nullif(btrim(v_circle.title), ''), 'Circle')
++        else null
++      end
++    );
++  end if;
++
++  if v_invite.use_count >= v_invite.max_uses then
++    raise exception 'This invitation has reached its limit';
++  end if;
++
++  if v_invite.kind = 'personal' then
++    if exists (
++      select 1
++      from public.connections connection_row
++      where connection_row.user_id = v_viewer_id
++        and connection_row.other_user_id = v_invite.inviter_id
++    ) or exists (
++      select 1
++      from public.connections connection_row
++      where connection_row.user_id = v_invite.inviter_id
++        and connection_row.other_user_id = v_viewer_id
++    ) then
++      v_outcome := 'already_connected';
++    elsif exists (
++      select 1
++      from public.connection_requests request_row
++      where request_row.status = 'pending'
++        and (
++          (request_row.from_user = v_invite.inviter_id and request_row.to_user = v_viewer_id)
++          or
++          (request_row.from_user = v_viewer_id and request_row.to_user = v_invite.inviter_id)
++        )
++    ) then
++      v_outcome := 'request_exists';
++    else
++      insert into public.connection_requests (
++        from_user,
++        to_user,
++        status,
++        note,
++        created_at
++      )
++      values (
++        v_invite.inviter_id,
++        v_viewer_id,
++        'pending',
++        'Invited through Circles',
++        now()
++      );
++      v_outcome := 'request_created';
++    end if;
++  else
++    select conversation_row.*
++    into v_circle
++    from public.conversations conversation_row
++    where conversation_row.id = v_invite.conversation_id
++      and conversation_row.kind = 'group';
++
++    if not found then
++      raise exception 'This Circle is no longer available';
++    end if;
++
++    v_role := public.circle_group_member_role(
++      v_invite.conversation_id,
++      v_invite.inviter_id
++    );
++
++    if v_role is null or v_role not in ('owner', 'admin') then
++      raise exception 'The inviter can no longer add people to this Circle';
++    end if;
++
++    if exists (
++      select 1
++      from public.conversation_members member_row
++      where member_row.conversation_id = v_invite.conversation_id
++        and member_row.user_id = v_viewer_id
++    ) then
++      v_outcome := 'already_member';
++    elsif exists (
++      select 1
++      from public.conversation_invitations invitation_row
++      where invitation_row.conversation_id = v_invite.conversation_id
++        and invitation_row.invited_user_id = v_viewer_id
++        and invitation_row.status = 'pending'
++    ) then
++      v_outcome := 'circle_invitation_exists';
++    else
++      select count(*)
++      into v_member_count
++      from public.conversation_members member_row
++      where member_row.conversation_id = v_invite.conversation_id;
++
++      select count(*)
++      into v_pending_count
++      from public.conversation_invitations invitation_row
++      where invitation_row.conversation_id = v_invite.conversation_id
++        and invitation_row.status = 'pending';
++
++      if v_member_count + v_pending_count >= 21 then
++        raise exception 'This Circle is currently full';
++      end if;
++
++      insert into public.conversation_invitations (
++        conversation_id,
++        invited_user_id,
++        invited_by,
++        status,
++        created_at,
++        responded_at
++      )
++      values (
++        v_invite.conversation_id,
++        v_viewer_id,
++        v_invite.inviter_id,
++        'pending',
++        now(),
++        null
++      )
++      on conflict (conversation_id, invited_user_id)
++      do update set
++        invited_by = excluded.invited_by,
++        status = 'pending',
++        created_at = excluded.created_at,
++        responded_at = null;
++
++      v_outcome := 'circle_invitation_created';
++    end if;
++  end if;
++
++  insert into public.app_invite_redemptions (
++    invite_id,
++    redeemer_id,
++    outcome
++  )
++  values (
++    v_invite.id,
++    v_viewer_id,
++    v_outcome
++  );
++
++  update public.app_invites invite_row
++  set use_count = invite_row.use_count + 1
++  where invite_row.id = v_invite.id;
++
++  return jsonb_build_object(
++    'kind', v_invite.kind,
++    'outcome', v_outcome,
++    'inviter_name', coalesce(v_inviter.display_name, 'A friend'),
++    'conversation_id', v_invite.conversation_id,
++    'circle_name', case
++      when v_invite.kind = 'circle' then coalesce(nullif(btrim(v_circle.title), ''), 'Circle')
++      else null
++    end
++  );
++end;
++$$;
++
++revoke all on function public.redeem_app_invite(text) from public;
++grant execute on function public.redeem_app_invite(text) to authenticated;

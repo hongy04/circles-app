@@ -1,0 +1,224 @@
+--- a/src/screens/conversations/ChatScreen.js
++++ b/src/screens/conversations/ChatScreen.js
+@@ -1,9 +1,11 @@
+ import React, { useCallback, useEffect, useRef, useState } from 'react';
+ import {
++  ActionSheetIOS,
+   ActivityIndicator,
+   Alert,
+   FlatList,
+   Image,
++  Keyboard,
+   KeyboardAvoidingView,
+   Platform,
+   Pressable,
+@@ -174,6 +176,7 @@
+   const [sending, setSending] = useState(false);
+   const [uploadStage, setUploadStage] = useState('');
+   const [deletingMessageId, setDeletingMessageId] = useState(null);
++  const [keyboardVisible, setKeyboardVisible] = useState(false);
+   const [error, setError] = useState(null);
+ 
+   const load = useCallback(async ({ quiet = false } = {}) => {
+@@ -221,6 +224,30 @@
+     return () => clearTimeout(timer);
+   }, [messages.length]);
+ 
++  useEffect(() => {
++    const showEvent = Platform.OS === 'ios'
++      ? 'keyboardWillShow'
++      : 'keyboardDidShow';
++    const hideEvent = Platform.OS === 'ios'
++      ? 'keyboardWillHide'
++      : 'keyboardDidHide';
++
++    const showSubscription = Keyboard.addListener(showEvent, () => {
++      setKeyboardVisible(true);
++      setTimeout(() => {
++        listRef.current?.scrollToOffset?.({ offset: 0, animated: true });
++      }, 80);
++    });
++    const hideSubscription = Keyboard.addListener(hideEvent, () => {
++      setKeyboardVisible(false);
++    });
++
++    return () => {
++      showSubscription.remove();
++      hideSubscription.remove();
++    };
++  }, []);
++
+   const pickMedia = async () => {
+     if (sending) return;
+ 
+@@ -335,37 +362,73 @@
+     }
+   };
+ 
+-  const confirmDelete = (message) => {
++  const unsendMessage = async (message) => {
+     if (message.senderId !== currentUserId || deletingMessageId) return;
+ 
++    setDeletingMessageId(message.id);
++    try {
++      await deleteOwnConversationMessage(message.id);
++      setMessages((current) =>
++        current.filter((item) => item.id !== message.id)
++      );
++    } catch (deleteError) {
++      Alert.alert(
++        'Message not unsent',
++        deleteError?.message || 'Please try again.'
++      );
++    } finally {
++      setDeletingMessageId(null);
++    }
++  };
++
++  const confirmUnsend = (message) => {
++    const detail = message.media.length
++      ? (isCircle
++        ? 'This removes it for everyone and from the Circle Timeline.'
++        : 'This removes it for both people and from Shared Media.')
++      : 'This removes it for everyone in this conversation.';
++
+     Alert.alert(
+-      'Delete this message?',
+-      message.media.length
+-        ? (isCircle
+-          ? 'It will be removed from Chat and the Circle Timeline.'
+-          : 'It will be removed from Chat and Shared Media.')
+-        : 'It will be removed for everyone in this conversation.',
++      'Unsend this message?',
++      detail,
+       [
+         { text: 'Cancel', style: 'cancel' },
+         {
+-          text: 'Delete',
++          text: 'Unsend',
+           style: 'destructive',
+-          onPress: async () => {
+-            setDeletingMessageId(message.id);
+-            try {
+-              await deleteOwnConversationMessage(message.id);
+-              setMessages((current) =>
+-                current.filter((item) => item.id !== message.id)
+-              );
+-            } catch (deleteError) {
+-              Alert.alert(
+-                'Message not deleted',
+-                deleteError?.message || 'Please try again.'
+-              );
+-            } finally {
+-              setDeletingMessageId(null);
+-            }
+-          },
++          onPress: () => unsendMessage(message),
++        },
++      ]
++    );
++  };
++
++  const showMessageActions = (message) => {
++    if (message.senderId !== currentUserId || deletingMessageId) return;
++
++    if (Platform.OS === 'ios') {
++      ActionSheetIOS.showActionSheetWithOptions(
++        {
++          options: ['Cancel', 'Unsend Message'],
++          cancelButtonIndex: 0,
++          destructiveButtonIndex: 1,
++          title: 'Message options',
++        },
++        (buttonIndex) => {
++          if (buttonIndex === 1) confirmUnsend(message);
++        }
++      );
++      return;
++    }
++
++    Alert.alert(
++      'Message options',
++      null,
++      [
++        { text: 'Cancel', style: 'cancel' },
++        {
++          text: 'Unsend Message',
++          style: 'destructive',
++          onPress: () => confirmUnsend(message),
+         },
+       ]
+     );
+@@ -413,9 +476,12 @@
+ 
+     return (
+       <Pressable
+-        onLongPress={() => confirmDelete(item)}
+-        delayLongPress={430}
++        onLongPress={() => showMessageActions(item)}
++        delayLongPress={360}
+         disabled={!mine || deletingMessageId === item.id}
++        accessibilityRole="button"
++        accessibilityLabel={mine ? 'Your message' : `${item.senderName}'s message`}
++        accessibilityHint={mine ? 'Press and hold for message options, including unsend.' : undefined}
+         style={styles.messageWrap}
+       >
+         {!mine && conversation?.kind === 'group' ? (
+@@ -523,7 +589,11 @@
+         </View>
+       </View>
+ 
+-      <View style={styles.chatBody}>
++      <KeyboardAvoidingView
++        style={styles.chatBody}
++        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
++        keyboardVerticalOffset={0}
++      >
+         {loading ? (
+           <View style={styles.centerState}>
+             <ActivityIndicator />
+@@ -561,15 +631,15 @@
+             renderItem={renderMessage}
+             inverted
+             keyboardShouldPersistTaps="handled"
++            keyboardDismissMode={
++              Platform.OS === 'ios' ? 'interactive' : 'on-drag'
++            }
+             contentContainerStyle={styles.messageList}
+           />
+         )}
+ 
+         {!loading && !error ? (
+-          <KeyboardAvoidingView
+-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+-            keyboardVerticalOffset={0}
+-          >
++          <View>
+             <SelectedMedia
+               assets={selectedAssets}
+               disabled={sending}
+@@ -587,7 +657,11 @@
+ 
+             <View style={[
+               styles.composer,
+-              { paddingBottom: Math.max(8, insets.bottom) },
++              {
++                paddingBottom: keyboardVisible
++                  ? 8
++                  : Math.max(8, insets.bottom),
++              },
+             ]}>
+               <Pressable
+                 onPress={pickMedia}
+@@ -644,9 +718,9 @@
+                 )}
+               </Pressable>
+             </View>
+-          </KeyboardAvoidingView>
++          </View>
+         ) : null}
+-      </View>
++      </KeyboardAvoidingView>
+     </View>
+   );
+ }

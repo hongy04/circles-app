@@ -1,0 +1,1360 @@
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' '--exclude=README_CONVERSATIONS_STEP_9B.md' /mnt/data/circles_step9b2_work/App.js /mnt/data/circles_step9b3_project/App.js
+--- /mnt/data/circles_step9b2_work/App.js	2026-07-21 20:05:27.440850661 +0000
++++ /mnt/data/circles_step9b3_project/App.js	2026-07-21 20:25:00.384895067 +0000
+@@ -39,6 +39,7 @@
+ import { ChatScreen } from './src/screens/conversations/ChatScreen';
+ import { CreateGroupScreen } from './src/screens/conversations/CreateGroupScreen';
+ import { CircleProfileScreen } from './src/screens/conversations/CircleProfileScreen';
++import { DirectConversationDetailsScreen } from './src/screens/conversations/DirectConversationDetailsScreen';
+ import { EditCircleScreen } from './src/screens/conversations/EditCircleScreen';
+ import { ConversationMediaViewerScreen } from './src/screens/conversations/ConversationMediaViewerScreen';
+ 
+@@ -245,6 +246,11 @@
+         options={{ title: 'Circle' }}
+       />
+       <CirclesStackNav.Screen
++        name="DirectConversationDetails"
++        component={DirectConversationDetailsScreen}
++        options={{ title: 'Details' }}
++      />
++      <CirclesStackNav.Screen
+         name="EditCircle"
+         component={EditCircleScreen}
+         options={{ title: 'Edit Circle' }}
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' '--exclude=README_CONVERSATIONS_STEP_9B.md' /mnt/data/circles_step9b2_work/README_CONVERSATIONS_STEP_9B_3.md /mnt/data/circles_step9b3_project/README_CONVERSATIONS_STEP_9B_3.md
+--- /mnt/data/circles_step9b2_work/README_CONVERSATIONS_STEP_9B_3.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9b3_project/README_CONVERSATIONS_STEP_9B_3.md	2026-07-21 20:25:00.391850151 +0000
+@@ -0,0 +1,109 @@
++# Circles Step 9B.3 — Direct Chats vs. Circle Groups
++
++This checkpoint implements the locked product rule:
++
++> People have profiles. Groups are Circles. Two-person chats become Circles
++> only through future mutual consent.
++
++## What changes
++
++### Normal direct chats
++
++- Tapping the chat-header identity opens the other person's normal profile.
++- The shared Circle profile is no longer available for an ordinary DM.
++- A small information button opens private conversation details and Shared
++  Media.
++- Direct media is described as Shared Media, not a Timeline.
++- Direct chats have no shared name, biography, avatar editor, Posts tab, or
++  member strip.
++
++### Group Circles
++
++- Tapping the group identity still opens the full Circle profile.
++- Timeline, Posts, members, shared identity editing, invitations, and private
++  membership rules remain intact.
++- Group memberships remain pinned Circles.
++
++### Future two-person Circles
++
++The migration adds `circle_enabled` and `circle_activated_at` to
++`public.conversations` without activating the feature for normal DMs. Every
++group is backfilled and enforced as a Circle. A later unanimous-consent flow can
++promote the existing direct conversation without duplicating its chat history.
++
++## 1. Run the migration
++
++Run in Supabase SQL Editor:
++
++`supabase/migrations/20260721_012_direct_chats_vs_circles.sql`
++
++This migration:
++
++- adds the future-compatible Circle activation fields;
++- marks all existing and future groups as Circles;
++- adds `is_circle` to inbox RPC results;
++- adds `other_user_id` and Circle-state fields to conversation details;
++- does not delete or move messages, media, members, invitations, or profiles.
++
++## 2. Copy the app files
++
++Copy this package into:
++
++`C:\Users\honge\Dev\circles-app`
++
++Allow Windows to merge and replace files.
++
++The main changed files are:
++
++- `App.js`
++- `src/screens/conversations/ChatScreen.js`
++- `src/screens/conversations/DirectConversationDetailsScreen.js`
++- `src/screens/conversations/CircleProfileScreen.js`
++- `src/screens/conversations/InboxScreen.js`
++- `src/services/conversationService.js`
++- `docs/CONVERSATION_SPACES_ARCHITECTURE.md`
++
++## 3. Restart Expo
++
++```powershell
++cd C:\Users\honge\Dev\circles-app
++npx expo start --tunnel --clear
++```
++
++## 4. Test direct-chat behavior
++
++1. Open Hongy → Alex.
++2. Tap Alex's avatar/name in the header.
++3. Confirm Alex's normal user profile opens.
++4. Return to Chat and tap the information icon at the top-right.
++5. Confirm the details page shows Alex and Shared Media only.
++6. Confirm there is no Circle biography, Circle editor, Posts tab, member strip,
++   or Timeline label.
++7. Send a photo, reopen Details, and confirm it appears under Shared Media.
++8. Delete the photo message and confirm it disappears from Shared Media.
++
++## 5. Test group-Circle behavior
++
++1. Open the Hongy/Alex/Sam group.
++2. Tap the group avatar/name.
++3. Confirm the full Circle profile opens.
++4. Confirm Timeline, Posts, members, and Edit Circle remain available.
++5. Send and delete group media and confirm Timeline stays synchronized.
++
++## 6. Regression checks
++
++- Realtime updates still work after repeatedly opening/closing Chat and profile
++  pages.
++- The custom chat header remains fully visible above and below.
++- Pending invitees still cannot access a private group.
++- Account switching does not expose another account's direct Shared Media.
++- Existing messages and media remain intact after the migration.
++
++## Commit
++
++```powershell
++git status
++git add App.js src supabase/migrations docs README_CONVERSATIONS_STEP_9B_3.md
++git commit -m "Separate direct chats from Circle profiles"
++git push
++```
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' '--exclude=README_CONVERSATIONS_STEP_9B.md' /mnt/data/circles_step9b2_work/docs/CONVERSATION_SPACES_ARCHITECTURE.md /mnt/data/circles_step9b3_project/docs/CONVERSATION_SPACES_ARCHITECTURE.md
+--- /mnt/data/circles_step9b2_work/docs/CONVERSATION_SPACES_ARCHITECTURE.md	2026-07-21 19:30:03.449657113 +0000
++++ /mnt/data/circles_step9b3_project/docs/CONVERSATION_SPACES_ARCHITECTURE.md	2026-07-21 20:25:00.391780489 +0000
+@@ -1,243 +1,138 @@
+-# Circles Conversation Spaces — Product and Architecture Direction
++# Circles Conversation Architecture — Locked Product Direction
+ 
+-## The idea
++## Core hierarchy
+ 
+-A direct message or group chat should not be only a disposable stream of text.
+-Creating any conversation automatically creates a private shared **Conversation
+-Space** for exactly those members.
++Circles now distinguishes four related but different things:
+ 
+-The chat remains the immediate, everyday surface. The shared space becomes the
+-place where the relationship's history can be revisited and intentionally
+-built over time.
++1. **Person profile** — one individual's identity.
++2. **Direct chat** — a private conversation between two accepted connections.
++3. **Two-person Circle** — a direct chat intentionally promoted through mutual consent.
++4. **Group Circle** — an invitation-only shared identity for three or more people.
+ 
+-This is a core Circles feature, not a secondary messaging add-on.
++The locked product rule is:
+ 
+-## One conversation, four connected views
++> People have profiles. Groups are Circles. Two-person chats become Circles only
++> when both people explicitly agree.
+ 
+-### 1. Chat
++The app must never infer a relationship category from message volume, media,
++contact history, or behavior.
+ 
+-The familiar chronological message stream for text, reactions, replies, and
+-photo/video messages.
++## Ordinary direct chats
+ 
+-### 2. Timeline
++An accepted connection automatically creates one direct conversation. That
++conversation is not automatically a Circle.
+ 
+-A private chronological archive generated automatically from media that was
+-sent in the chat.
++A normal direct chat has:
+ 
+-Important rule: the timeline should reference the original message media; it
+-should not upload or copy the file a second time. Every archived photo or video
+-keeps its original sender, timestamp, message context, and conversation.
++- the other person's profile image and name in the chat header;
++- a header tap that opens the other person's normal user profile;
++- private text, photo, and video messages;
++- a Shared Media/details view for sent photos and videos;
++- no shared name, shared biography, shared avatar, Posts tab, or Circle profile.
+ 
+-The timeline is therefore a faithful shared-memory view, not a separate public
+-feed.
++Shared Media is a private archive view over the original `message_media` rows.
++It does not duplicate files and it does not claim that the two people have a
++shared identity.
+ 
+-### 3. Posts
++## Group Circles
+ 
+-A separate, intentional post surface inside the Conversation Space. Members can
+-create classic multi-photo/video posts with captions and later comments or
+-reactions.
++A group with three or more intended members is created through individual
++invitations. The creator becomes the first member; invited people gain no
++access until they accept.
+ 
+-This remains distinct from the automatic timeline:
++Once accepted, a group Circle has:
+ 
+-- **Timeline:** "This was sent while we were talking."
+-- **Post:** "We deliberately chose to preserve and present this here."
++- a shared Circle name, avatar, and biography;
++- an automatically generated Timeline from media sent in Chat;
++- a separate intentional Posts surface;
++- members, roles, invitations, pinning, unread state, and lifecycle controls;
++- database and Storage access enforced through accepted membership.
+ 
+-### 4. People / Details
++Group Circle memberships are pinned by default for each member, while each
++person may later unpin the Circle for themselves.
+ 
+-Members, group name and photo, invitation controls, notification settings,
+-pinning, shared-media counts, and leave/remove-member actions.
++## Timeline versus Posts
+ 
+-A two-person DM uses the same architecture as a group; it simply has two
+-members and can present the other person's name/photo as its default identity.
++These surfaces must remain separate.
+ 
+-## Privacy model
++- **Timeline:** faithful shared history automatically derived from media sent
++  during conversation.
++- **Posts:** deliberate expression created specifically for the Circle profile.
+ 
+-Conversation Spaces are membership-gated at the database level.
++Timeline media references the original message and object. It preserves sender,
++timestamp, caption/context, and conversation provenance. It is never uploaded a
++second time merely to appear in Timeline.
+ 
+-- Only current members may read the conversation, messages, timeline media,
+-  conversation posts, comments, and reactions.
+-- Only the message sender may edit or delete their message.
+-- Only the post creator may edit or delete their Conversation Space post.
+-- Removing or leaving a conversation removes future access to its private
+-  space unless a later product decision explicitly preserves historical access.
+-- Storage objects use conversation-owned paths and are served only through
+-  membership-aware access rules or signed URLs.
++## Future two-person Circle promotion
+ 
+-The client hiding a screen is never treated as the security boundary.
++A direct chat may later expose **Create a Circle together**. This is a proposal,
++not an automatic conversion.
+ 
+-## Proposed data model
++The flow should be:
+ 
+-### `conversations`
++1. One member proposes a Circle name, optional image, and optional note.
++2. The other member receives a neutral private invitation.
++3. The existing direct chat remains unchanged until acceptance.
++4. Acceptance promotes the same conversation; it does not create a duplicate
++   chat or split message history.
++5. Both members separately consent to whether older shared media may enter the
++   new Timeline. The default should be to start the Timeline at activation.
++6. Declining leaves the original DM and connection unchanged.
+ 
+-- `id uuid`
+-- `kind text` (`direct` or `group`)
+-- `title text`
+-- `avatar_url text`
+-- `created_by uuid`
+-- `created_at timestamptz`
++The database foundation uses:
+ 
+-### `conversation_members`
++- `kind = 'direct'`
++- `circle_enabled = true`
++- `circle_activated_at`
+ 
+-- `conversation_id uuid`
+-- `user_id uuid`
+-- `role text` (`owner`, `admin`, `member`)
+-- `joined_at timestamptz`
+-- `last_read_at timestamptz`
+-- notification and pin preferences
++A group always has `circle_enabled = true`. A normal direct chat has
++`circle_enabled = false`.
+ 
+-A unique constraint on `(conversation_id, user_id)` prevents duplicate
+-membership.
++The invitation, unanimous-consent, historical-media-consent, and dissolution
++workflows are deliberately deferred until the main group Circle Posts and
++lifecycle systems are stable.
+ 
+-### `messages`
++## Privacy boundaries
+ 
+-- `id uuid`
+-- `conversation_id uuid`
+-- `sender_id uuid`
+-- `body text`
+-- optional reply reference
+-- `created_at`, `edited_at`, and deletion metadata
++- Only accepted members may read conversation messages or media.
++- Pending group invitees cannot open Chat, Timeline, Posts, People, or private
++  Storage objects.
++- Only a message sender may delete that message.
++- Deleting a media message removes it from Chat and its derived archive view.
++- The client UI is not the security boundary; RLS, membership-aware RPCs, and
++  private signed Storage access enforce access.
++- A normal DM never becomes a shared profile without explicit consent from both
++  people.
+ 
+-The current prototype's free-form `group_id text` should be replaced by a real
+-foreign key to `conversations.id`.
++## Current build sequence
+ 
+-### `message_media`
++### Step 9A — real private conversations
+ 
+-- `id uuid`
+-- `message_id uuid`
+-- `storage_path text`
+-- `media_type text`
+-- dimensions, duration, and display order
+-- `created_at timestamptz`
++Accepted connections create one deduplicated DM. Groups use invitation-gated
++membership. Placeholder chats are retired.
+ 
+-The Timeline is primarily a membership-protected query over `message_media`
+-joined back to its original message and sender. A separate duplicate timeline
+-record is not required initially.
++### Step 9A.1 — Circles inbox identity
+ 
+-### `conversation_posts`
++The inbox uses an iMessage-like layout. Group Circles are pinned by default and
++appear as circular identities.
+ 
+-- `id uuid`
+-- `conversation_id uuid`
+-- `author_id uuid`
+-- `caption text`
+-- `created_at`, `updated_at`
++### Step 9B — media and Timeline foundation
+ 
+-Supporting tables:
++Messages support private photo/video attachments. Group Circle Timelines derive
++from those original attachments.
+ 
+-- `conversation_post_media`
+-- `conversation_post_comments`
+-- `conversation_post_likes`
++### Step 9B.3 — direct chats versus Circles
+ 
+-These are intentionally separate from personal-profile posts because their
+-audience and ownership belong to one private Conversation Space.
++Direct headers open the other person's profile. Direct chats use Shared Media
++rather than a Circle profile. Full Circle identity remains restricted to group
++Circles and future mutually promoted two-person Circles.
+ 
+-## Navigation direction
++### Step 9C — Circle Posts
+ 
+-Opening an inbox item enters the Conversation Space with **Chat** as the default
+-view. A clear header control opens the shared profile page, where Timeline,
+-Posts, and People are available without making the user feel like they have
+-left the conversation.
++Build intentional private posts for Circle profiles without merging them into
++the automatic Timeline.
+ 
+-The interface can later use a segmented control or horizontally swiped tabs:
+-
+-`Chat | Timeline | Posts | People`
+-
+-## Build sequence after multi-account testing
+-
+-### Step 9A — Real conversation foundation
+-
+-Create `conversations` and `conversation_members`, replace mock inbox groups,
+-move messages to membership-aware conversation IDs, and add strict RLS.
+-
+-### Step 9B — Media messages and automatic timeline
+-
+-Send photos/videos in chat, store one media object, and render the derived
+-chronological Timeline archive.
+-
+-### Step 9C — Private shared profile and posts
+-
+-Build the full Conversation Space page and its deliberate classic-post flow.
+-
+-### Step 9D — Group lifecycle polish
+-
+-Invites, roles, group editing, unread state, pinning, member removal/leaving,
+-notifications, and storage cleanup.
+-
+-## Locked distinction
+-
+-The automatic Timeline and the classic Posts surface must not be collapsed into
+-one feed. Their meaning is different, and that difference is the heart of this
+-feature: shared life can be remembered naturally while members still retain a
+-place for intentional expression.
+-
+-## Step 9A decisions now locked
+-
+-### Accepted connections automatically create DMs
+-
+-An accepted one-to-one connection automatically creates one private direct
+-conversation. The conversation appears in both members' inboxes even before the
+-first message is sent. Pending requests and mutual-contact candidates do not
+-create a chat.
+-
+-There must never be duplicate direct conversations for the same pair. The
+-server owns this invariant through a normalized pair key and database trigger;
+-it is not left to whichever client happens to open first.
+-
+-### Groups are invitation-only
+-
+-Creating a group does not immediately grant every selected person access.
+-
+-1. The creator becomes the first accepted member and owner.
+-2. Only existing accepted connections may be selected.
+-3. Each selected person receives a separate pending invitation.
+-4. A pending invite may reveal only the invitation summary needed to decide.
+-5. Chat, Timeline, Posts, and People remain unavailable until that person
+-   explicitly accepts.
+-6. Declining grants no membership and no private-content access.
+-
+-This invitation boundary is enforced in Supabase membership checks. Hiding the
+-group in the app is not considered sufficient privacy.
+-
+-### Placeholder chats are retired
+-
+-The old Family, Basketball Crew, College, Gaming, and similar sample chats are
+-not part of the product model. Step 9A archives the old free-form message table
+-and replaces the visible inbox with real accepted connections, accepted group
+-memberships, and pending private-group invitations.
+-
+-## Locked interaction and profile design
+-
+-The three-dot details affordance is removed from the Chat header.
+-
+-Chat uses an iMessage-like identity header:
+-
+-- the Circle or direct connection avatar appears above the name;
+-- tapping the avatar/name opens the Circle profile;
+-- there is no separate generic details page hidden behind an overflow icon.
+-
+-The Circle profile should feel structurally related to a user profile:
+-
+-- large Circle avatar;
+-- Circle name and bio;
+-- Timeline, Posts, and member counts;
+-- member identity strip;
+-- a segmented `Timeline | Posts` content area.
+-
+-For a direct Circle, the displayed identity defaults to the other connected
+-person while the Timeline and future Posts still belong to the private
+-two-person Circle.
+-
+-For a group Circle, every accepted member may update the shared Circle name,
+-bio, and avatar. Pending invitees have no profile or media access. The group
+-avatar is stored in private conversation storage and resolved through
+-membership-authorized signed URLs.
+-
+-## Step 9B implementation
+-
+-Step 9B adds private photo/video messages and the automatic Timeline.
+-
+-- Each photo/video is uploaded once under a conversation-owned private path.
+-- `message_media` links the object to its original message and sender.
+-- Timeline queries those original rows; it never duplicates the file.
+-- Long-press deletion by the sender removes the message from Chat and Timeline.
+-- The separate Posts tab remains intentionally empty until Step 9C.
++### Step 9D — lifecycle and consent polish
+ 
++Roles, invite management, leaving/removal, notification controls, Storage
++cleanup, and eventually mutually created two-person Circles.
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' '--exclude=README_CONVERSATIONS_STEP_9B.md' /mnt/data/circles_step9b2_work/src/screens/conversations/ChatScreen.js /mnt/data/circles_step9b3_project/src/screens/conversations/ChatScreen.js
+--- /mnt/data/circles_step9b2_work/src/screens/conversations/ChatScreen.js	2026-07-21 20:05:27.441581885 +0000
++++ /mnt/data/circles_step9b3_project/src/screens/conversations/ChatScreen.js	2026-07-21 20:25:42.362850648 +0000
+@@ -153,6 +153,8 @@
+     name = 'Conversation',
+     kind = 'direct',
+     avatarUri: initialAvatarUri = null,
++    otherUserId: initialOtherUserId = null,
++    isCircle: initialIsCircle = kind === 'group',
+   } = route.params || {};
+ 
+   const insets = useSafeAreaInsets();
+@@ -161,6 +163,8 @@
+     title: name,
+     kind,
+     avatar_url: initialAvatarUri,
++    other_user_id: initialOtherUserId,
++    is_circle: initialIsCircle,
+   });
+   const [currentUserId, setCurrentUserId] = useState(null);
+   const [messages, setMessages] = useState([]);
+@@ -227,7 +231,7 @@
+       if (permission.status !== 'granted') {
+         Alert.alert(
+           'Photo permission needed',
+-          'Allow photo access to send private media in this Circle.'
++          'Allow photo access to send private media in this conversation.'
+         );
+         return;
+       }
+@@ -337,8 +341,10 @@
+     Alert.alert(
+       'Delete this message?',
+       message.media.length
+-        ? 'It will be removed from Chat and the Circle Timeline.'
+-        : 'It will be removed for every member of this Circle.',
++        ? (isCircle
++          ? 'It will be removed from Chat and the Circle Timeline.'
++          : 'It will be removed from Chat and Shared Media.')
++        : 'It will be removed for everyone in this conversation.',
+       [
+         { text: 'Cancel', style: 'cancel' },
+         {
+@@ -380,6 +386,26 @@
+     });
+   };
+ 
++  const isCircle = conversation?.is_circle == null
++    ? conversation?.kind === 'group'
++    : Boolean(conversation.is_circle);
++  const otherUserId = conversation?.other_user_id || initialOtherUserId || null;
++
++  const openIdentity = () => {
++    if (isCircle) {
++      navigation.navigate('CircleProfile', { conversationId });
++      return;
++    }
++
++    if (otherUserId) {
++      navigation.navigate('Profile', { userId: otherUserId });
++    }
++  };
++
++  const openDirectDetails = () => {
++    navigation.navigate('DirectConversationDetails', { conversationId });
++  };
++
+   const renderMessage = ({ item }) => {
+     const mine = item.senderId === currentUserId;
+     const hasText = Boolean(item.body);
+@@ -470,13 +496,30 @@
+             <ConversationHeaderTitle
+               name={conversation?.title || name}
+               avatarUri={conversation?.avatar_url || initialAvatarUri}
+-              onPress={() => navigation.navigate('CircleProfile', {
+-                conversationId,
+-              })}
++              onPress={openIdentity}
+             />
+           </View>
+ 
+-          <View style={styles.headerSide} />
++          {isCircle ? (
++            <View style={styles.headerSide} />
++          ) : (
++            <Pressable
++              onPress={openDirectDetails}
++              accessibilityRole="button"
++              accessibilityLabel="Open shared media and conversation details"
++              hitSlop={10}
++              style={({ pressed }) => [
++                styles.headerSide,
++                pressed && styles.pressed,
++              ]}
++            >
++              <Ionicons
++                name="information-circle-outline"
++                size={24}
++                color={COLORS.text}
++              />
++            </Pressable>
++          )}
+         </View>
+       </View>
+ 
+@@ -499,15 +542,15 @@
+             <ConversationHeaderTitle
+               name={conversation?.title || name}
+               avatarUri={conversation?.avatar_url || initialAvatarUri}
+-              onPress={() => navigation.navigate('CircleProfile', {
+-                conversationId,
+-              })}
++              onPress={openIdentity}
+             />
+-            <Text style={styles.emptyTitle}>A private Circle</Text>
++            <Text style={styles.emptyTitle}>
++              {isCircle ? 'A private Circle' : 'Start a private conversation'}
++            </Text>
+             <Text style={styles.emptyBody}>
+-              Messages and shared media are visible only to accepted members.
+-              Photos and videos you send will automatically become this Circle’s
+-              Timeline.
++              {isCircle
++                ? 'Messages and shared media are visible only to accepted members. Photos and videos you send automatically appear in this Circle’s Timeline.'
++                : 'Messages are private between you and this connection. Photos and videos remain available under Shared Media without creating a separate Circle profile.'}
+             </Text>
+           </View>
+         ) : (
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' '--exclude=README_CONVERSATIONS_STEP_9B.md' /mnt/data/circles_step9b2_work/src/screens/conversations/CircleProfileScreen.js /mnt/data/circles_step9b3_project/src/screens/conversations/CircleProfileScreen.js
+--- /mnt/data/circles_step9b2_work/src/screens/conversations/CircleProfileScreen.js	2026-07-21 19:26:48.384141752 +0000
++++ /mnt/data/circles_step9b3_project/src/screens/conversations/CircleProfileScreen.js	2026-07-21 20:25:00.391436122 +0000
+@@ -85,10 +85,16 @@
+     setError('');
+ 
+     try {
+-      const [detailRows, timelineRows] = await Promise.all([
+-        getConversationDetails(conversationId),
+-        listConversationTimeline(conversationId),
+-      ]);
++      const detailRows = await getConversationDetails(conversationId);
++      const isCircle = detailRows?.conversation?.is_circle == null
++        ? detailRows?.conversation?.kind === 'group'
++        : Boolean(detailRows.conversation.is_circle);
++
++      if (!isCircle) {
++        throw new Error('This direct chat has no Circle profile.');
++      }
++
++      const timelineRows = await listConversationTimeline(conversationId);
+       setDetails(detailRows);
+       setTimeline(timelineRows);
+     } catch (loadError) {
+@@ -146,15 +152,12 @@
+           <Text style={styles.privacyText}>
+             {conversation.kind === 'group'
+               ? 'Invitation-only Circle'
+-              : 'Private two-person Circle'}
++              : 'Mutually created two-person Circle'}
+           </Text>
+         </View>
+ 
+         <Text style={styles.bio}>
+-          {conversation.bio
+-            || (conversation.kind === 'group'
+-              ? 'A private shared profile for this Circle.'
+-              : 'A private shared profile built through your conversation.')}
++          {conversation.bio || 'A private shared profile for this Circle.'}
+         </Text>
+ 
+         <View style={styles.statsRow}>
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' '--exclude=README_CONVERSATIONS_STEP_9B.md' /mnt/data/circles_step9b2_work/src/screens/conversations/DirectConversationDetailsScreen.js /mnt/data/circles_step9b3_project/src/screens/conversations/DirectConversationDetailsScreen.js
+--- /mnt/data/circles_step9b2_work/src/screens/conversations/DirectConversationDetailsScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9b3_project/src/screens/conversations/DirectConversationDetailsScreen.js	2026-07-21 20:25:00.391588039 +0000
+@@ -0,0 +1,385 @@
++import React, { useCallback, useMemo, useState } from 'react';
++import {
++  ActivityIndicator,
++  FlatList,
++  Image,
++  Platform,
++  Pressable,
++  RefreshControl,
++  StyleSheet,
++  Text,
++  View,
++  useWindowDimensions,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { useFocusEffect } from '@react-navigation/native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { Avatar } from '../../components/Avatar';
++import { COLORS } from '../../theme/colors';
++import {
++  getConversationDetails,
++  listConversationTimeline,
++  subscribeToConversationChanges,
++} from '../../services/conversationService';
++
++function SharedMediaTile({ item, size, onPress }) {
++  return (
++    <Pressable
++      onPress={onPress}
++      style={({ pressed }) => [
++        styles.mediaTile,
++        { width: size, height: size },
++        pressed && styles.pressed,
++      ]}
++    >
++      {item.mediaType === 'image' ? (
++        <Image source={{ uri: item.url }} style={styles.mediaImage} />
++      ) : (
++        <View style={styles.videoTile}>
++          <Ionicons name="play" size={28} color="#fff" />
++        </View>
++      )}
++
++      {item.mediaType === 'video' ? (
++        <View style={styles.videoBadge}>
++          <Ionicons name="videocam" size={13} color="#fff" />
++        </View>
++      ) : null}
++    </Pressable>
++  );
++}
++
++export function DirectConversationDetailsScreen({ route, navigation }) {
++  const { conversationId } = route.params || {};
++  const { width } = useWindowDimensions();
++  const [details, setDetails] = useState(null);
++  const [sharedMedia, setSharedMedia] = useState([]);
++  const [loading, setLoading] = useState(true);
++  const [refreshing, setRefreshing] = useState(false);
++  const [error, setError] = useState('');
++
++  const load = useCallback(async ({ quiet = false } = {}) => {
++    if (!conversationId) return;
++    if (!quiet) setLoading(true);
++    setError('');
++
++    try {
++      const detailRows = await getConversationDetails(conversationId);
++      const conversation = detailRows?.conversation;
++      const isCircle = conversation?.is_circle == null
++        ? conversation?.kind === 'group'
++        : Boolean(conversation.is_circle);
++
++      if (conversation?.kind !== 'direct' || isCircle) {
++        throw new Error('This conversation uses a Circle profile instead.');
++      }
++
++      const mediaRows = await listConversationTimeline(conversationId);
++      setDetails(detailRows);
++      setSharedMedia(mediaRows);
++    } catch (loadError) {
++      setError(loadError?.message || 'Could not open conversation details.');
++    } finally {
++      setLoading(false);
++      setRefreshing(false);
++    }
++  }, [conversationId]);
++
++  useFocusEffect(
++    useCallback(() => {
++      load();
++    }, [load])
++  );
++
++  useFocusEffect(
++    useCallback(() => {
++      if (!conversationId) return undefined;
++      return subscribeToConversationChanges({
++        conversationId,
++        onMessage: () => load({ quiet: true }),
++        onMediaChange: () => load({ quiet: true }),
++        onConversationChange: () => load({ quiet: true }),
++      });
++    }, [conversationId, load])
++  );
++
++  const conversation = details?.conversation;
++  const otherUserId = conversation?.other_user_id
++    || (details?.members || []).find((member) => !member.is_me)?.user_id
++    || null;
++  const gridWidth = Math.min(width, 720);
++  const tileSize = Math.floor(gridWidth / 3);
++
++  const viewerItems = useMemo(
++    () => sharedMedia.map((item) => ({
++      ...item,
++      senderName: item.senderName || conversation?.title || 'Connection',
++    })),
++    [conversation?.title, sharedMedia]
++  );
++
++  const header = conversation ? (
++    <>
++      <View style={styles.profileHeader}>
++        <Avatar
++          size={92}
++          name={conversation.title || 'Connection'}
++          uri={conversation.avatar_url}
++        />
++        <Text style={styles.title}>{conversation.title}</Text>
++        <View style={styles.privacyRow}>
++          <Ionicons name="lock-closed" size={12} color={COLORS.subtext} />
++          <Text style={styles.privacyText}>Private direct conversation</Text>
++        </View>
++
++        {otherUserId ? (
++          <Pressable
++            onPress={() => navigation.navigate('Profile', {
++              userId: otherUserId,
++            })}
++            style={({ pressed }) => [
++              styles.profileButton,
++              pressed && styles.pressed,
++            ]}
++          >
++            <Ionicons name="person-outline" size={17} color={COLORS.text} />
++            <Text style={styles.profileButtonText}>View Profile</Text>
++          </Pressable>
++        ) : null}
++      </View>
++
++      <View style={styles.sectionHeader}>
++        <Text style={styles.sectionTitle}>Shared Media</Text>
++        <Text style={styles.sectionCount}>{sharedMedia.length}</Text>
++      </View>
++    </>
++  ) : null;
++
++  if (loading && !conversation) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <ActivityIndicator />
++        <Text style={styles.stateText}>Opening conversation details…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  if (error && !conversation) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <Ionicons name="lock-closed-outline" size={36} color={COLORS.text} />
++        <Text style={styles.errorText}>{error}</Text>
++        <Pressable onPress={() => load()} style={styles.retryButton}>
++          <Text style={styles.retryText}>Try again</Text>
++        </Pressable>
++      </SafeAreaView>
++    );
++  }
++
++  return (
++    <SafeAreaView edges={['bottom']} style={styles.screen}>
++      <View style={styles.contentWidth}>
++        <FlatList
++          data={sharedMedia}
++          keyExtractor={(item) => item.id}
++          numColumns={3}
++          ListHeaderComponent={header}
++          renderItem={({ item, index }) => (
++            <SharedMediaTile
++              item={item}
++              size={tileSize}
++              onPress={() => navigation.navigate('ConversationMedia', {
++                items: viewerItems,
++                startIndex: index,
++              })}
++            />
++          )}
++          ListEmptyComponent={(
++            <View style={styles.emptyState}>
++              <Ionicons name="images-outline" size={38} color={COLORS.subtext} />
++              <Text style={styles.emptyTitle}>No shared media yet</Text>
++              <Text style={styles.emptyBody}>
++                Photos and videos sent in this direct chat will stay available
++                here. This is a private media archive, not a Circle profile or
++                public feed.
++              </Text>
++            </View>
++          )}
++          refreshControl={(
++            <RefreshControl
++              refreshing={refreshing}
++              onRefresh={() => {
++                setRefreshing(true);
++                load({ quiet: true });
++              }}
++              tintColor={COLORS.text}
++            />
++          )}
++          contentContainerStyle={styles.listContent}
++          showsVerticalScrollIndicator={false}
++        />
++      </View>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  contentWidth: {
++    flex: 1,
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++    borderLeftWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
++    borderRightWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
++    borderColor: COLORS.border,
++  },
++  listContent: {
++    flexGrow: 1,
++    paddingBottom: 44,
++  },
++  profileHeader: {
++    alignItems: 'center',
++    paddingHorizontal: 22,
++    paddingTop: 24,
++    paddingBottom: 22,
++  },
++  title: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 22,
++    textAlign: 'center',
++  },
++  privacyRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 4,
++    marginTop: 5,
++  },
++  privacyText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
++  },
++  profileButton: {
++    minHeight: 40,
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    gap: 7,
++    marginTop: 18,
++    paddingHorizontal: 18,
++    borderRadius: 10,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: '#f4f4f4',
++  },
++  profileButtonText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 13,
++  },
++  sectionHeader: {
++    minHeight: 49,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 15,
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++  },
++  sectionTitle: {
++    flex: 1,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 14,
++  },
++  sectionCount: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 12,
++  },
++  mediaTile: {
++    overflow: 'hidden',
++    borderWidth: 0.5,
++    borderColor: COLORS.bg,
++    backgroundColor: '#ececec',
++  },
++  mediaImage: {
++    width: '100%',
++    height: '100%',
++  },
++  videoTile: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: '#1c1c1e',
++  },
++  videoBadge: {
++    position: 'absolute',
++    top: 7,
++    right: 7,
++    width: 24,
++    height: 24,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 12,
++    backgroundColor: 'rgba(0,0,0,0.58)',
++  },
++  emptyState: {
++    alignItems: 'center',
++    paddingHorizontal: 36,
++    paddingVertical: 54,
++  },
++  emptyTitle: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 16,
++  },
++  emptyBody: {
++    maxWidth: 430,
++    marginTop: 6,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 13,
++    lineHeight: 19,
++    textAlign: 'center',
++  },
++  centerState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorText: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    textAlign: 'center',
++  },
++  retryButton: {
++    marginTop: 14,
++    paddingHorizontal: 16,
++    paddingVertical: 9,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  retryText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  pressed: {
++    opacity: 0.7,
++  },
++});
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' '--exclude=README_CONVERSATIONS_STEP_9B.md' /mnt/data/circles_step9b2_work/src/screens/conversations/InboxScreen.js /mnt/data/circles_step9b3_project/src/screens/conversations/InboxScreen.js
+--- /mnt/data/circles_step9b2_work/src/screens/conversations/InboxScreen.js	2026-07-21 19:28:58.785096035 +0000
++++ /mnt/data/circles_step9b3_project/src/screens/conversations/InboxScreen.js	2026-07-21 20:25:00.390199639 +0000
+@@ -275,6 +275,8 @@
+       name: conversation.title,
+       kind: conversation.kind,
+       avatarUri: conversation.avatarUri,
++      otherUserId: conversation.otherUserId,
++      isCircle: conversation.isCircle,
+     });
+   };
+ 
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' '--exclude=README_CONVERSATIONS_STEP_9B.md' /mnt/data/circles_step9b2_work/src/services/conversationService.js /mnt/data/circles_step9b3_project/src/services/conversationService.js
+--- /mnt/data/circles_step9b2_work/src/services/conversationService.js	2026-07-21 19:54:41.449997491 +0000
++++ /mnt/data/circles_step9b3_project/src/services/conversationService.js	2026-07-21 20:25:00.385394862 +0000
+@@ -22,6 +22,9 @@
+     avatarUri: row.display_avatar || null,
+     avatarPath: row.display_avatar_path || null,
+     otherUserId: row.other_user_id || null,
++    isCircle: row.is_circle == null
++      ? row.kind === 'group'
++      : Boolean(row.is_circle),
+     lastMessage: row.last_message || null,
+     lastMessageAt: row.last_message_at || null,
+     unreadCount: Number(row.unread_count || 0),
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' '--exclude=README_CONVERSATIONS_STEP_9B.md' /mnt/data/circles_step9b2_work/supabase/migrations/20260721_012_direct_chats_vs_circles.sql /mnt/data/circles_step9b3_project/supabase/migrations/20260721_012_direct_chats_vs_circles.sql
+--- /mnt/data/circles_step9b2_work/supabase/migrations/20260721_012_direct_chats_vs_circles.sql	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9b3_project/supabase/migrations/20260721_012_direct_chats_vs_circles.sql	2026-07-21 20:25:00.391670400 +0000
+@@ -0,0 +1,294 @@
++-- Circles Step 9B.3 — distinguish ordinary direct chats from Circles
++--
++-- Product rule:
++--   * People have profiles.
++--   * Groups are Circles.
++--   * A direct chat is not a Circle unless both people later opt in.
++--
++-- This migration adds the future-compatible circle_enabled flag, keeps every
++-- group as a Circle, and exposes enough identity information for direct-chat
++-- headers to open the other person's normal profile.
++
++alter table public.conversations
++  add column if not exists circle_enabled boolean not null default false;
++
++alter table public.conversations
++  add column if not exists circle_activated_at timestamptz;
++
++update public.conversations
++set
++  circle_enabled = true,
++  circle_activated_at = coalesce(circle_activated_at, created_at)
++where kind = 'group'
++  and (circle_enabled is distinct from true or circle_activated_at is null);
++
++create or replace function public.enforce_group_circle_identity()
++returns trigger
++language plpgsql
++set search_path = public
++as $$
++begin
++  if new.kind = 'group' then
++    new.circle_enabled := true;
++    new.circle_activated_at := coalesce(new.circle_activated_at, now());
++  elsif new.circle_enabled is not true then
++    new.circle_activated_at := null;
++  end if;
++
++  return new;
++end;
++$$;
++
++drop trigger if exists conversations_enforce_group_circle_identity
++  on public.conversations;
++create trigger conversations_enforce_group_circle_identity
++before insert or update of kind, circle_enabled, circle_activated_at
++on public.conversations
++for each row
++execute function public.enforce_group_circle_identity();
++
++-- Add is_circle to inbox rows. DROP is required because PostgreSQL cannot
++-- change a function's returned table shape with CREATE OR REPLACE alone.
++drop function if exists public.get_my_conversations();
++
++create function public.get_my_conversations()
++returns table (
++  conversation_id uuid,
++  kind text,
++  is_circle boolean,
++  display_title text,
++  display_avatar text,
++  display_avatar_path text,
++  other_user_id uuid,
++  last_message text,
++  last_message_at timestamptz,
++  unread_count bigint,
++  is_pinned boolean,
++  member_count bigint,
++  pending_invitation_count bigint,
++  created_at timestamptz
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  with mine as (
++    select
++      conversation.id,
++      conversation.kind,
++      conversation.circle_enabled,
++      conversation.title,
++      conversation.avatar_url,
++      conversation.avatar_path,
++      conversation.created_at,
++      conversation.updated_at,
++      membership.last_read_at,
++      membership.is_pinned
++    from public.conversations conversation
++    join public.conversation_members membership
++      on membership.conversation_id = conversation.id
++     and membership.user_id = auth.uid()
++  )
++  select
++    mine.id as conversation_id,
++    mine.kind,
++    (mine.kind = 'group' or mine.circle_enabled) as is_circle,
++    case
++      when mine.kind = 'direct' and not mine.circle_enabled
++        then coalesce(other_user.display_name, 'Connection')
++      else coalesce(
++        nullif(trim(mine.title), ''),
++        case when mine.kind = 'direct' then 'Private Circle' else 'Private group' end
++      )
++    end as display_title,
++    case
++      when mine.kind = 'direct' and not mine.circle_enabled
++        then other_user.avatar_url
++      else mine.avatar_url
++    end as display_avatar,
++    case
++      when mine.kind = 'group' or mine.circle_enabled then mine.avatar_path
++      else null
++    end as display_avatar_path,
++    case when mine.kind = 'direct' then other_user.id else null end,
++    coalesce(
++      nullif(last_message.body, ''),
++      case
++        when last_message.media_count = 1 and last_message.first_media_type = 'image'
++          then 'Photo'
++        when last_message.media_count = 1 and last_message.first_media_type = 'video'
++          then 'Video'
++        when last_message.media_count > 1
++          then last_message.media_count::text || ' attachments'
++        else null
++      end
++    ) as last_message,
++    last_message.created_at,
++    (
++      select count(*)
++      from public.messages unread
++      where unread.conversation_id = mine.id
++        and unread.sender_id <> auth.uid()
++        and unread.created_at > mine.last_read_at
++    ),
++    mine.is_pinned,
++    (
++      select count(*)
++      from public.conversation_members member_rows
++      where member_rows.conversation_id = mine.id
++    ),
++    (
++      select count(*)
++      from public.conversation_invitations invite_rows
++      where invite_rows.conversation_id = mine.id
++        and invite_rows.status = 'pending'
++    ),
++    mine.created_at
++  from mine
++  left join lateral (
++    select user_row.id, user_row.display_name, user_row.avatar_url
++    from public.conversation_members other_member
++    join public.users user_row on user_row.id = other_member.user_id
++    where other_member.conversation_id = mine.id
++      and other_member.user_id <> auth.uid()
++    order by other_member.joined_at asc
++    limit 1
++  ) other_user on true
++  left join lateral (
++    select
++      message.body,
++      message.created_at,
++      count(media.id) as media_count,
++      min(media.media_type) filter (where media.sort_order = 0) as first_media_type
++    from public.messages message
++    left join public.message_media media on media.message_id = message.id
++    where message.conversation_id = mine.id
++    group by message.id
++    order by message.created_at desc
++    limit 1
++  ) last_message on true
++  order by
++    mine.is_pinned desc,
++    coalesce(last_message.created_at, mine.updated_at, mine.created_at) desc;
++$$;
++
++revoke all on function public.get_my_conversations() from public;
++grant execute on function public.get_my_conversations() to authenticated;
++
++create or replace function public.get_conversation_details(p_conversation_id uuid)
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_result jsonb;
++begin
++  if not public.conversation_is_member(p_conversation_id, v_viewer_id) then
++    raise exception 'You are not a member of this private conversation';
++  end if;
++
++  select jsonb_build_object(
++    'conversation', jsonb_build_object(
++      'id', conversation.id,
++      'kind', conversation.kind,
++      'is_circle', (conversation.kind = 'group' or conversation.circle_enabled),
++      'circle_enabled', conversation.circle_enabled,
++      'circle_activated_at', conversation.circle_activated_at,
++      'other_user_id', case
++        when conversation.kind = 'direct' then other_user.id
++        else null
++      end,
++      'title', case
++        when conversation.kind = 'direct' and not conversation.circle_enabled
++          then coalesce(other_user.display_name, 'Connection')
++        else coalesce(
++          nullif(trim(conversation.title), ''),
++          case when conversation.kind = 'direct' then 'Private Circle' else 'Private group' end
++        )
++      end,
++      'avatar_url', case
++        when conversation.kind = 'direct' and not conversation.circle_enabled
++          then other_user.avatar_url
++        else conversation.avatar_url
++      end,
++      'avatar_path', case
++        when conversation.kind = 'group' or conversation.circle_enabled
++          then conversation.avatar_path
++        else null
++      end,
++      'bio', case
++        when conversation.kind = 'direct' and not conversation.circle_enabled
++          then null
++        else conversation.bio
++      end,
++      'created_at', conversation.created_at,
++      'created_by', conversation.created_by,
++      'can_edit', conversation.kind = 'group',
++      'timeline_count', (
++        select count(*)
++        from public.message_media timeline_media
++        join public.messages timeline_message
++          on timeline_message.id = timeline_media.message_id
++        where timeline_message.conversation_id = conversation.id
++      ),
++      'post_count', 0
++    ),
++    'members', coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'user_id', member_user.id,
++          'display_name', member_user.display_name,
++          'avatar_url', member_user.avatar_url,
++          'role', member_row.role,
++          'joined_at', member_row.joined_at,
++          'is_me', member_user.id = v_viewer_id
++        )
++        order by
++          case member_row.role when 'owner' then 0 when 'admin' then 1 else 2 end,
++          member_row.joined_at
++      )
++      from public.conversation_members member_row
++      join public.users member_user on member_user.id = member_row.user_id
++      where member_row.conversation_id = conversation.id
++    ), '[]'::jsonb),
++    'pending_invitations', coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'invitation_id', invitation.id,
++          'user_id', invited_user.id,
++          'display_name', invited_user.display_name,
++          'avatar_url', invited_user.avatar_url,
++          'status', invitation.status,
++          'created_at', invitation.created_at
++        )
++        order by invitation.created_at
++      )
++      from public.conversation_invitations invitation
++      join public.users invited_user on invited_user.id = invitation.invited_user_id
++      where invitation.conversation_id = conversation.id
++        and invitation.status = 'pending'
++    ), '[]'::jsonb)
++  )
++  into v_result
++  from public.conversations conversation
++  left join lateral (
++    select user_row.id, user_row.display_name, user_row.avatar_url
++    from public.conversation_members other_member
++    join public.users user_row on user_row.id = other_member.user_id
++    where other_member.conversation_id = conversation.id
++      and other_member.user_id <> v_viewer_id
++    order by other_member.joined_at
++    limit 1
++  ) other_user on true
++  where conversation.id = p_conversation_id;
++
++  return v_result;
++end;
++$$;
++
++revoke all on function public.get_conversation_details(uuid) from public;
++grant execute on function public.get_conversation_details(uuid) to authenticated;

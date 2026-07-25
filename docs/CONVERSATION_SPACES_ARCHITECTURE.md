@@ -1,217 +1,204 @@
-# Circles Conversation Spaces — Product and Architecture Direction
+# Circles Conversation Architecture — Locked Product Direction
 
-## The idea
+## Core hierarchy
 
-A direct message or group chat should not be only a disposable stream of text.
-Creating any conversation automatically creates a private shared **Conversation
-Space** for exactly those members.
+Circles distinguishes four related but different things:
 
-The chat remains the immediate, everyday surface. The shared space becomes the
-place where the relationship's history can be revisited and intentionally
-built over time.
+1. **Person profile** — one individual's identity.
+2. **Direct chat** — a private conversation between two accepted connections.
+3. **Two-person Circle** — a direct chat intentionally promoted through mutual consent.
+4. **Group Circle** — an invitation-only shared identity for three or more people.
 
-This is a core Circles feature, not a secondary messaging add-on.
+The locked product rule is:
 
-## One conversation, four connected views
+> People have profiles. Groups are Circles. Two-person chats become Circles only
+> when both people explicitly agree.
 
-### 1. Chat
+The app must never infer a relationship category from message volume, media,
+contact history, or behavior.
 
-The familiar chronological message stream for text, reactions, replies, and
-photo/video messages.
+## Ordinary direct chats
 
-### 2. Timeline
+An accepted connection automatically creates one direct conversation. That
+conversation is not automatically a Circle.
 
-A private chronological archive generated automatically from media that was
-sent in the chat.
+A normal direct chat has:
 
-Important rule: the timeline should reference the original message media; it
-should not upload or copy the file a second time. Every archived photo or video
-keeps its original sender, timestamp, message context, and conversation.
+- the other person's profile image and name in the chat header;
+- a header tap that opens the other person's normal user profile;
+- private text, photo, and video messages;
+- a Shared Media/details view for sent photos and videos;
+- no shared name, shared biography, shared avatar, Timeline, Posts, or Circle profile.
 
-The timeline is therefore a faithful shared-memory view, not a separate public
-feed.
+Shared Media is a private archive view over the original `message_media` rows.
+It does not duplicate files and it does not claim that the two people have a
+shared identity.
 
-### 3. Posts
+## Group Circles
 
-A separate, intentional post surface inside the Conversation Space. Members can
-create classic multi-photo/video posts with captions and later comments or
-reactions.
+A group with three or more intended members is created through individual
+invitations. The creator becomes the first member; invited people gain no
+access until they accept.
 
-This remains distinct from the automatic timeline:
+Once accepted, a group Circle has:
 
-- **Timeline:** "This was sent while we were talking."
-- **Post:** "We deliberately chose to preserve and present this here."
+- a shared Circle name, avatar, and biography;
+- an automatically generated Timeline from media sent in Chat;
+- intentional private Circle Posts;
+- members, invitations, pinning, unread state, and lifecycle controls;
+- database and Storage access enforced through accepted membership.
 
-### 4. People / Details
+Group Circle memberships are pinned by default for each member, while each
+person may later unpin the Circle for themselves.
 
-Members, group name and photo, invitation controls, notification settings,
-pinning, shared-media counts, and leave/remove-member actions.
+## Timeline versus Posts
 
-A two-person DM uses the same architecture as a group; it simply has two
-members and can present the other person's name/photo as its default identity.
+These surfaces remain separate because they represent different kinds of truth.
 
-## Privacy model
+### Timeline
 
-Conversation Spaces are membership-gated at the database level.
+Timeline is faithful shared history automatically derived from media sent in
+Chat. It references the original `message_media` row and private Storage object.
+It preserves sender, message context, timestamp, and conversation provenance.
+It is never uploaded a second time merely to appear in Timeline.
 
-- Only current members may read the conversation, messages, timeline media,
-  conversation posts, comments, and reactions.
-- Only the message sender may edit or delete their message.
-- Only the post creator may edit or delete their Conversation Space post.
-- Removing or leaving a conversation removes future access to its private
-  space unless a later product decision explicitly preserves historical access.
-- Storage objects use conversation-owned paths and are served only through
-  membership-aware access rules or signed URLs.
+When a chat message is validly unsent before anyone reads it, its Timeline item
+disappears because both surfaces reference the same message.
 
-The client hiding a screen is never treated as the security boundary.
+### Posts
 
-## Proposed data model
+Posts are deliberate publications created specifically for the Circle profile.
+They are not generated from Chat and do not silently copy Timeline media.
 
-### `conversations`
+A Circle Post has:
 
-- `id uuid`
-- `kind text` (`direct` or `group`)
-- `title text`
-- `avatar_url text`
-- `created_by uuid`
-- `created_at timestamptz`
+- one to ten separately uploaded photos or videos;
+- an optional caption;
+- the creating member's identity and original timestamp;
+- private comments from accepted Circle members;
+- author-only caption editing and deletion.
 
-### `conversation_members`
+Deleting a Circle Post removes that post's media and comments. It does
+not delete or modify Chat or Timeline history. Deleting a chat message does not
+delete a separately created Circle Post.
 
-- `conversation_id uuid`
-- `user_id uuid`
-- `role text` (`owner`, `admin`, `member`)
-- `joined_at timestamptz`
-- `last_read_at timestamptz`
-- notification and pin preferences
+The Step 9C tables are:
 
-A unique constraint on `(conversation_id, user_id)` prevents duplicate
-membership.
-
-### `messages`
-
-- `id uuid`
-- `conversation_id uuid`
-- `sender_id uuid`
-- `body text`
-- optional reply reference
-- `created_at`, `edited_at`, and deletion metadata
-
-The current prototype's free-form `group_id text` should be replaced by a real
-foreign key to `conversations.id`.
-
-### `message_media`
-
-- `id uuid`
-- `message_id uuid`
-- `storage_path text`
-- `media_type text`
-- dimensions, duration, and display order
-- `created_at timestamptz`
-
-The Timeline is primarily a membership-protected query over `message_media`
-joined back to its original message and sender. A separate duplicate timeline
-record is not required initially.
-
-### `conversation_posts`
-
-- `id uuid`
-- `conversation_id uuid`
-- `author_id uuid`
-- `caption text`
-- `created_at`, `updated_at`
-
-Supporting tables:
-
+- `conversation_posts`
 - `conversation_post_media`
 - `conversation_post_comments`
-- `conversation_post_likes`
 
-These are intentionally separate from personal-profile posts because their
-audience and ownership belong to one private Conversation Space.
+All access is membership-gated through RLS and membership-aware RPCs. The same
+post architecture will automatically support a future two-person Circle after
+that direct conversation is mutually promoted with `circle_enabled = true`.
 
-## Navigation direction
+## Circle Post ownership
 
-Opening an inbox item enters the Conversation Space with **Chat** as the default
-view. A clear header control opens the shared profile page, where Timeline,
-Posts, and People are available without making the user feel like they have
-left the conversation.
+Every accepted member may create a post for the Circle. A post remains visibly
+attributed to its author; it is not an anonymous group-owned object.
 
-The interface can later use a segmented control or horizontally swiped tabs:
+Only the author may:
 
-`Chat | Timeline | Posts | People`
+- edit the post caption;
+- delete the post and its separately uploaded media.
 
-## Build sequence after multi-account testing
+Every accepted member may comment. Comment authors may delete their own comments.
+Circle Posts intentionally avoid like counts so the private space does not become
+a performance scoreboard. A future moderation system may add owner/admin intervention, but
+Step 9C does not silently give every member destructive control over another
+person's post.
 
-### Step 9A — Real conversation foundation
+## Future two-person Circle promotion
 
-Create `conversations` and `conversation_members`, replace mock inbox groups,
-move messages to membership-aware conversation IDs, and add strict RLS.
+A direct chat may later expose **Create a Circle together**. This is a proposal,
+not an automatic conversion.
 
-### Step 9B — Media messages and automatic timeline
+The flow should be:
 
-Send photos/videos in chat, store one media object, and render the derived
-chronological Timeline archive.
+1. One member proposes a Circle name, optional image, and optional note.
+2. The other member receives a neutral private invitation.
+3. The existing direct chat remains unchanged until acceptance.
+4. Acceptance promotes the same conversation; it does not create a duplicate
+   chat or split message history.
+5. Both members separately consent to whether older shared media may enter the
+   new Timeline. The default should be to start the Timeline at activation.
+6. Declining leaves the original DM and connection unchanged.
 
-### Step 9C — Private shared profile and posts
+The database foundation uses:
 
-Build the full Conversation Space page and its deliberate classic-post flow.
+- `kind = 'direct'`
+- `circle_enabled = true`
+- `circle_activated_at`
 
-### Step 9D — Group lifecycle polish
+A group always has `circle_enabled = true`. A normal direct chat has
+`circle_enabled = false`.
 
-Invites, roles, group editing, unread state, pinning, member removal/leaving,
-notifications, and storage cleanup.
+The invitation, unanimous-consent, historical-media-consent, and dissolution
+workflows remain deferred until the main group Circle lifecycle is stable.
 
-## Locked distinction
+## Privacy boundaries
 
-The automatic Timeline and the classic Posts surface must not be collapsed into
-one feed. Their meaning is different, and that difference is the heart of this
-feature: shared life can be remembered naturally while members still retain a
-place for intentional expression.
+- Only accepted members may read conversation messages, Timeline media, Circle
+  Posts, post comments, or private Storage objects.
+- Pending invitees cannot open Chat, Timeline, Posts, People, or private media.
+- A normal DM cannot create or view Circle Posts.
+- Post uploads use the private `conversation-media` bucket under the path
+  `<conversation-id>/posts/<author-id>/...`.
+- The post-creation RPC validates that every attached path belongs to the
+  current member and the intended Circle.
+- The client UI is not the security boundary; RLS, membership-aware RPCs, and
+  signed private Storage access enforce access.
+- A normal DM never becomes a shared profile without explicit consent from both
+  people.
 
-## Step 9A decisions now locked
+## Read receipts and unread-only unsend
 
-### Accepted connections automatically create DMs
+Circles treats reading as an automatic, truthful event rather than a cosmetic
+setting. A message receives a per-user read receipt only when that conversation
+is the focused screen and the app is active in the foreground.
 
-An accepted one-to-one connection automatically creates one private direct
-conversation. The conversation appears in both members' inboxes even before the
-first message is sent. Pending requests and mutual-contact candidates do not
-create a chat.
+The sender may unsend a message only while no other eligible member has a read
+receipt for it. This rule is enforced by the database, not only hidden or shown
+by the client. Text and media messages follow the same rule.
 
-There must never be duplicate direct conversations for the same pair. The
-server owns this invariant through a normalized pair key and database trigger;
-it is not left to whichever client happens to open first.
+Direct conversations display `Not read` or `Read`. Group Circles display
+`Not read`, `Read by N`, or `Read by all`. Exact receipt rows are stored in
+`conversation_message_reads`; `conversation_members.last_read_at` remains the
+conversation-level cursor used for inbox unread counts.
 
-### Groups are invitation-only
+Circle Posts are intentional publications rather than transient messages, so
+they use explicit author deletion instead of unread-only unsend.
 
-Creating a group does not immediately grant every selected person access.
+## Build sequence
 
-1. The creator becomes the first accepted member and owner.
-2. Only existing accepted connections may be selected.
-3. Each selected person receives a separate pending invitation.
-4. A pending invite may reveal only the invitation summary needed to decide.
-5. Chat, Timeline, Posts, and People remain unavailable until that person
-   explicitly accepts.
-6. Declining grants no membership and no private-content access.
+### Step 9A — real private conversations
 
-This invitation boundary is enforced in Supabase membership checks. Hiding the
-group in the app is not considered sufficient privacy.
+Accepted connections create one deduplicated DM. Groups use invitation-gated
+membership. Placeholder chats are retired.
 
-### Placeholder chats are retired
+### Step 9A.1 — Circles inbox identity
 
-The old Family, Basketball Crew, College, Gaming, and similar sample chats are
-not part of the product model. Step 9A archives the old free-form message table
-and replaces the visible inbox with real accepted connections, accepted group
-memberships, and pending private-group invitations.
+The inbox uses an iMessage-like layout. Group Circles are pinned by default and
+appear as circular identities.
 
-## Inbox identity: pinned Circles
+### Step 9B — media and Timeline foundation
 
-The inbox should retain the familiar clarity of iMessage while making Circles'
-identity visible. Pinned conversations are presented as large circular items
-above the standard message list.
+Messages support private photo/video attachments. Group Circle Timelines derive
+from those original attachments.
 
-Private groups begin pinned for every accepted member because group formation is
-intentional and represents a shared Circle. Pin state remains personal: one
-member may unpin a group without changing another member's inbox. Pending group
-invitations never appear as pinned conversations because an invitation does not
-yet grant membership or access.
+### Step 9B.3 — direct chats versus Circles
+
+Direct headers open the other person's profile. Direct chats use Shared Media
+rather than a Circle profile. Full Circle identity remains restricted to group
+Circles and future mutually promoted two-person Circles.
+
+### Step 9C — Circle Posts
+
+Intentional private posts now live on Circle profiles with separate media,
+captions, comments, author editing, and author deletion—without like counts. Timeline and
+Posts remain provenance-distinct.
+
+### Step 9D — lifecycle and consent polish
+
+Roles, invite management, leaving/removal, notification controls, Storage
+cleanup, and eventually mutually created two-person Circles.

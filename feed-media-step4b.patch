@@ -1,0 +1,1563 @@
+diff -ruN '--exclude=.git' '--exclude=.expo' '--exclude=node_modules' '--exclude=dist' '--exclude=.env.local' '--exclude=README_FEED_FOUNDATION_STEP_4A.md' '--exclude=feed-foundation-step4a.patch' a/App.js b/App.js
+--- a/App.js	2026-07-19 19:01:01.000000000 +0000
++++ b/App.js	2026-07-20 19:36:10.329677045 +0000
+@@ -32,6 +32,7 @@
+ import { FeedScreen } from './src/screens/feed/FeedScreen';
+ import { CreatePostScreen } from './src/screens/posts/CreatePostScreen';
+ import { PostDetailScreen } from './src/screens/posts/PostDetailScreen';
++import { StoryComposerScreen } from './src/screens/stories/StoryComposerScreen';
+ 
+ /* ---------------- Layout & helpers ---------------- */
+ const { width: W, height: H } = Dimensions.get('window');
+@@ -72,6 +73,7 @@
+           <RootStack.Screen name="Auth" component={AuthNavigator} />
+           <RootStack.Screen name="MainTabs" component={AppTabs} />
+           <RootStack.Screen name="CreatePost" component={CreatePostScreen} />
++          <RootStack.Screen name="CreateStory" component={StoryComposerScreen} />
+           <RootStack.Screen name="Profile" component={ProfileScreen} />
+           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
+           <RootStack.Screen name="PostDetail" component={PostDetailScreen} />
+diff -ruN '--exclude=.git' '--exclude=.expo' '--exclude=node_modules' '--exclude=dist' '--exclude=.env.local' '--exclude=README_FEED_FOUNDATION_STEP_4A.md' '--exclude=feed-foundation-step4a.patch' a/src/components/feed/PostCard.js b/src/components/feed/PostCard.js
+--- a/src/components/feed/PostCard.js	2026-07-19 19:01:01.000000000 +0000
++++ b/src/components/feed/PostCard.js	2026-07-20 19:33:54.570233783 +0000
+@@ -1,69 +1,48 @@
+-import React, { useEffect, useRef, useState } from 'react';
++import React, { useEffect, useState } from 'react';
+ import {
+-  Image,
+   Pressable,
+   StyleSheet,
+   Text,
+   View,
+ } from 'react-native';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+-import { MotiView } from 'moti';
+-import * as Haptics from 'expo-haptics';
+ import { COLORS } from '../../theme/colors';
+ import { Avatar } from '../Avatar';
++import { PostMediaCarousel } from './PostMediaCarousel';
++
++const COLLAPSED_CAPTION_LENGTH = 120;
++
++function likeLabel(count) {
++  return `${count} ${count === 1 ? 'like' : 'likes'}`;
++}
++
++function commentsLabel(count) {
++  if (!count) return 'Add a comment';
++  return `View all ${count} ${count === 1 ? 'comment' : 'comments'}`;
++}
+ 
+ export function PostCard({
+   post,
++  isVisible = false,
+   onToggleLike,
+   onDoubleLike,
+   onOpenComments,
+   onOpenPost,
+   onOpenProfile,
+ }) {
+-  const [showBigHeart, setShowBigHeart] = useState(false);
+-  const lastTapRef = useRef(0);
+-  const singleTapTimerRef = useRef(null);
+-  const heartTimerRef = useRef(null);
+-
+-  useEffect(
+-    () => () => {
+-      clearTimeout(singleTapTimerRef.current);
+-      clearTimeout(heartTimerRef.current);
+-    },
+-    []
+-  );
++  const [captionExpanded, setCaptionExpanded] = useState(false);
+ 
+-  const onImagePress = () => {
+-    const now = Date.now();
+-    const isDoubleTap = now - lastTapRef.current < 300;
+-
+-    if (isDoubleTap) {
+-      clearTimeout(singleTapTimerRef.current);
+-      setShowBigHeart(true);
+-
+-      if (!post.liked) onDoubleLike?.();
+-
+-      Haptics.impactAsync(
+-        Haptics.ImpactFeedbackStyle.Medium
+-      ).catch(() => {});
+-
+-      clearTimeout(heartTimerRef.current);
+-      heartTimerRef.current = setTimeout(
+-        () => setShowBigHeart(false),
+-        650
+-      );
+-
+-      lastTapRef.current = 0;
+-      return;
+-    }
+-
+-    lastTapRef.current = now;
+-    clearTimeout(singleTapTimerRef.current);
+-    singleTapTimerRef.current = setTimeout(() => {
+-      onOpenPost?.();
+-      lastTapRef.current = 0;
+-    }, 310);
+-  };
++  useEffect(() => {
++    setCaptionExpanded(false);
++  }, [post.id]);
++
++  const captionNeedsCollapse =
++    post.caption.length > COLLAPSED_CAPTION_LENGTH;
++
++  const visibleCaption =
++    captionNeedsCollapse && !captionExpanded
++      ? `${post.caption.slice(0, COLLAPSED_CAPTION_LENGTH).trimEnd()}…`
++      : post.caption;
+ 
+   return (
+     <View style={styles.root}>
+@@ -74,7 +53,7 @@
+           style={styles.authorButton}
+         >
+           <Avatar
+-            size={36}
++            size={38}
+             name={post.user.name}
+             uri={post.user.avatarUri}
+           />
+@@ -87,44 +66,22 @@
+           </View>
+         </Pressable>
+ 
+-        <Pressable hitSlop={10}>
++        <Pressable hitSlop={10} disabled>
+           <Ionicons
+             name="ellipsis-horizontal"
+-            size={18}
++            size={19}
+             color="#888"
+           />
+         </Pressable>
+       </View>
+ 
+-      <Pressable
+-        onPress={onImagePress}
+-        style={styles.mediaButton}
+-      >
+-        <View style={styles.mediaWrap}>
+-          <Image
+-            source={{ uri: post.uri }}
+-            style={styles.media}
+-            resizeMode="cover"
+-          />
+-
+-          {showBigHeart ? (
+-            <View style={styles.heartOverlay}>
+-              <MotiView
+-                from={{ scale: 0.3, opacity: 0 }}
+-                animate={{ scale: 1.1, opacity: 1 }}
+-                transition={{ type: 'timing', duration: 350 }}
+-              >
+-                <Ionicons
+-                  name="heart"
+-                  size={96}
+-                  color="#fff"
+-                  style={styles.largeHeart}
+-                />
+-              </MotiView>
+-            </View>
+-          ) : null}
+-        </View>
+-      </Pressable>
++      <PostMediaCarousel
++        media={post.media}
++        liked={post.liked}
++        isVisible={isVisible}
++        onOpenPost={onOpenPost}
++        onDoubleLike={onDoubleLike}
++      />
+ 
+       <View style={styles.actions}>
+         <Pressable
+@@ -134,7 +91,7 @@
+         >
+           <Ionicons
+             name={post.liked ? 'heart' : 'heart-outline'}
+-            size={26}
++            size={27}
+             color={post.liked ? '#e11d48' : COLORS.text}
+           />
+         </Pressable>
+@@ -146,36 +103,41 @@
+         >
+           <Ionicons
+             name="chatbubble-outline"
+-            size={24}
+-            color={COLORS.text}
+-          />
+-        </Pressable>
+-
+-        <Pressable hitSlop={10} style={styles.actionButton}>
+-          <Ionicons
+-            name="paper-plane-outline"
+-            size={24}
++            size={25}
+             color={COLORS.text}
+           />
+         </Pressable>
+       </View>
+ 
+       <View style={styles.details}>
+-        <Text style={styles.likes}>{post.likes} likes</Text>
++        <Text style={styles.likes}>{likeLabel(post.likes)}</Text>
+ 
+         {post.caption ? (
+-          <Pressable onPress={onOpenPost}>
+-            <Text style={styles.caption} numberOfLines={3}>
+-              <Text style={styles.captionName}>
+-                {post.user.name}{' '}
+-              </Text>
+-              <Text style={styles.captionBody}>{post.caption}</Text>
++          <Text style={styles.caption}>
++            <Text
++              style={styles.captionName}
++              onPress={onOpenProfile}
++            >
++              {post.user.name}{' '}
+             </Text>
+-          </Pressable>
++            <Text style={styles.captionBody}>{visibleCaption}</Text>
++            {captionNeedsCollapse ? (
++              <Text
++                style={styles.moreText}
++                onPress={() =>
++                  setCaptionExpanded((current) => !current)
++                }
++              >
++                {captionExpanded ? ' less' : ' more'}
++              </Text>
++            ) : null}
++          </Text>
+         ) : null}
+ 
+         <Pressable onPress={onOpenComments}>
+-          <Text style={styles.commentsLink}>View comments</Text>
++          <Text style={styles.commentsLink}>
++            {commentsLabel(post.commentCount)}
++          </Text>
+         </Pressable>
+       </View>
+     </View>
+@@ -184,13 +146,18 @@
+ 
+ const styles = StyleSheet.create({
+   root: {
++    width: '100%',
++    maxWidth: 640,
++    alignSelf: 'center',
+     borderBottomWidth: StyleSheet.hairlineWidth,
+     borderBottomColor: COLORS.divider,
++    backgroundColor: COLORS.bg,
+   },
+   header: {
+     flexDirection: 'row',
+     alignItems: 'center',
+-    padding: 12,
++    paddingHorizontal: 12,
++    paddingVertical: 11,
+   },
+   authorButton: {
+     flex: 1,
+@@ -206,50 +173,31 @@
+     color: COLORS.text,
+   },
+   time: {
++    marginTop: 1,
+     fontFamily: 'Manrope_400Regular',
+     color: '#888',
+     fontSize: 12,
+   },
+-  mediaButton: {
+-    backgroundColor: '#f2f2f2',
+-  },
+-  mediaWrap: {
+-    width: '100%',
+-    aspectRatio: 1,
+-  },
+-  media: {
+-    width: '100%',
+-    height: '100%',
+-  },
+-  heartOverlay: {
+-    ...StyleSheet.absoluteFillObject,
+-    alignItems: 'center',
+-    justifyContent: 'center',
+-  },
+-  largeHeart: {
+-    textShadowColor: 'rgba(0,0,0,0.35)',
+-    textShadowOffset: { width: 0, height: 2 },
+-    textShadowRadius: 8,
+-  },
+   actions: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     paddingHorizontal: 12,
+-    paddingVertical: 8,
++    paddingTop: 9,
++    paddingBottom: 7,
+   },
+   actionButton: {
+-    marginRight: 16,
++    marginRight: 17,
+   },
+   details: {
+     paddingHorizontal: 12,
+-    paddingBottom: 12,
++    paddingBottom: 13,
+   },
+   likes: {
+     fontFamily: 'Manrope_700Bold',
+     color: COLORS.text,
+   },
+   caption: {
+-    marginTop: 4,
++    marginTop: 5,
+     color: COLORS.text,
+   },
+   captionName: {
+@@ -258,9 +206,13 @@
+   captionBody: {
+     fontFamily: 'Manrope_400Regular',
+   },
++  moreText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++  },
+   commentsLink: {
+-    color: '#6b6b6b',
+-    marginTop: 6,
++    color: COLORS.subtext,
++    marginTop: 7,
+     fontFamily: 'Manrope_400Regular',
+   },
+ });
+diff -ruN '--exclude=.git' '--exclude=.expo' '--exclude=node_modules' '--exclude=dist' '--exclude=.env.local' '--exclude=README_FEED_FOUNDATION_STEP_4A.md' '--exclude=feed-foundation-step4a.patch' a/src/components/feed/PostMediaCarousel.js b/src/components/feed/PostMediaCarousel.js
+--- a/src/components/feed/PostMediaCarousel.js	1970-01-01 00:00:00.000000000 +0000
++++ b/src/components/feed/PostMediaCarousel.js	2026-07-20 19:33:10.731756569 +0000
+@@ -0,0 +1,303 @@
++import React, { useEffect, useRef, useState } from 'react';
++import {
++  FlatList,
++  Image,
++  Pressable,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { Video } from 'expo-av';
++import { MotiView } from 'moti';
++import * as Haptics from 'expo-haptics';
++import { COLORS } from '../../theme/colors';
++
++function FeedVideo({ item, shouldPlay, muted }) {
++  return (
++    <Video
++      source={{ uri: item.url }}
++      style={styles.media}
++      resizeMode="cover"
++      shouldPlay={shouldPlay}
++      isLooping
++      isMuted={muted}
++      useNativeControls={false}
++    />
++  );
++}
++
++export function PostMediaCarousel({
++  media,
++  liked,
++  isVisible,
++  onOpenPost,
++  onDoubleLike,
++}) {
++  const [containerWidth, setContainerWidth] = useState(1);
++  const [activeIndex, setActiveIndex] = useState(0);
++  const [muted, setMuted] = useState(true);
++  const [showBigHeart, setShowBigHeart] = useState(false);
++
++  const lastTapRef = useRef(0);
++  const singleTapTimerRef = useRef(null);
++  const heartTimerRef = useRef(null);
++
++  useEffect(() => {
++    setActiveIndex(0);
++  }, [media?.[0]?.id]);
++
++  useEffect(
++    () => () => {
++      clearTimeout(singleTapTimerRef.current);
++      clearTimeout(heartTimerRef.current);
++    },
++    []
++  );
++
++  const items = media?.length ? media : [];
++
++  const handleMediaPress = () => {
++    const now = Date.now();
++    const isDoubleTap = now - lastTapRef.current < 300;
++
++    if (isDoubleTap) {
++      clearTimeout(singleTapTimerRef.current);
++      setShowBigHeart(true);
++
++      if (!liked) onDoubleLike?.();
++
++      Haptics.impactAsync(
++        Haptics.ImpactFeedbackStyle.Medium
++      ).catch(() => {});
++
++      clearTimeout(heartTimerRef.current);
++      heartTimerRef.current = setTimeout(
++        () => setShowBigHeart(false),
++        650
++      );
++
++      lastTapRef.current = 0;
++      return;
++    }
++
++    lastTapRef.current = now;
++    clearTimeout(singleTapTimerRef.current);
++    singleTapTimerRef.current = setTimeout(() => {
++      onOpenPost?.();
++      lastTapRef.current = 0;
++    }, 310);
++  };
++
++  if (!items.length) {
++    return (
++      <View style={styles.emptyMedia}>
++        <Ionicons
++          name="image-outline"
++          size={34}
++          color={COLORS.subtext}
++        />
++        <Text style={styles.emptyText}>Media unavailable</Text>
++      </View>
++    );
++  }
++
++  const activeItem = items[activeIndex];
++
++  return (
++    <View
++      style={styles.root}
++      onLayout={(event) => {
++        const width = event.nativeEvent.layout.width;
++        if (width > 0 && width !== containerWidth) {
++          setContainerWidth(width);
++        }
++      }}
++    >
++      <FlatList
++        horizontal
++        pagingEnabled
++        data={items}
++        keyExtractor={(item) => item.id}
++        showsHorizontalScrollIndicator={false}
++        bounces={items.length > 1}
++        scrollEnabled={items.length > 1}
++        decelerationRate="fast"
++        snapToInterval={containerWidth}
++        getItemLayout={(_, index) => ({
++          length: containerWidth,
++          offset: containerWidth * index,
++          index,
++        })}
++        onMomentumScrollEnd={(event) => {
++          const offset = event.nativeEvent.contentOffset.x || 0;
++          const nextIndex = Math.round(offset / containerWidth);
++          setActiveIndex(
++            Math.max(0, Math.min(items.length - 1, nextIndex))
++          );
++        }}
++        renderItem={({ item, index }) => (
++          <Pressable
++            onPress={handleMediaPress}
++            style={[styles.slide, { width: containerWidth }]}
++          >
++            {item.media_type === 'video' ? (
++              <FeedVideo
++                item={item}
++                muted={muted}
++                shouldPlay={Boolean(
++                  isVisible && activeIndex === index
++                )}
++              />
++            ) : (
++              <Image
++                source={{ uri: item.url }}
++                style={styles.media}
++                resizeMode="cover"
++              />
++            )}
++          </Pressable>
++        )}
++      />
++
++      {items.length > 1 ? (
++        <View style={styles.pageBadge} pointerEvents="none">
++          <Text style={styles.pageBadgeText}>
++            {activeIndex + 1}/{items.length}
++          </Text>
++        </View>
++      ) : null}
++
++      {activeItem?.media_type === 'video' ? (
++        <Pressable
++          onPress={() => setMuted((current) => !current)}
++          hitSlop={8}
++          style={styles.muteButton}
++        >
++          <Ionicons
++            name={muted ? 'volume-mute' : 'volume-high'}
++            size={18}
++            color="#fff"
++          />
++        </Pressable>
++      ) : null}
++
++      {showBigHeart ? (
++        <View style={styles.heartOverlay} pointerEvents="none">
++          <MotiView
++            from={{ scale: 0.3, opacity: 0 }}
++            animate={{ scale: 1.1, opacity: 1 }}
++            transition={{ type: 'timing', duration: 350 }}
++          >
++            <Ionicons
++              name="heart"
++              size={96}
++              color="#fff"
++              style={styles.largeHeart}
++            />
++          </MotiView>
++        </View>
++      ) : null}
++
++      {items.length > 1 ? (
++        <View style={styles.dots} pointerEvents="none">
++          {items.map((item, index) => (
++            <View
++              key={item.id}
++              style={[
++                styles.dot,
++                index === activeIndex && styles.dotActive,
++              ]}
++            />
++          ))}
++        </View>
++      ) : null}
++    </View>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    width: '100%',
++    aspectRatio: 1,
++    position: 'relative',
++    backgroundColor: '#111',
++  },
++  slide: {
++    height: '100%',
++    backgroundColor: '#111',
++  },
++  media: {
++    width: '100%',
++    height: '100%',
++  },
++  emptyMedia: {
++    width: '100%',
++    aspectRatio: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: '#f2f2f2',
++  },
++  emptyText: {
++    marginTop: 8,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  pageBadge: {
++    position: 'absolute',
++    top: 12,
++    right: 12,
++    paddingHorizontal: 9,
++    paddingVertical: 5,
++    borderRadius: 13,
++    backgroundColor: 'rgba(0,0,0,0.58)',
++  },
++  pageBadgeText: {
++    color: '#fff',
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 12,
++  },
++  muteButton: {
++    position: 'absolute',
++    right: 12,
++    bottom: 14,
++    width: 34,
++    height: 34,
++    borderRadius: 17,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: 'rgba(0,0,0,0.58)',
++  },
++  heartOverlay: {
++    ...StyleSheet.absoluteFillObject,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  largeHeart: {
++    textShadowColor: 'rgba(0,0,0,0.35)',
++    textShadowOffset: { width: 0, height: 2 },
++    textShadowRadius: 8,
++  },
++  dots: {
++    position: 'absolute',
++    left: 0,
++    right: 0,
++    bottom: 12,
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    gap: 5,
++  },
++  dot: {
++    width: 5,
++    height: 5,
++    borderRadius: 3,
++    backgroundColor: 'rgba(255,255,255,0.48)',
++  },
++  dotActive: {
++    width: 7,
++    height: 7,
++    borderRadius: 4,
++    backgroundColor: '#fff',
++  },
++});
+diff -ruN '--exclude=.git' '--exclude=.expo' '--exclude=node_modules' '--exclude=dist' '--exclude=.env.local' '--exclude=README_FEED_FOUNDATION_STEP_4A.md' '--exclude=feed-foundation-step4a.patch' a/src/screens/feed/FeedScreen.js b/src/screens/feed/FeedScreen.js
+--- a/src/screens/feed/FeedScreen.js	2026-07-19 19:01:01.000000000 +0000
++++ b/src/screens/feed/FeedScreen.js	2026-07-20 19:35:58.775042588 +0000
+@@ -17,7 +17,6 @@
+ } from 'react-native';
+ import { SafeAreaView } from 'react-native-safe-area-context';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+-import * as ImagePicker from 'expo-image-picker';
+ import { COLORS } from '../../theme/colors';
+ import { supabase } from '../../lib/supabase';
+ import {
+@@ -26,10 +25,7 @@
+   fetchPostComments,
+   togglePostLike,
+ } from '../../services/feedService';
+-import {
+-  createStoryFromAsset,
+-  fetchActiveStories,
+-} from '../../services/storyService';
++import { fetchActiveStories } from '../../services/storyService';
+ import { PostCard } from '../../components/feed/PostCard';
+ import { CommentsModal } from '../../components/feed/CommentsModal';
+ import { StoriesRail } from '../../components/stories/StoriesRail';
+@@ -69,12 +65,24 @@
+ 
+   const [storyOpen, setStoryOpen] = useState(null);
+   const [storyIndex, setStoryIndex] = useState(0);
+-  const [storyUploading, setStoryUploading] = useState(false);
++  const [visiblePostIds, setVisiblePostIds] = useState(() => new Set());
+ 
+   const mountedRef = useRef(true);
+   const postsRef = useRef([]);
+   const initialLoadFinishedRef = useRef(false);
+   const likeRequestsRef = useRef(new Set());
++  const viewabilityConfigRef = useRef({
++    itemVisiblePercentThreshold: 60,
++  });
++  const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
++    setVisiblePostIds(
++      new Set(
++        viewableItems
++          .map((item) => item.item?.id)
++          .filter(Boolean)
++      )
++    );
++  });
+ 
+   useEffect(() => {
+     postsRef.current = posts;
+@@ -298,7 +306,16 @@
+ 
+     try {
+       const comments = await fetchPostComments(postId);
+-      if (mountedRef.current) setActiveComments(comments);
++      if (mountedRef.current) {
++        setActiveComments(comments);
++        setPosts((currentPosts) =>
++          currentPosts.map((post) =>
++            post.id === postId
++              ? { ...post, commentCount: comments.length }
++              : post
++          )
++        );
++      }
+     } catch (error) {
+       if (!mountedRef.current) return;
+       setCommentsError(
+@@ -355,6 +372,13 @@
+ 
+       if (mountedRef.current && openPostId === postId) {
+         setActiveComments(comments);
++        setPosts((currentPosts) =>
++          currentPosts.map((post) =>
++            post.id === postId
++              ? { ...post, commentCount: comments.length }
++              : post
++          )
++        );
+       }
+     } catch (error) {
+       if (mountedRef.current) {
+@@ -375,45 +399,6 @@
+     }
+   }, [commentSending, commentText, openPostId]);
+ 
+-  const addStory = useCallback(async () => {
+-    if (storyUploading) return;
+-
+-    setStoryUploading(true);
+-
+-    try {
+-      const { status } =
+-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+-
+-      if (status !== 'granted') {
+-        Alert.alert(
+-          'Permission needed',
+-          'Allow photo access to add a story.'
+-        );
+-        return;
+-      }
+-
+-      const result = await ImagePicker.launchImageLibraryAsync({
+-        mediaTypes: ImagePicker.MediaTypeOptions.All,
+-        allowsMultipleSelection: false,
+-        quality: 0.9,
+-        videoQuality:
+-          ImagePicker.UIImagePickerControllerQualityType.High,
+-      });
+-
+-      if (result.canceled) return;
+-
+-      await createStoryFromAsset(result.assets[0]);
+-      await refreshStories();
+-    } catch (error) {
+-      Alert.alert(
+-        'Story not posted',
+-        errorMessage(error, 'Please try again.')
+-      );
+-    } finally {
+-      if (mountedRef.current) setStoryUploading(false);
+-    }
+-  }, [refreshStories, storyUploading]);
+-
+   const retryFeed = useCallback(() => {
+     refreshFeed('initial');
+     refreshStories();
+@@ -500,6 +485,7 @@
+         renderItem={({ item }) => (
+           <PostCard
+             post={item}
++            isVisible={visiblePostIds.has(item.id)}
+             onToggleLike={() => toggleLike(item.id)}
+             onDoubleLike={() => toggleLike(item.id)}
+             onOpenComments={() => openComments(item.id)}
+@@ -508,8 +494,21 @@
+                 postId: item.id,
+               })
+             }
++            onOpenProfile={
++              item.user.id
++                ? () =>
++                    navigation.navigate('Profile', {
++                      userId: item.user.id,
++                      name: item.user.name,
++                    })
++                : undefined
++            }
+           />
+         )}
++        viewabilityConfig={viewabilityConfigRef.current}
++        onViewableItemsChanged={
++          onViewableItemsChangedRef.current
++        }
+         onEndReachedThreshold={0.25}
+         onEndReached={loadMore}
+         refreshControl={
+@@ -536,8 +535,10 @@
+ 
+             <StoriesRail
+               stories={stories}
+-              isAdding={storyUploading}
+-              onAddYourStory={addStory}
++              isAdding={false}
++              onAddYourStory={() =>
++                navigation.navigate('CreateStory')
++              }
+               onOpen={openStory}
+             />
+ 
+diff -ruN '--exclude=.git' '--exclude=.expo' '--exclude=node_modules' '--exclude=dist' '--exclude=.env.local' '--exclude=README_FEED_FOUNDATION_STEP_4A.md' '--exclude=feed-foundation-step4a.patch' a/src/screens/posts/CreatePostScreen.js b/src/screens/posts/CreatePostScreen.js
+--- a/src/screens/posts/CreatePostScreen.js	2026-07-19 19:01:01.000000000 +0000
++++ b/src/screens/posts/CreatePostScreen.js	2026-07-20 19:34:47.943951341 +0000
+@@ -16,6 +16,11 @@
+ import * as ImagePicker from 'expo-image-picker';
+ import { COLORS } from '../../theme/colors';
+ import { createPostWithMedia } from '../../services/postService';
++import {
++  formatDuration,
++  formatFileSize,
++  validatePostAssets,
++} from '../../utils/mediaValidation';
+ 
+ function normalizeAsset(asset) {
+   return {
+@@ -28,6 +33,7 @@
+     height: asset.height,
+     duration: asset.duration,
+     fileName: asset.fileName,
++    fileSize: asset.fileSize,
+     mimeType:
+       asset.mimeType ||
+       (asset.type === 'video'
+@@ -86,7 +92,15 @@
+ 
+       if (result.canceled) return;
+ 
+-      setAssets(result.assets.map(normalizeAsset));
++      const nextAssets = result.assets.map(normalizeAsset);
++      const validationError = validatePostAssets(nextAssets);
++
++      if (validationError) {
++        Alert.alert('Media not added', validationError);
++        return;
++      }
++
++      setAssets(nextAssets);
+     } catch (error) {
+       Alert.alert(
+         'Could not open your library',
+@@ -230,7 +244,9 @@
+                         size={34}
+                         color="#fff"
+                       />
+-                      <Text style={styles.videoLabel}>Video</Text>
++                      <Text style={styles.videoLabel}>
++                        {formatDuration(asset.duration) || 'Video'}
++                      </Text>
+                     </View>
+                   ) : (
+                     <Image
+@@ -239,6 +255,14 @@
+                     />
+                   )}
+ 
++                  {asset.fileSize ? (
++                    <View style={styles.fileBadge}>
++                      <Text style={styles.fileBadgeText}>
++                        {formatFileSize(asset.fileSize)}
++                      </Text>
++                    </View>
++                  ) : null}
++
+                   <View style={styles.orderBadge}>
+                     <Text style={styles.orderText}>{index + 1}</Text>
+                   </View>
+@@ -396,6 +420,20 @@
+     color: '#fff',
+     fontSize: 11,
+   },
++  fileBadge: {
++    position: 'absolute',
++    left: 5,
++    bottom: 5,
++    paddingHorizontal: 6,
++    paddingVertical: 3,
++    borderRadius: 8,
++    backgroundColor: 'rgba(0,0,0,0.62)',
++  },
++  fileBadgeText: {
++    color: '#fff',
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 9,
++  },
+   orderBadge: {
+     position: 'absolute',
+     left: 6,
+diff -ruN '--exclude=.git' '--exclude=.expo' '--exclude=node_modules' '--exclude=dist' '--exclude=.env.local' '--exclude=README_FEED_FOUNDATION_STEP_4A.md' '--exclude=feed-foundation-step4a.patch' a/src/screens/stories/StoryComposerScreen.js b/src/screens/stories/StoryComposerScreen.js
+--- a/src/screens/stories/StoryComposerScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ b/src/screens/stories/StoryComposerScreen.js	2026-07-20 19:35:32.380336527 +0000
+@@ -0,0 +1,409 @@
++import React, { useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Image,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  View,
++  useWindowDimensions,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import * as ImagePicker from 'expo-image-picker';
++import { Video } from 'expo-av';
++import { COLORS } from '../../theme/colors';
++import { createStoryFromAsset } from '../../services/storyService';
++import {
++  MEDIA_LIMITS,
++  formatDuration,
++  formatFileSize,
++  validateStoryAsset,
++} from '../../utils/mediaValidation';
++
++function normalizeStoryAsset(asset) {
++  return {
++    id: asset.assetId || `${asset.uri}-${Date.now()}`,
++    uri: asset.uri,
++    type: asset.type,
++    width: asset.width,
++    height: asset.height,
++    duration: asset.duration,
++    fileName: asset.fileName,
++    fileSize: asset.fileSize,
++    mimeType:
++      asset.mimeType ||
++      (asset.type === 'video' ? 'video/mp4' : 'image/jpeg'),
++  };
++}
++
++export function StoryComposerScreen({ navigation }) {
++  const { width, height } = useWindowDimensions();
++  const [asset, setAsset] = useState(null);
++  const [posting, setPosting] = useState(false);
++
++  const previewWidth = Math.min(width - 32, 430);
++  const previewHeight = Math.min(
++    height * 0.58,
++    previewWidth * (16 / 9)
++  );
++
++  const pickMedia = async () => {
++    if (posting) return;
++
++    try {
++      const { status } =
++        await ImagePicker.requestMediaLibraryPermissionsAsync();
++
++      if (status !== 'granted') {
++        Alert.alert(
++          'Permission needed',
++          'Allow photo access to choose a story.'
++        );
++        return;
++      }
++
++      const result = await ImagePicker.launchImageLibraryAsync({
++        mediaTypes: ImagePicker.MediaTypeOptions.All,
++        allowsMultipleSelection: false,
++        quality: 0.9,
++        videoQuality:
++          ImagePicker.UIImagePickerControllerQualityType.Medium,
++      });
++
++      if (result.canceled) return;
++
++      const nextAsset = normalizeStoryAsset(result.assets[0]);
++      const validationError = validateStoryAsset(nextAsset);
++
++      if (validationError) {
++        Alert.alert('Story media not supported', validationError);
++        return;
++      }
++
++      setAsset(nextAsset);
++    } catch (error) {
++      Alert.alert(
++        'Could not open your library',
++        error?.message || 'Please try again.'
++      );
++    }
++  };
++
++  const postStory = async () => {
++    if (!asset || posting) return;
++
++    const validationError = validateStoryAsset(asset);
++    if (validationError) {
++      Alert.alert('Story media not supported', validationError);
++      return;
++    }
++
++    setPosting(true);
++
++    try {
++      await createStoryFromAsset(asset);
++      navigation.goBack();
++    } catch (error) {
++      Alert.alert(
++        'Story not posted',
++        error?.message || 'Please try again.'
++      );
++    } finally {
++      setPosting(false);
++    }
++  };
++
++  return (
++    <SafeAreaView edges={['top']} style={styles.root}>
++      <View style={styles.header}>
++        <Pressable
++          onPress={() => navigation.goBack()}
++          disabled={posting}
++          hitSlop={10}
++        >
++          <Ionicons
++            name="chevron-back"
++            size={24}
++            color={COLORS.text}
++          />
++        </Pressable>
++
++        <Text style={styles.headerTitle}>New Story</Text>
++
++        <View style={styles.headerSpacer} />
++      </View>
++
++      <ScrollView
++        contentContainerStyle={styles.content}
++        showsVerticalScrollIndicator={false}
++      >
++        {asset ? (
++          <View
++            style={[
++              styles.preview,
++              { width: previewWidth, height: previewHeight },
++            ]}
++          >
++            {asset.type === 'video' ? (
++              <Video
++                source={{ uri: asset.uri }}
++                style={styles.previewMedia}
++                resizeMode="cover"
++                shouldPlay
++                isLooping
++                isMuted={false}
++                useNativeControls
++              />
++            ) : (
++              <Image
++                source={{ uri: asset.uri }}
++                style={styles.previewMedia}
++                resizeMode="cover"
++              />
++            )}
++          </View>
++        ) : (
++          <Pressable
++            onPress={pickMedia}
++            style={({ pressed }) => [
++              styles.emptyPreview,
++              { width: previewWidth, height: previewHeight },
++              pressed && styles.pressed,
++            ]}
++          >
++            <Ionicons
++              name="add-circle-outline"
++              size={44}
++              color={COLORS.text}
++            />
++            <Text style={styles.emptyTitle}>Choose a story</Text>
++            <Text style={styles.emptyBody}>
++              Add one photo or a short video from your library.
++            </Text>
++          </Pressable>
++        )}
++
++        <View style={styles.rulesRow}>
++          <View style={styles.ruleChip}>
++            <Ionicons
++              name="time-outline"
++              size={16}
++              color={COLORS.subtext}
++            />
++            <Text style={styles.ruleText}>
++              Video up to {formatDuration(MEDIA_LIMITS.storyVideoDurationMs)}
++            </Text>
++          </View>
++          <View style={styles.ruleChip}>
++            <Ionicons
++              name="cloud-upload-outline"
++              size={16}
++              color={COLORS.subtext}
++            />
++            <Text style={styles.ruleText}>
++              Video up to {formatFileSize(MEDIA_LIMITS.storyVideoBytes)}
++            </Text>
++          </View>
++        </View>
++
++        {asset ? (
++          <View style={styles.assetInfo}>
++            <View style={styles.assetInfoText}>
++              <Text style={styles.assetName} numberOfLines={1}>
++                {asset.fileName ||
++                  (asset.type === 'video' ? 'Selected video' : 'Selected photo')}
++              </Text>
++              <Text style={styles.assetMeta}>
++                {[
++                  asset.type === 'video'
++                    ? formatDuration(asset.duration)
++                    : 'Photo',
++                  formatFileSize(asset.fileSize),
++                ]
++                  .filter(Boolean)
++                  .join(' • ')}
++              </Text>
++            </View>
++
++            <Pressable
++              onPress={pickMedia}
++              disabled={posting}
++              style={({ pressed }) => [
++                styles.changeButton,
++                pressed && styles.pressed,
++              ]}
++            >
++              <Text style={styles.changeButtonText}>Change</Text>
++            </Pressable>
++          </View>
++        ) : null}
++
++        <Pressable
++          onPress={asset ? postStory : pickMedia}
++          disabled={posting}
++          style={({ pressed }) => [
++            styles.primaryButton,
++            (pressed || posting) && styles.primaryButtonPressed,
++          ]}
++        >
++          {posting ? (
++            <View style={styles.postingRow}>
++              <ActivityIndicator color="#fff" size="small" />
++              <Text style={styles.primaryButtonText}>Posting story…</Text>
++            </View>
++          ) : (
++            <Text style={styles.primaryButtonText}>
++              {asset ? 'Share story' : 'Choose media'}
++            </Text>
++          )}
++        </Pressable>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  header: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    paddingHorizontal: 16,
++    paddingVertical: 11,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.border,
++  },
++  headerTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 17,
++  },
++  headerSpacer: {
++    width: 24,
++  },
++  content: {
++    width: '100%',
++    maxWidth: 620,
++    alignSelf: 'center',
++    alignItems: 'center',
++    padding: 16,
++    paddingBottom: 48,
++  },
++  preview: {
++    overflow: 'hidden',
++    borderRadius: 18,
++    backgroundColor: '#111',
++  },
++  previewMedia: {
++    width: '100%',
++    height: '100%',
++  },
++  emptyPreview: {
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    borderWidth: 1,
++    borderStyle: 'dashed',
++    borderColor: COLORS.border,
++    borderRadius: 18,
++    backgroundColor: '#f7f7f7',
++  },
++  emptyTitle: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 18,
++  },
++  emptyBody: {
++    marginTop: 6,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    textAlign: 'center',
++  },
++  rulesRow: {
++    width: '100%',
++    flexDirection: 'row',
++    flexWrap: 'wrap',
++    justifyContent: 'center',
++    gap: 8,
++    marginTop: 14,
++  },
++  ruleChip: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 10,
++    paddingVertical: 7,
++    borderRadius: 12,
++    backgroundColor: '#f2f2f2',
++  },
++  ruleText: {
++    marginLeft: 5,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 12,
++  },
++  assetInfo: {
++    width: '100%',
++    flexDirection: 'row',
++    alignItems: 'center',
++    marginTop: 16,
++    padding: 12,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    borderRadius: 12,
++  },
++  assetInfoText: {
++    flex: 1,
++    marginRight: 12,
++  },
++  assetName: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  assetMeta: {
++    marginTop: 3,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++  },
++  changeButton: {
++    paddingHorizontal: 13,
++    paddingVertical: 8,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    borderRadius: 10,
++  },
++  changeButtonText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  primaryButton: {
++    width: '100%',
++    alignItems: 'center',
++    marginTop: 18,
++    paddingVertical: 13,
++    borderRadius: 12,
++    backgroundColor: COLORS.primary,
++  },
++  primaryButtonPressed: {
++    opacity: 0.72,
++  },
++  primaryButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  postingRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 9,
++  },
++  pressed: {
++    opacity: 0.72,
++  },
++});
+diff -ruN '--exclude=.git' '--exclude=.expo' '--exclude=node_modules' '--exclude=dist' '--exclude=.env.local' '--exclude=README_FEED_FOUNDATION_STEP_4A.md' '--exclude=feed-foundation-step4a.patch' a/src/services/feedService.js b/src/services/feedService.js
+--- a/src/services/feedService.js	2026-07-19 19:01:01.000000000 +0000
++++ b/src/services/feedService.js	2026-07-20 19:41:22.106775928 +0000
+@@ -1,22 +1,92 @@
+ import { supabase } from '../lib/supabase';
+ import { timeAgo } from '../utils/timeAgo';
+ 
+-export function mapFeedRow(row) {
++function fallbackMedia(row) {
++  if (!row.image_url) return [];
++
++  return [
++    {
++      id: `primary-${row.id}`,
++      post_id: row.id,
++      url: row.image_url,
++      media_type: /\.(mp4|mov|m4v)(?:$|\?)/i.test(row.image_url)
++        ? 'video'
++        : 'image',
++      created_at: row.created_at,
++    },
++  ];
++}
++
++export function mapFeedRow(row, enrichment = {}) {
++  const media = enrichment.mediaByPost?.get(row.id) || fallbackMedia(row);
++  const authorId = enrichment.authorByPost?.get(row.id) || null;
++
+   return {
+     id: row.id,
+     user: {
++      id: authorId,
+       name: row.author_name || 'Unknown',
+       avatarUri: row.author_avatar || null,
+     },
+-    uri: row.image_url,
++    media,
++    uri: media[0]?.url || row.image_url || null,
+     liked: Boolean(row.liked_by_me),
+     likes: Number(row.likes_count || 0),
++    commentCount: enrichment.commentCountByPost?.get(row.id) || 0,
+     caption: row.caption || '',
+     time: timeAgo(row.created_at),
+     created_at: row.created_at,
+   };
+ }
+ 
++async function fetchFeedEnrichment(postIds) {
++  const mediaByPost = new Map();
++  const authorByPost = new Map();
++  const commentCountByPost = new Map();
++
++  if (!postIds.length) {
++    return { mediaByPost, authorByPost, commentCountByPost };
++  }
++
++  const [postResult, mediaResult, commentsResult] = await Promise.all([
++    supabase.from('posts').select('id, user_id').in('id', postIds),
++    supabase
++      .from('post_media')
++      .select('id, post_id, url, media_type, created_at')
++      .in('post_id', postIds)
++      .order('created_at', { ascending: true }),
++    supabase
++      .from('post_comments')
++      .select('post_id')
++      .in('post_id', postIds),
++  ]);
++
++  if (!postResult.error) {
++    (postResult.data || []).forEach((post) => {
++      authorByPost.set(post.id, post.user_id);
++    });
++  }
++
++  if (!mediaResult.error) {
++    (mediaResult.data || []).forEach((item) => {
++      const current = mediaByPost.get(item.post_id) || [];
++      current.push(item);
++      mediaByPost.set(item.post_id, current);
++    });
++  }
++
++  if (!commentsResult.error) {
++    (commentsResult.data || []).forEach((comment) => {
++      commentCountByPost.set(
++        comment.post_id,
++        (commentCountByPost.get(comment.post_id) || 0) + 1
++      );
++    });
++  }
++
++  return { mediaByPost, authorByPost, commentCountByPost };
++}
++
+ export async function fetchFeedPage({
+   limit = 10,
+   before = new Date().toISOString(),
+@@ -28,7 +98,11 @@
+ 
+   if (error) throw error;
+ 
+-  const posts = (data || []).map(mapFeedRow);
++  const rows = data || [];
++  const enrichment = await fetchFeedEnrichment(
++    rows.map((row) => row.id)
++  );
++  const posts = rows.map((row) => mapFeedRow(row, enrichment));
+ 
+   return {
+     posts,
+diff -ruN '--exclude=.git' '--exclude=.expo' '--exclude=node_modules' '--exclude=dist' '--exclude=.env.local' '--exclude=README_FEED_FOUNDATION_STEP_4A.md' '--exclude=feed-foundation-step4a.patch' a/src/services/postService.js b/src/services/postService.js
+--- a/src/services/postService.js	2026-07-19 19:01:01.000000000 +0000
++++ b/src/services/postService.js	2026-07-20 19:34:30.895829483 +0000
+@@ -1,17 +1,17 @@
+ import { supabase } from '../lib/supabase';
+ import { ensureAuthed } from './authService';
+ import { uploadToBucket } from './uploadService';
++import { validatePostAssets } from '../utils/mediaValidation';
+ 
+ export async function createPostWithMedia({
+   assets,
+   caption,
+   onProgress,
+ }) {
+-  await ensureAuthed();
++  const validationError = validatePostAssets(assets);
++  if (validationError) throw new Error(validationError);
+ 
+-  if (!assets?.length) {
+-    throw new Error('Select at least one photo or video.');
+-  }
++  await ensureAuthed();
+ 
+   const urls = [];
+   const types = [];
+diff -ruN '--exclude=.git' '--exclude=.expo' '--exclude=node_modules' '--exclude=dist' '--exclude=.env.local' '--exclude=README_FEED_FOUNDATION_STEP_4A.md' '--exclude=feed-foundation-step4a.patch' a/src/services/storyService.js b/src/services/storyService.js
+--- a/src/services/storyService.js	2026-07-19 19:01:01.000000000 +0000
++++ b/src/services/storyService.js	2026-07-20 19:34:24.336674195 +0000
+@@ -1,6 +1,7 @@
+ import { supabase } from '../lib/supabase';
+ import { ensureAuthed } from './authService';
+ import { uploadToBucket } from './uploadService';
++import { validateStoryAsset } from '../utils/mediaValidation';
+ 
+ export async function fetchActiveStories() {
+   const {
+@@ -47,6 +48,9 @@
+ }
+ 
+ export async function createStoryFromAsset(asset) {
++  const validationError = validateStoryAsset(asset);
++  if (validationError) throw new Error(validationError);
++
+   const { user } = await ensureAuthed();
+   const mediaType = asset.type === 'video' ? 'video' : 'image';
+   const mimeType =
+diff -ruN '--exclude=.git' '--exclude=.expo' '--exclude=node_modules' '--exclude=dist' '--exclude=.env.local' '--exclude=README_FEED_FOUNDATION_STEP_4A.md' '--exclude=feed-foundation-step4a.patch' a/src/utils/mediaValidation.js b/src/utils/mediaValidation.js
+--- a/src/utils/mediaValidation.js	1970-01-01 00:00:00.000000000 +0000
++++ b/src/utils/mediaValidation.js	2026-07-20 19:32:34.726559845 +0000
+@@ -0,0 +1,82 @@
++const MB = 1024 * 1024;
++
++export const MEDIA_LIMITS = {
++  storyImageBytes: 15 * MB,
++  storyVideoBytes: 25 * MB,
++  storyVideoDurationMs: 30 * 1000,
++  postAssetBytes: 48 * MB,
++  postVideoDurationMs: 2 * 60 * 1000,
++  postAssetCount: 10,
++};
++
++export function formatFileSize(bytes) {
++  if (!Number.isFinite(bytes) || bytes <= 0) return null;
++  if (bytes < MB) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
++  return `${(bytes / MB).toFixed(bytes >= 10 * MB ? 0 : 1)} MB`;
++}
++
++export function formatDuration(milliseconds) {
++  if (!Number.isFinite(milliseconds) || milliseconds < 0) return null;
++  const totalSeconds = Math.round(milliseconds / 1000);
++  const minutes = Math.floor(totalSeconds / 60);
++  const seconds = String(totalSeconds % 60).padStart(2, '0');
++  return minutes ? `${minutes}:${seconds}` : `${totalSeconds}s`;
++}
++
++function isVideo(asset) {
++  return asset?.type === 'video' || asset?.mimeType?.startsWith('video/');
++}
++
++export function validateStoryAsset(asset) {
++  if (!asset?.uri) {
++    return 'Choose a photo or video for your story.';
++  }
++
++  const video = isVideo(asset);
++  const maxBytes = video
++    ? MEDIA_LIMITS.storyVideoBytes
++    : MEDIA_LIMITS.storyImageBytes;
++
++  if (asset.fileSize && asset.fileSize > maxBytes) {
++    const actual = formatFileSize(asset.fileSize);
++    const maximum = formatFileSize(maxBytes);
++    return `${video ? 'Video' : 'Photo'} is ${actual}. Stories must be ${maximum} or smaller.`;
++  }
++
++  if (
++    video &&
++    asset.duration &&
++    asset.duration > MEDIA_LIMITS.storyVideoDurationMs
++  ) {
++    return `This video is ${formatDuration(asset.duration)}. Story videos can be up to ${formatDuration(MEDIA_LIMITS.storyVideoDurationMs)}.`;
++  }
++
++  return null;
++}
++
++export function validatePostAssets(assets) {
++  if (!assets?.length) {
++    return 'Select at least one photo or video.';
++  }
++
++  if (assets.length > MEDIA_LIMITS.postAssetCount) {
++    return `Posts can contain up to ${MEDIA_LIMITS.postAssetCount} items.`;
++  }
++
++  for (const asset of assets) {
++    if (asset.fileSize && asset.fileSize > MEDIA_LIMITS.postAssetBytes) {
++      const name = asset.fileName || (isVideo(asset) ? 'A video' : 'A photo');
++      return `${name} is ${formatFileSize(asset.fileSize)}. Each post item must be ${formatFileSize(MEDIA_LIMITS.postAssetBytes)} or smaller.`;
++    }
++
++    if (
++      isVideo(asset) &&
++      asset.duration &&
++      asset.duration > MEDIA_LIMITS.postVideoDurationMs
++    ) {
++      return `Post videos can be up to ${formatDuration(MEDIA_LIMITS.postVideoDurationMs)}.`;
++    }
++  }
++
++  return null;
++}

@@ -1,0 +1,3300 @@
+diff --git a/App.js b/App.js
+index a4c68b8..cfa906c 100755
+--- a/App.js
++++ b/App.js
+@@ -42,6 +42,9 @@ import { CircleProfileScreen } from './src/screens/conversations/CircleProfileSc
+ import { DirectConversationDetailsScreen } from './src/screens/conversations/DirectConversationDetailsScreen';
+ import { EditCircleScreen } from './src/screens/conversations/EditCircleScreen';
+ import { ConversationMediaViewerScreen } from './src/screens/conversations/ConversationMediaViewerScreen';
++import { CreateCirclePostScreen } from './src/screens/conversations/CreateCirclePostScreen';
++import { CirclePostDetailScreen } from './src/screens/conversations/CirclePostDetailScreen';
++import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
+ 
+ /* ---------------- Layout & helpers ---------------- */
+ const { width: W, height: H } = Dimensions.get('window');
+@@ -255,6 +258,21 @@ function CirclesStack() {
+         component={EditCircleScreen}
+         options={{ title: 'Edit Circle' }}
+       />
++      <CirclesStackNav.Screen
++        name="CreateCirclePost"
++        component={CreateCirclePostScreen}
++        options={{ title: 'New Circle Post' }}
++      />
++      <CirclesStackNav.Screen
++        name="CirclePostDetail"
++        component={CirclePostDetailScreen}
++        options={{ title: 'Circle Post' }}
++      />
++      <CirclesStackNav.Screen
++        name="EditCirclePost"
++        component={EditCirclePostScreen}
++        options={{ title: 'Edit Circle Post' }}
++      />
+       <CirclesStackNav.Screen
+         name="ConversationMedia"
+         component={ConversationMediaViewerScreen}
+diff --git a/README_CONVERSATIONS_STEP_9C.md b/README_CONVERSATIONS_STEP_9C.md
+new file mode 100644
+index 0000000..72b06bf
+--- /dev/null
++++ b/README_CONVERSATIONS_STEP_9C.md
+@@ -0,0 +1,199 @@
++# Circles Step 9C — Intentional Private Circle Posts
++
++This checkpoint adds the second content surface to a Circle profile:
++
++- **Timeline** remains an automatic archive of photos and videos sent in Chat.
++- **Posts** are intentional private publications created specifically for the Circle.
++
++Nothing in this step turns an ordinary direct message into a Circle. Normal DMs still have only Chat and Shared Media. The Circle Post system becomes available only when the conversation is already a group Circle, or later when a two-person direct chat is mutually promoted with `circle_enabled = true`.
++
++## Files in this package
++
++Copy the package into the project root. It includes:
++
++```text
++App.js
++src/screens/conversations/CircleProfileScreen.js
++src/screens/conversations/CreateCirclePostScreen.js
++src/screens/conversations/CirclePostDetailScreen.js
++src/screens/conversations/EditCirclePostScreen.js
++src/services/circlePostService.js
++supabase/migrations/20260722_014_circle_posts.sql
++docs/CONVERSATION_SPACES_ARCHITECTURE.md
++README_CONVERSATIONS_STEP_9C.md
++circle-posts-step9c.patch
++```
++
++`App.js` is complete, not a partial snippet.
++
++## What Step 9C adds
++
++Circle Posts intentionally do **not** include like counts. The goal is private sharing and conversation, not turning a Circle into another attention scoreboard. Members can respond through comments.
++
++### Circle profile Posts tab
++
++The existing Posts tab is now functional. It displays a three-column private grid separate from Timeline.
++
++Every accepted Circle member can:
++
++- create a Circle post;
++- view posts from other accepted members;
++- comment on posts;
++- open post media full screen.
++
++### Intentional media uploads
++
++A Circle post supports:
++
++- 1–10 photos or videos;
++- an optional caption of up to 2,200 characters;
++- files up to 25 MB each;
++- videos up to 30 seconds.
++
++Post files are separately uploaded under:
++
++```text
++<conversation-id>/posts/<author-id>/<filename>
++```
++
++This is deliberately different from Timeline. A Circle post does not silently reuse or copy chat media.
++
++### Ownership
++
++A post remains attributed to the member who created it.
++
++Only that author can:
++
++- edit its caption;
++- delete the post and its separately uploaded media.
++
++A member can delete their own comment. Step 9C does not let every group member destroy another member's post.
++
++### Privacy
++
++The migration creates membership-protected tables and RPCs for:
++
++```text
++conversation_posts
++conversation_post_media
++conversation_post_comments
++```
++
++Pending or declined invitees cannot read posts, comments, or private post media. Direct chats with `circle_enabled = false` cannot create or retrieve Circle posts.
++
++## 1. Run the Supabase migration
++
++Open your Supabase project and select **SQL Editor**.
++
++Open this package file:
++
++```text
++supabase/migrations/20260722_014_circle_posts.sql
++```
++
++Copy its complete contents into a new SQL query and press **Run**.
++
++A successful run should create the four Circle Post tables and the related functions. It also updates `get_conversation_details` so the Posts count on the Circle profile is real rather than permanently zero.
++
++Do not share `.env.local`, Supabase keys, or test-account passwords.
++
++## 2. Copy the app files
++
++Extract the package ZIP.
++
++Copy the package contents into:
++
++```text
++C:\Users\honge\Dev\circles-app
++```
++
++Allow Windows to merge folders and replace the matching files.
++
++## 3. Restart Expo cleanly
++
++In PowerShell:
++
++```powershell
++cd C:\Users\honge\Dev\circles-app
++npx expo start --tunnel --clear
++```
++
++## 4. Test post creation
++
++Use an accepted group Circle such as the Hongy/Alex/Sam test group.
++
++1. Open the group chat.
++2. Tap the group identity at the top.
++3. Confirm the Circle profile still has **Timeline** and **Posts** tabs.
++4. Tap **New Post**.
++5. Select one or more photos or videos.
++6. Add an optional caption.
++7. Tap **Post to Circle**.
++8. Confirm the post opens and appears in the Circle's Posts grid.
++9. Confirm the same media was not added to Timeline merely because it became a post.
++
++## 5. Test multi-account privacy and engagement
++
++### As Hongy
++
++1. Create a post.
++2. Confirm Hongy can edit its caption.
++3. Add a comment.
++
++### As Alex
++
++1. Open the same Circle.
++2. Confirm the post appears automatically.
++3. Like the post.
++4. Add a comment.
++5. Confirm Alex cannot edit or delete Hongy's post.
++6. Create a separate Alex-authored post.
++
++### Back as Hongy
++
++1. Confirm Alex's comment appears.
++2. Confirm Hongy cannot edit or delete Alex's post.
++3. Long-press Hongy's own comment and test deletion.
++
++### As a pending or declined account
++
++Confirm the account cannot open the Circle profile or access any Circle Post media.
++
++## 6. Test deletion boundaries
++
++Create both a chat-media Timeline item and a separate Circle Post.
++
++Then verify:
++
++- deleting a Circle Post removes that post, its comments, and post uploads;
++- deleting a Circle Post does not delete the chat message or Timeline item;
++- validly unsending a chat media message removes it from Chat and Timeline;
++- unsending a chat message does not delete a separately created Circle Post.
++
++This proves that Timeline and Posts remain different provenance paths.
++
++## 7. Test ordinary direct chats
++
++Open the Hongy–Alex direct chat.
++
++Confirm:
++
++- tapping the header still opens Alex's person profile;
++- the information button still opens Details and Shared Media;
++- there is no Circle profile or Circle Posts option;
++- direct messaging and read receipts still work normally.
++
++## 8. Commit after live testing
++
++```powershell
++git status
++git add App.js src supabase/migrations docs README_CONVERSATIONS_STEP_9C.md
++git commit -m "Add intentional private Circle posts"
++git push
++```
++
++## Validation completed before delivery
++
++The complete `App.js` and all five added or changed JavaScript modules passed Expo Babel transformation with `babel-preset-expo`.
++
++Live Supabase execution, physical-device media selection, signed-URL loading, Realtime updates, and multi-account RLS behavior still require testing in your project.
+diff --git a/docs/CONVERSATION_SPACES_ARCHITECTURE.md b/docs/CONVERSATION_SPACES_ARCHITECTURE.md
+index 96576d2..fb3b1fb 100755
+--- a/docs/CONVERSATION_SPACES_ARCHITECTURE.md
++++ b/docs/CONVERSATION_SPACES_ARCHITECTURE.md
+@@ -2,7 +2,7 @@
+ 
+ ## Core hierarchy
+ 
+-Circles now distinguishes four related but different things:
++Circles distinguishes four related but different things:
+ 
+ 1. **Person profile** — one individual's identity.
+ 2. **Direct chat** — a private conversation between two accepted connections.
+@@ -28,7 +28,7 @@ A normal direct chat has:
+ - a header tap that opens the other person's normal user profile;
+ - private text, photo, and video messages;
+ - a Shared Media/details view for sent photos and videos;
+-- no shared name, shared biography, shared avatar, Posts tab, or Circle profile.
++- no shared name, shared biography, shared avatar, Timeline, Posts, or Circle profile.
+ 
+ Shared Media is a private archive view over the original `message_media` rows.
+ It does not duplicate files and it does not claim that the two people have a
+@@ -44,8 +44,8 @@ Once accepted, a group Circle has:
+ 
+ - a shared Circle name, avatar, and biography;
+ - an automatically generated Timeline from media sent in Chat;
+-- a separate intentional Posts surface;
+-- members, roles, invitations, pinning, unread state, and lifecycle controls;
++- intentional private Circle Posts;
++- members, invitations, pinning, unread state, and lifecycle controls;
+ - database and Storage access enforced through accepted membership.
+ 
+ Group Circle memberships are pinned by default for each member, while each
+@@ -53,15 +53,60 @@ person may later unpin the Circle for themselves.
+ 
+ ## Timeline versus Posts
+ 
+-These surfaces must remain separate.
++These surfaces remain separate because they represent different kinds of truth.
+ 
+-- **Timeline:** faithful shared history automatically derived from media sent
+-  during conversation.
+-- **Posts:** deliberate expression created specifically for the Circle profile.
++### Timeline
+ 
+-Timeline media references the original message and object. It preserves sender,
+-timestamp, caption/context, and conversation provenance. It is never uploaded a
+-second time merely to appear in Timeline.
++Timeline is faithful shared history automatically derived from media sent in
++Chat. It references the original `message_media` row and private Storage object.
++It preserves sender, message context, timestamp, and conversation provenance.
++It is never uploaded a second time merely to appear in Timeline.
++
++When a chat message is validly unsent before anyone reads it, its Timeline item
++disappears because both surfaces reference the same message.
++
++### Posts
++
++Posts are deliberate publications created specifically for the Circle profile.
++They are not generated from Chat and do not silently copy Timeline media.
++
++A Circle Post has:
++
++- one to ten separately uploaded photos or videos;
++- an optional caption;
++- the creating member's identity and original timestamp;
++- private comments from accepted Circle members;
++- author-only caption editing and deletion.
++
++Deleting a Circle Post removes that post's media and comments. It does
++not delete or modify Chat or Timeline history. Deleting a chat message does not
++delete a separately created Circle Post.
++
++The Step 9C tables are:
++
++- `conversation_posts`
++- `conversation_post_media`
++- `conversation_post_comments`
++
++All access is membership-gated through RLS and membership-aware RPCs. The same
++post architecture will automatically support a future two-person Circle after
++that direct conversation is mutually promoted with `circle_enabled = true`.
++
++## Circle Post ownership
++
++Every accepted member may create a post for the Circle. A post remains visibly
++attributed to its author; it is not an anonymous group-owned object.
++
++Only the author may:
++
++- edit the post caption;
++- delete the post and its separately uploaded media.
++
++Every accepted member may comment. Comment authors may delete their own comments.
++Circle Posts intentionally avoid like counts so the private space does not become
++a performance scoreboard. A future moderation system may add owner/admin intervention, but
++Step 9C does not silently give every member destructive control over another
++person's post.
+ 
+ ## Future two-person Circle promotion
+ 
+@@ -89,22 +134,42 @@ A group always has `circle_enabled = true`. A normal direct chat has
+ `circle_enabled = false`.
+ 
+ The invitation, unanimous-consent, historical-media-consent, and dissolution
+-workflows are deliberately deferred until the main group Circle Posts and
+-lifecycle systems are stable.
++workflows remain deferred until the main group Circle lifecycle is stable.
+ 
+ ## Privacy boundaries
+ 
+-- Only accepted members may read conversation messages or media.
+-- Pending group invitees cannot open Chat, Timeline, Posts, People, or private
+-  Storage objects.
+-- Only a message sender may delete that message.
+-- Deleting a media message removes it from Chat and its derived archive view.
++- Only accepted members may read conversation messages, Timeline media, Circle
++  Posts, post comments, or private Storage objects.
++- Pending invitees cannot open Chat, Timeline, Posts, People, or private media.
++- A normal DM cannot create or view Circle Posts.
++- Post uploads use the private `conversation-media` bucket under the path
++  `<conversation-id>/posts/<author-id>/...`.
++- The post-creation RPC validates that every attached path belongs to the
++  current member and the intended Circle.
+ - The client UI is not the security boundary; RLS, membership-aware RPCs, and
+-  private signed Storage access enforce access.
++  signed private Storage access enforce access.
+ - A normal DM never becomes a shared profile without explicit consent from both
+   people.
+ 
+-## Current build sequence
++## Read receipts and unread-only unsend
++
++Circles treats reading as an automatic, truthful event rather than a cosmetic
++setting. A message receives a per-user read receipt only when that conversation
++is the focused screen and the app is active in the foreground.
++
++The sender may unsend a message only while no other eligible member has a read
++receipt for it. This rule is enforced by the database, not only hidden or shown
++by the client. Text and media messages follow the same rule.
++
++Direct conversations display `Not read` or `Read`. Group Circles display
++`Not read`, `Read by N`, or `Read by all`. Exact receipt rows are stored in
++`conversation_message_reads`; `conversation_members.last_read_at` remains the
++conversation-level cursor used for inbox unread counts.
++
++Circle Posts are intentional publications rather than transient messages, so
++they use explicit author deletion instead of unread-only unsend.
++
++## Build sequence
+ 
+ ### Step 9A — real private conversations
+ 
+@@ -129,27 +194,11 @@ Circles and future mutually promoted two-person Circles.
+ 
+ ### Step 9C — Circle Posts
+ 
+-Build intentional private posts for Circle profiles without merging them into
+-the automatic Timeline.
++Intentional private posts now live on Circle profiles with separate media,
++captions, comments, author editing, and author deletion—without like counts. Timeline and
++Posts remain provenance-distinct.
+ 
+ ### Step 9D — lifecycle and consent polish
+ 
+ Roles, invite management, leaving/removal, notification controls, Storage
+ cleanup, and eventually mutually created two-person Circles.
+-
+-## Read receipts and unread-only unsend
+-
+-Circles treats reading as an automatic, truthful event rather than a cosmetic
+-setting. A message receives a per-user read receipt only when that conversation
+-is the focused screen and the app is active in the foreground.
+-
+-The sender may unsend a message only while no other eligible member has a read
+-receipt for it. This rule is enforced by the database, not only hidden or shown
+-by the client. Text and media messages follow the same rule. Unsent media is
+-removed from Chat and from Shared Media or the Circle Timeline because those
+-surfaces reference the same message-media record.
+-
+-Direct conversations display `Not read` or `Read`. Group Circles display
+-`Not read`, `Read by N`, or `Read by all`. Exact receipt rows are stored in
+-`conversation_message_reads`; `conversation_members.last_read_at` remains the
+-conversation-level cursor used for inbox unread counts.
+diff --git a/src/screens/conversations/CirclePostDetailScreen.js b/src/screens/conversations/CirclePostDetailScreen.js
+new file mode 100644
+index 0000000..15f1ea1
+--- /dev/null
++++ b/src/screens/conversations/CirclePostDetailScreen.js
+@@ -0,0 +1,682 @@
++import React, { useCallback, useMemo, useState } from 'react';
++import {
++  ActionSheetIOS,
++  ActivityIndicator,
++  Alert,
++  FlatList,
++  Image,
++  KeyboardAvoidingView,
++  Platform,
++  Pressable,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++  useWindowDimensions,
++} from 'react-native';
++import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
++import { useFocusEffect } from '@react-navigation/native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import * as Haptics from 'expo-haptics';
++import { Avatar } from '../../components/Avatar';
++import { COLORS } from '../../theme/colors';
++import {
++  addCirclePostComment,
++  deleteOwnCirclePost,
++  deleteOwnCirclePostComment,
++  getCirclePost,
++  listCirclePostComments,
++  subscribeToCirclePostChanges,
++} from '../../services/circlePostService';
++
++function formatTimestamp(timestamp) {
++  const date = new Date(timestamp);
++  if (!Number.isFinite(date.getTime())) return '';
++  return date.toLocaleString([], {
++    month: 'short',
++    day: 'numeric',
++    year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
++    hour: 'numeric',
++    minute: '2-digit',
++  });
++}
++
++function PostMedia({ item, size, onPress }) {
++  return (
++    <Pressable
++      onPress={onPress}
++      style={({ pressed }) => [
++        styles.mediaPage,
++        { width: size, height: size },
++        pressed && styles.pressed,
++      ]}
++    >
++      {item.mediaType === 'image' ? (
++        <Image
++          source={{ uri: item.url }}
++          style={styles.media}
++          resizeMode="contain"
++        />
++      ) : (
++        <View style={styles.videoPage}>
++          <Ionicons name="play-circle" size={62} color="#fff" />
++          <Text style={styles.videoHint}>Tap to play</Text>
++        </View>
++      )}
++    </Pressable>
++  );
++}
++
++export function CirclePostDetailScreen({ route, navigation }) {
++  const { postId, conversationId } = route.params || {};
++  const { width } = useWindowDimensions();
++  const insets = useSafeAreaInsets();
++  const [post, setPost] = useState(null);
++  const [comments, setComments] = useState([]);
++  const [commentText, setCommentText] = useState('');
++  const [loading, setLoading] = useState(true);
++  const [refreshing, setRefreshing] = useState(false);
++  const [commenting, setCommenting] = useState(false);
++  const [deleting, setDeleting] = useState(false);
++  const [error, setError] = useState('');
++  const stageWidth = Math.min(width, 720);
++
++  const load = useCallback(async ({ quiet = false } = {}) => {
++    if (!postId) return;
++    if (!quiet) setLoading(true);
++    setError('');
++
++    try {
++      const [postRow, commentRows] = await Promise.all([
++        getCirclePost(postId),
++        listCirclePostComments(postId),
++      ]);
++      setPost(postRow);
++      setComments(commentRows);
++    } catch (loadError) {
++      setError(loadError?.message || 'Could not open this Circle post.');
++    } finally {
++      setLoading(false);
++      setRefreshing(false);
++    }
++  }, [postId]);
++
++  useFocusEffect(
++    useCallback(() => {
++      load();
++    }, [load])
++  );
++
++  useFocusEffect(
++    useCallback(() => {
++      if (!postId) return undefined;
++      return subscribeToCirclePostChanges({
++        conversationId,
++        postId,
++        onChange: () => load({ quiet: true }),
++      });
++    }, [conversationId, load, postId])
++  );
++
++  const viewerItems = useMemo(() => (
++    (post?.media || []).map((item) => ({
++      ...item,
++      senderName: post.authorName,
++      senderAvatar: post.authorAvatar,
++      messageBody: post.caption,
++      createdAt: post.createdAt,
++    }))
++  ), [post]);
++
++  const addComment = async () => {
++    const body = commentText.trim();
++    if (!body || commenting) return;
++
++    setCommenting(true);
++    try {
++      const comment = await addCirclePostComment(postId, body);
++      setComments((current) => [...current, comment]);
++      setPost((current) => ({
++        ...current,
++        commentCount: Number(current.commentCount || 0) + 1,
++      }));
++      setCommentText('');
++    } catch (commentError) {
++      Alert.alert(
++        'Comment not added',
++        commentError?.message || 'Please try again.'
++      );
++    } finally {
++      setCommenting(false);
++    }
++  };
++
++  const removeComment = async (comment) => {
++    if (!comment.canDelete) return;
++
++    Alert.alert(
++      'Delete comment?',
++      'This removes your comment from the private Circle post.',
++      [
++        { text: 'Cancel', style: 'cancel' },
++        {
++          text: 'Delete',
++          style: 'destructive',
++          onPress: async () => {
++            try {
++              await deleteOwnCirclePostComment(comment.id);
++              setComments((current) =>
++                current.filter((item) => item.id !== comment.id)
++              );
++              setPost((current) => ({
++                ...current,
++                commentCount: Math.max(0, Number(current.commentCount || 0) - 1),
++              }));
++            } catch (deleteError) {
++              Alert.alert(
++                'Comment not deleted',
++                deleteError?.message || 'Please try again.'
++              );
++            }
++          },
++        },
++      ]
++    );
++  };
++
++  const deletePost = () => {
++    if (!post?.canEdit || deleting) return;
++
++    Alert.alert(
++      'Delete this Circle post?',
++      'The post, comments, likes, and its separately uploaded media will be removed from the Circle. Chat and Timeline messages are not affected.',
++      [
++        { text: 'Cancel', style: 'cancel' },
++        {
++          text: 'Delete Post',
++          style: 'destructive',
++          onPress: async () => {
++            setDeleting(true);
++            try {
++              await deleteOwnCirclePost(post.id);
++              navigation.goBack();
++            } catch (deleteError) {
++              Alert.alert(
++                'Circle post not deleted',
++                deleteError?.message || 'Please try again.'
++              );
++              setDeleting(false);
++            }
++          },
++        },
++      ]
++    );
++  };
++
++  const showPostActions = () => {
++    if (!post?.canEdit) return;
++
++    const edit = () => navigation.navigate('EditCirclePost', {
++      postId: post.id,
++      conversationId: post.conversationId,
++    });
++
++    if (Platform.OS === 'ios') {
++      ActionSheetIOS.showActionSheetWithOptions(
++        {
++          options: ['Cancel', 'Edit Caption', 'Delete Post'],
++          cancelButtonIndex: 0,
++          destructiveButtonIndex: 2,
++          title: 'Circle post options',
++        },
++        (index) => {
++          if (index === 1) edit();
++          if (index === 2) deletePost();
++        }
++      );
++      return;
++    }
++
++    Alert.alert('Circle post options', null, [
++      { text: 'Cancel', style: 'cancel' },
++      { text: 'Edit Caption', onPress: edit },
++      { text: 'Delete Post', style: 'destructive', onPress: deletePost },
++    ]);
++  };
++
++  const header = post ? (
++    <View>
++      <View style={styles.authorRow}>
++        <Pressable
++          onPress={() => navigation.navigate('Profile', { userId: post.authorId })}
++          style={({ pressed }) => [styles.authorIdentity, pressed && styles.pressed]}
++        >
++          <Avatar
++            size={42}
++            name={post.authorName}
++            uri={post.authorAvatar}
++          />
++          <View style={styles.authorTextWrap}>
++            <Text style={styles.authorName}>{post.authorName}</Text>
++            <View style={styles.metaRow}>
++              <Ionicons name="lock-closed" size={10} color={COLORS.subtext} />
++              <Text style={styles.timestamp}>{formatTimestamp(post.createdAt)}</Text>
++              {post.editedAt ? <Text style={styles.timestamp}>· Edited</Text> : null}
++            </View>
++          </View>
++        </Pressable>
++
++        {post.canEdit ? (
++          <Pressable
++            onPress={showPostActions}
++            hitSlop={10}
++            style={({ pressed }) => [styles.optionsButton, pressed && styles.pressed]}
++          >
++            {deleting ? (
++              <ActivityIndicator size="small" />
++            ) : (
++              <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.text} />
++            )}
++          </Pressable>
++        ) : null}
++      </View>
++
++      <FlatList
++        horizontal
++        pagingEnabled
++        data={post.media}
++        keyExtractor={(item) => item.id}
++        showsHorizontalScrollIndicator={false}
++        renderItem={({ item, index }) => (
++          <PostMedia
++            item={item}
++            size={stageWidth}
++            onPress={() => navigation.navigate('ConversationMedia', {
++              items: viewerItems,
++              startIndex: index,
++            })}
++          />
++        )}
++      />
++
++      {post.media.length > 1 ? (
++        <Text style={styles.mediaCount}>{post.media.length} items</Text>
++      ) : null}
++
++      <View style={styles.engagementRow}>
++        <View style={styles.engagementButton}>
++          <Ionicons name="chatbubble-outline" size={22} color={COLORS.text} />
++          <Text style={styles.engagementText}>
++            {post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}
++          </Text>
++        </View>
++      </View>
++
++      {post.caption ? (
++        <Text style={styles.caption}>
++          <Text style={styles.captionAuthor}>{post.authorName} </Text>
++          {post.caption}
++        </Text>
++      ) : null}
++
++      <View style={styles.commentsHeadingRow}>
++        <Text style={styles.commentsHeading}>Comments</Text>
++        <Text style={styles.privateLabel}>Circle members only</Text>
++      </View>
++    </View>
++  ) : null;
++
++  if (loading && !post) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <ActivityIndicator />
++        <Text style={styles.stateText}>Opening private Circle post…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  if (error && !post) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <Ionicons name="lock-closed-outline" size={36} color={COLORS.text} />
++        <Text style={styles.errorText}>{error}</Text>
++        <Pressable onPress={() => load()} style={styles.retryButton}>
++          <Text style={styles.retryText}>Try again</Text>
++        </Pressable>
++      </SafeAreaView>
++    );
++  }
++
++  return (
++    <SafeAreaView edges={['bottom']} style={styles.screen}>
++      <KeyboardAvoidingView
++        style={styles.keyboardView}
++        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
++        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
++      >
++        <View style={styles.contentWidth}>
++          <FlatList
++            data={comments}
++            keyExtractor={(item) => item.id}
++            ListHeaderComponent={header}
++            refreshing={refreshing}
++            onRefresh={() => {
++              setRefreshing(true);
++              load({ quiet: true });
++            }}
++            keyboardShouldPersistTaps="handled"
++            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
++            contentContainerStyle={styles.listContent}
++            ListEmptyComponent={(
++              <View style={styles.emptyComments}>
++                <Text style={styles.emptyCommentsText}>
++                  No comments yet. Keep the conversation inside this Circle.
++                </Text>
++              </View>
++            )}
++            renderItem={({ item }) => (
++              <Pressable
++                onLongPress={item.canDelete ? () => removeComment(item) : undefined}
++                delayLongPress={360}
++                style={({ pressed }) => [
++                  styles.commentRow,
++                  pressed && item.canDelete && styles.pressed,
++                ]}
++              >
++                <Pressable
++                  onPress={() => navigation.navigate('Profile', { userId: item.userId })}
++                >
++                  <Avatar
++                    size={34}
++                    name={item.displayName}
++                    uri={item.avatarUri}
++                  />
++                </Pressable>
++                <View style={styles.commentBody}>
++                  <Text style={styles.commentText}>
++                    <Text style={styles.commentName}>{item.displayName} </Text>
++                    {item.body}
++                  </Text>
++                  <Text style={styles.commentTime}>
++                    {formatTimestamp(item.createdAt)}
++                    {item.editedAt ? ' · Edited' : ''}
++                    {item.canDelete ? ' · Hold to delete' : ''}
++                  </Text>
++                </View>
++              </Pressable>
++            )}
++          />
++
++          <View style={[
++            styles.commentComposer,
++            { paddingBottom: Math.max(8, insets.bottom) },
++          ]}>
++            <TextInput
++              value={commentText}
++              onChangeText={setCommentText}
++              editable={!commenting}
++              placeholder="Add a private comment…"
++              placeholderTextColor="#999"
++              maxLength={1000}
++              multiline
++              style={styles.commentInput}
++            />
++            <Pressable
++              onPress={addComment}
++              disabled={commenting || !commentText.trim()}
++              style={({ pressed }) => [
++                styles.commentSend,
++                (!commentText.trim() || commenting) && styles.disabled,
++                pressed && styles.pressed,
++              ]}
++            >
++              {commenting ? (
++                <ActivityIndicator size="small" color="#fff" />
++              ) : (
++                <Ionicons name="arrow-up" size={17} color="#fff" />
++              )}
++            </Pressable>
++          </View>
++        </View>
++      </KeyboardAvoidingView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  keyboardView: {
++    flex: 1,
++  },
++  contentWidth: {
++    flex: 1,
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++  },
++  listContent: {
++    flexGrow: 1,
++    paddingBottom: 18,
++  },
++  authorRow: {
++    minHeight: 66,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 12,
++  },
++  authorIdentity: {
++    flex: 1,
++    flexDirection: 'row',
++    alignItems: 'center',
++  },
++  authorTextWrap: {
++    flex: 1,
++    marginLeft: 10,
++  },
++  authorName: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 14,
++  },
++  metaRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 4,
++    marginTop: 2,
++  },
++  timestamp: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 10,
++  },
++  optionsButton: {
++    width: 42,
++    height: 42,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  mediaPage: {
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: '#111',
++  },
++  media: {
++    width: '100%',
++    height: '100%',
++  },
++  videoPage: {
++    flex: 1,
++    width: '100%',
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: '#1c1c1e',
++  },
++  videoHint: {
++    marginTop: 8,
++    color: 'rgba(255,255,255,0.78)',
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 12,
++  },
++  mediaCount: {
++    alignSelf: 'center',
++    marginTop: 7,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 10,
++  },
++  engagementRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 18,
++    paddingHorizontal: 13,
++    paddingTop: 12,
++  },
++  engagementButton: {
++    minHeight: 34,
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 5,
++  },
++  engagementText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 13,
++  },
++  caption: {
++    paddingHorizontal: 13,
++    paddingTop: 8,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 14,
++    lineHeight: 20,
++  },
++  captionAuthor: {
++    fontFamily: 'Manrope_700Bold',
++  },
++  commentsHeadingRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    marginTop: 16,
++    paddingHorizontal: 13,
++    paddingVertical: 11,
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++  },
++  commentsHeading: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 14,
++  },
++  privateLabel: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 10,
++  },
++  commentRow: {
++    flexDirection: 'row',
++    alignItems: 'flex-start',
++    paddingHorizontal: 13,
++    paddingVertical: 10,
++  },
++  commentBody: {
++    flex: 1,
++    marginLeft: 9,
++  },
++  commentText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 13,
++    lineHeight: 18,
++  },
++  commentName: {
++    fontFamily: 'Manrope_700Bold',
++  },
++  commentTime: {
++    marginTop: 3,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 9,
++  },
++  emptyComments: {
++    paddingHorizontal: 28,
++    paddingVertical: 34,
++  },
++  emptyCommentsText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 18,
++    textAlign: 'center',
++  },
++  commentComposer: {
++    flexDirection: 'row',
++    alignItems: 'flex-end',
++    gap: 8,
++    paddingHorizontal: 10,
++    paddingTop: 8,
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderTopColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  commentInput: {
++    flex: 1,
++    maxHeight: 110,
++    minHeight: 40,
++    paddingHorizontal: 13,
++    paddingVertical: 9,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    borderRadius: 20,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 14,
++  },
++  commentSend: {
++    width: 38,
++    height: 38,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 19,
++    backgroundColor: COLORS.primary,
++  },
++  centerState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorText: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    textAlign: 'center',
++  },
++  retryButton: {
++    marginTop: 14,
++    paddingHorizontal: 16,
++    paddingVertical: 9,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  retryText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  disabled: {
++    opacity: 0.4,
++  },
++  pressed: {
++    opacity: 0.7,
++  },
++});
+diff --git a/src/screens/conversations/CircleProfileScreen.js b/src/screens/conversations/CircleProfileScreen.js
+index 86393b1..290819d 100644
+--- a/src/screens/conversations/CircleProfileScreen.js
++++ b/src/screens/conversations/CircleProfileScreen.js
+@@ -1,4 +1,4 @@
+-import React, { useCallback, useMemo, useState } from 'react';
++import React, { useCallback, useEffect, useMemo, useState } from 'react';
+ import {
+   ActivityIndicator,
+   FlatList,
+@@ -21,6 +21,10 @@ import {
+   listConversationTimeline,
+   subscribeToConversationChanges,
+ } from '../../services/conversationService';
++import {
++  listCirclePosts,
++  subscribeToCirclePostChanges,
++} from '../../services/circlePostService';
+ 
+ function Stat({ value, label, onPress }) {
+   const content = (
+@@ -47,7 +51,7 @@ function TimelineTile({ item, size, onPress }) {
+     <Pressable
+       onPress={onPress}
+       style={({ pressed }) => [
+-        styles.timelineTile,
++        styles.gridTile,
+         { width: size, height: size },
+         pressed && styles.pressed,
+       ]}
+@@ -61,24 +65,70 @@ function TimelineTile({ item, size, onPress }) {
+       )}
+ 
+       {item.mediaType === 'video' ? (
+-        <View style={styles.videoBadge}>
++        <View style={styles.mediaBadge}>
++          <Ionicons name="videocam" size={13} color="#fff" />
++        </View>
++      ) : null}
++    </Pressable>
++  );
++}
++
++function PostTile({ post, size, onPress }) {
++  const firstMedia = post.media?.[0];
++
++  return (
++    <Pressable
++      onPress={onPress}
++      style={({ pressed }) => [
++        styles.gridTile,
++        { width: size, height: size },
++        pressed && styles.pressed,
++      ]}
++    >
++      {firstMedia?.mediaType === 'image' ? (
++        <Image source={{ uri: firstMedia.url }} style={styles.tileMedia} />
++      ) : (
++        <View style={styles.videoTile}>
++          <Ionicons
++            name={firstMedia ? 'play' : 'image-outline'}
++            size={28}
++            color="#fff"
++          />
++        </View>
++      )}
++
++      {firstMedia?.mediaType === 'video' ? (
++        <View style={styles.mediaBadge}>
+           <Ionicons name="videocam" size={13} color="#fff" />
+         </View>
+       ) : null}
++
++      {post.media?.length > 1 ? (
++        <View style={styles.multiBadge}>
++          <Ionicons name="copy-outline" size={14} color="#fff" />
++        </View>
++      ) : null}
+     </Pressable>
+   );
+ }
+ 
+ export function CircleProfileScreen({ route, navigation }) {
+-  const { conversationId } = route.params || {};
++  const { conversationId, initialTab = 'timeline' } = route.params || {};
+   const { width } = useWindowDimensions();
+   const [details, setDetails] = useState(null);
+   const [timeline, setTimeline] = useState([]);
+-  const [activeTab, setActiveTab] = useState('timeline');
++  const [posts, setPosts] = useState([]);
++  const [activeTab, setActiveTab] = useState(initialTab);
+   const [loading, setLoading] = useState(true);
+   const [refreshing, setRefreshing] = useState(false);
+   const [error, setError] = useState('');
+ 
++  useEffect(() => {
++    if (initialTab === 'timeline' || initialTab === 'posts') {
++      setActiveTab(initialTab);
++    }
++  }, [initialTab]);
++
+   const load = useCallback(async ({ quiet = false } = {}) => {
+     if (!conversationId) return;
+     if (!quiet) setLoading(true);
+@@ -94,9 +144,14 @@ export function CircleProfileScreen({ route, navigation }) {
+         throw new Error('This direct chat has no Circle profile.');
+       }
+ 
+-      const timelineRows = await listConversationTimeline(conversationId);
++      const [timelineRows, postRows] = await Promise.all([
++        listConversationTimeline(conversationId),
++        listCirclePosts(conversationId),
++      ]);
++
+       setDetails(detailRows);
+       setTimeline(timelineRows);
++      setPosts(postRows);
+     } catch (loadError) {
+       setError(loadError?.message || 'Could not open this private Circle.');
+     } finally {
+@@ -123,6 +178,16 @@ export function CircleProfileScreen({ route, navigation }) {
+     }, [conversationId, load])
+   );
+ 
++  useFocusEffect(
++    useCallback(() => {
++      if (!conversationId) return undefined;
++      return subscribeToCirclePostChanges({
++        conversationId,
++        onChange: () => load({ quiet: true }),
++      });
++    }, [conversationId, load])
++  );
++
+   const conversation = details?.conversation;
+   const members = details?.members || [];
+   const gridWidth = Math.min(width, 720);
+@@ -136,6 +201,14 @@ export function CircleProfileScreen({ route, navigation }) {
+     [timeline]
+   );
+ 
++  const createPost = () => {
++    setActiveTab('posts');
++    navigation.navigate('CreateCirclePost', {
++      conversationId,
++      circleName: conversation?.title || 'Circle',
++    });
++  };
++
+   const header = conversation ? (
+     <>
+       <View style={styles.profileHeader}>
+@@ -167,26 +240,39 @@ export function CircleProfileScreen({ route, navigation }) {
+             onPress={() => setActiveTab('timeline')}
+           />
+           <Stat
+-            value={Number(conversation.post_count || 0)}
++            value={Number(conversation.post_count || posts.length)}
+             label="Posts"
+             onPress={() => setActiveTab('posts')}
+           />
+           <Stat value={members.length} label="Members" />
+         </View>
+ 
+-        {conversation.can_edit ? (
++        <View style={styles.actionRow}>
+           <Pressable
+-            onPress={() => navigation.navigate('EditCircle', {
+-              conversationId,
+-            })}
++            onPress={createPost}
+             style={({ pressed }) => [
+-              styles.editButton,
++              styles.primaryAction,
+               pressed && styles.pressed,
+             ]}
+           >
+-            <Text style={styles.editButtonText}>Edit Circle</Text>
++            <Ionicons name="add" size={17} color="#fff" />
++            <Text style={styles.primaryActionText}>New Post</Text>
+           </Pressable>
+-        ) : null}
++
++          {conversation.can_edit ? (
++            <Pressable
++              onPress={() => navigation.navigate('EditCircle', {
++                conversationId,
++              })}
++              style={({ pressed }) => [
++                styles.secondaryAction,
++                pressed && styles.pressed,
++              ]}
++            >
++              <Text style={styles.secondaryActionText}>Edit Circle</Text>
++            </Pressable>
++          ) : null}
++        </View>
+       </View>
+ 
+       <View style={styles.membersStrip}>
+@@ -285,25 +371,36 @@ export function CircleProfileScreen({ route, navigation }) {
+     );
+   }
+ 
+-  const timelineData = activeTab === 'timeline' ? timeline : [];
++  const gridData = activeTab === 'timeline' ? timeline : posts;
+ 
+   return (
+     <SafeAreaView edges={['bottom']} style={styles.screen}>
+       <View style={styles.contentWidth}>
+         <FlatList
+-          data={timelineData}
++          data={gridData}
+           keyExtractor={(item) => item.id}
+           numColumns={3}
+           ListHeaderComponent={header}
+           renderItem={({ item, index }) => (
+-            <TimelineTile
+-              item={item}
+-              size={tileSize}
+-              onPress={() => navigation.navigate('ConversationMedia', {
+-                items: viewerItems,
+-                startIndex: index,
+-              })}
+-            />
++            activeTab === 'timeline' ? (
++              <TimelineTile
++                item={item}
++                size={tileSize}
++                onPress={() => navigation.navigate('ConversationMedia', {
++                  items: viewerItems,
++                  startIndex: index,
++                })}
++              />
++            ) : (
++              <PostTile
++                post={item}
++                size={tileSize}
++                onPress={() => navigation.navigate('CirclePostDetail', {
++                  conversationId,
++                  postId: item.id,
++                })}
++              />
++            )
+           )}
+           ListEmptyComponent={(
+             <View style={styles.emptyState}>
+@@ -322,8 +419,19 @@ export function CircleProfileScreen({ route, navigation }) {
+               <Text style={styles.emptyBody}>
+                 {activeTab === 'timeline'
+                   ? 'Photos and videos sent in Chat will appear here automatically, without being uploaded twice.'
+-                  : 'Circle posts will be intentional posts made for this private shared profile. That separate post flow comes next.'}
++                  : 'Posts are intentional moments created for this private Circle. They stay separate from the automatic chat Timeline.'}
+               </Text>
++              {activeTab === 'posts' ? (
++                <Pressable
++                  onPress={createPost}
++                  style={({ pressed }) => [
++                    styles.emptyButton,
++                    pressed && styles.pressed,
++                  ]}
++                >
++                  <Text style={styles.emptyButtonText}>Create First Post</Text>
++                </Pressable>
++              ) : null}
+             </View>
+           )}
+           refreshControl={(
+@@ -417,19 +525,39 @@ const styles = StyleSheet.create({
+     fontFamily: 'Manrope_400Regular',
+     fontSize: 11,
+   },
+-  editButton: {
++  actionRow: {
+     width: '100%',
+-    maxWidth: 360,
+-    minHeight: 38,
++    maxWidth: 390,
++    flexDirection: 'row',
++    gap: 8,
++    marginTop: 16,
++  },
++  primaryAction: {
++    flex: 1,
++    minHeight: 40,
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    gap: 5,
++    borderRadius: 9,
++    backgroundColor: COLORS.primary,
++  },
++  primaryActionText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 13,
++  },
++  secondaryAction: {
++    flex: 1,
++    minHeight: 40,
+     alignItems: 'center',
+     justifyContent: 'center',
+-    marginTop: 16,
+     borderRadius: 9,
+     borderWidth: StyleSheet.hairlineWidth,
+     borderColor: COLORS.border,
+     backgroundColor: '#f4f4f4',
+   },
+-  editButtonText: {
++  secondaryActionText: {
+     color: COLORS.text,
+     fontFamily: 'Manrope_700Bold',
+     fontSize: 13,
+@@ -491,7 +619,7 @@ const styles = StyleSheet.create({
+     color: COLORS.text,
+     fontFamily: 'Manrope_700Bold',
+   },
+-  timelineTile: {
++  gridTile: {
+     overflow: 'hidden',
+     borderWidth: 0.5,
+     borderColor: COLORS.bg,
+@@ -507,7 +635,7 @@ const styles = StyleSheet.create({
+     justifyContent: 'center',
+     backgroundColor: '#1c1c1e',
+   },
+-  videoBadge: {
++  mediaBadge: {
+     position: 'absolute',
+     top: 7,
+     right: 7,
+@@ -518,6 +646,17 @@ const styles = StyleSheet.create({
+     borderRadius: 12,
+     backgroundColor: 'rgba(0,0,0,0.58)',
+   },
++  multiBadge: {
++    position: 'absolute',
++    top: 7,
++    left: 7,
++    width: 24,
++    height: 24,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 12,
++    backgroundColor: 'rgba(0,0,0,0.58)',
++  },
+   emptyState: {
+     alignItems: 'center',
+     paddingHorizontal: 36,
+@@ -538,6 +677,20 @@ const styles = StyleSheet.create({
+     lineHeight: 19,
+     textAlign: 'center',
+   },
++  emptyButton: {
++    minHeight: 40,
++    alignItems: 'center',
++    justifyContent: 'center',
++    marginTop: 16,
++    paddingHorizontal: 18,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  emptyButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 13,
++  },
+   centerState: {
+     flex: 1,
+     alignItems: 'center',
+diff --git a/src/screens/conversations/CreateCirclePostScreen.js b/src/screens/conversations/CreateCirclePostScreen.js
+new file mode 100644
+index 0000000..2ba1828
+--- /dev/null
++++ b/src/screens/conversations/CreateCirclePostScreen.js
+@@ -0,0 +1,469 @@
++import React, { useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Image,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++  useWindowDimensions,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import * as Haptics from 'expo-haptics';
++import * as ImagePicker from 'expo-image-picker';
++import { COLORS } from '../../theme/colors';
++import {
++  removeConversationMedia,
++  uploadConversationAsset,
++} from '../../services/conversationMediaService';
++import { createCirclePost } from '../../services/circlePostService';
++
++const MAX_ATTACHMENTS = 10;
++const MAX_FILE_BYTES = 25 * 1024 * 1024;
++const MAX_VIDEO_DURATION_MS = 30 * 1000;
++const MAX_CAPTION_LENGTH = 2200;
++
++function normalizeAsset(asset) {
++  return {
++    id: asset.assetId || `${asset.uri}-${Date.now()}-${Math.random()}`,
++    uri: asset.uri,
++    mediaType: asset.type === 'video' ? 'video' : 'image',
++    mimeType:
++      asset.mimeType
++      || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg'),
++    width: asset.width || null,
++    height: asset.height || null,
++    durationMs: asset.duration || null,
++    fileSize: asset.fileSize || null,
++  };
++}
++
++function validateAssets(assets) {
++  if (assets.length < 1) return 'Choose at least one photo or video.';
++  if (assets.length > MAX_ATTACHMENTS) {
++    return `Choose up to ${MAX_ATTACHMENTS} photos or videos.`;
++  }
++
++  const tooLarge = assets.find(
++    (asset) => asset.fileSize && asset.fileSize > MAX_FILE_BYTES
++  );
++  if (tooLarge) return 'Each attachment must be 25 MB or smaller.';
++
++  const tooLong = assets.find(
++    (asset) =>
++      asset.mediaType === 'video'
++      && asset.durationMs
++      && asset.durationMs > MAX_VIDEO_DURATION_MS
++  );
++  if (tooLong) return 'Videos must be 30 seconds or shorter.';
++
++  return null;
++}
++
++export function CreateCirclePostScreen({ route, navigation }) {
++  const { conversationId, circleName = 'Circle' } = route.params || {};
++  const { width } = useWindowDimensions();
++  const [assets, setAssets] = useState([]);
++  const [caption, setCaption] = useState('');
++  const [posting, setPosting] = useState(false);
++  const [stage, setStage] = useState('');
++
++  const contentWidth = Math.min(width, 720);
++  const tileGap = 6;
++  const tileSize = Math.floor((contentWidth - 32 - tileGap * 2) / 3);
++
++  const pickMedia = async () => {
++    if (posting) return;
++
++    try {
++      const permission =
++        await ImagePicker.requestMediaLibraryPermissionsAsync();
++
++      if (permission.status !== 'granted') {
++        Alert.alert(
++          'Photo permission needed',
++          'Allow photo access to create a private Circle post.'
++        );
++        return;
++      }
++
++      const result = await ImagePicker.launchImageLibraryAsync({
++        mediaTypes: ImagePicker.MediaTypeOptions.All,
++        allowsMultipleSelection: true,
++        selectionLimit: MAX_ATTACHMENTS,
++        quality: 0.9,
++        videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
++      });
++
++      if (result.canceled) return;
++
++      const nextAssets = (result.assets || []).map(normalizeAsset);
++      const merged = [...assets, ...nextAssets].slice(0, MAX_ATTACHMENTS);
++      const validationError = validateAssets(merged);
++
++      if (validationError && merged.length > 0) {
++        Alert.alert('Media not supported', validationError);
++        return;
++      }
++
++      setAssets(merged);
++    } catch (error) {
++      Alert.alert(
++        'Could not open your library',
++        error?.message || 'Please try again.'
++      );
++    }
++  };
++
++  const publish = async () => {
++    if (!conversationId || posting) return;
++
++    const validationError = validateAssets(assets);
++    if (validationError) {
++      Alert.alert('Add media', validationError);
++      return;
++    }
++
++    if (caption.length > MAX_CAPTION_LENGTH) {
++      Alert.alert(
++        'Caption too long',
++        `Circle post captions can be up to ${MAX_CAPTION_LENGTH} characters.`
++      );
++      return;
++    }
++
++    setPosting(true);
++    const uploadedPaths = [];
++
++    try {
++      await Haptics.selectionAsync();
++      const uploaded = [];
++
++      for (let index = 0; index < assets.length; index += 1) {
++        const asset = assets[index];
++        setStage(`Uploading ${index + 1} of ${assets.length}…`);
++
++        const result = await uploadConversationAsset({
++          conversationId,
++          category: 'posts',
++          uri: asset.uri,
++          mimeType: asset.mimeType,
++        });
++
++        uploadedPaths.push(result.storagePath);
++        uploaded.push({
++          storagePath: result.storagePath,
++          mediaType: asset.mediaType,
++          width: asset.width,
++          height: asset.height,
++          durationMs: asset.durationMs,
++        });
++      }
++
++      setStage('Publishing privately…');
++      const postId = await createCirclePost({
++        conversationId,
++        caption,
++        mediaItems: uploaded,
++      });
++
++      navigation.replace('CirclePostDetail', {
++        conversationId,
++        postId,
++      });
++    } catch (error) {
++      if (uploadedPaths.length) {
++        removeConversationMedia(uploadedPaths).catch(() => {});
++      }
++
++      Alert.alert(
++        'Circle post not published',
++        error?.message || 'Please try again.'
++      );
++    } finally {
++      setPosting(false);
++      setStage('');
++    }
++  };
++
++  return (
++    <SafeAreaView edges={['bottom']} style={styles.screen}>
++      <ScrollView
++        keyboardShouldPersistTaps="handled"
++        contentContainerStyle={styles.content}
++      >
++        <View style={styles.headingRow}>
++          <View style={{ flex: 1 }}>
++            <Text style={styles.heading}>Share with {circleName}</Text>
++            <Text style={styles.subheading}>
++              This is an intentional private post—not an automatic Timeline item.
++            </Text>
++          </View>
++          <View style={styles.lockBadge}>
++            <Ionicons name="lock-closed" size={13} color={COLORS.text} />
++          </View>
++        </View>
++
++        {assets.length ? (
++          <View style={[styles.mediaGrid, { gap: tileGap }]}>
++            {assets.map((asset) => (
++              <View
++                key={asset.id}
++                style={{ width: tileSize, height: tileSize }}
++              >
++                {asset.mediaType === 'image' ? (
++                  <Image source={{ uri: asset.uri }} style={styles.mediaTile} />
++                ) : (
++                  <View style={[styles.mediaTile, styles.videoTile]}>
++                    <Ionicons name="play-circle" size={38} color="#fff" />
++                  </View>
++                )}
++
++                <Pressable
++                  onPress={() => setAssets((current) =>
++                    current.filter((item) => item.id !== asset.id)
++                  )}
++                  disabled={posting}
++                  hitSlop={7}
++                  style={styles.removeButton}
++                >
++                  <Ionicons name="close" size={15} color="#fff" />
++                </Pressable>
++              </View>
++            ))}
++          </View>
++        ) : (
++          <Pressable
++            onPress={pickMedia}
++            style={({ pressed }) => [
++              styles.mediaPicker,
++              pressed && styles.pressed,
++            ]}
++          >
++            <Ionicons name="images-outline" size={38} color={COLORS.text} />
++            <Text style={styles.mediaPickerTitle}>Choose photos or videos</Text>
++            <Text style={styles.mediaPickerBody}>
++              Up to 10 attachments. Only accepted Circle members can view them.
++            </Text>
++          </Pressable>
++        )}
++
++        {assets.length ? (
++          <Pressable
++            onPress={pickMedia}
++            disabled={posting || assets.length >= MAX_ATTACHMENTS}
++            style={({ pressed }) => [
++              styles.secondaryButton,
++              (posting || assets.length >= MAX_ATTACHMENTS) && styles.disabled,
++              pressed && styles.pressed,
++            ]}
++          >
++            <Ionicons name="add" size={18} color={COLORS.text} />
++            <Text style={styles.secondaryButtonText}>
++              Add more ({assets.length}/{MAX_ATTACHMENTS})
++            </Text>
++          </Pressable>
++        ) : null}
++
++        <TextInput
++          value={caption}
++          onChangeText={setCaption}
++          editable={!posting}
++          multiline
++          maxLength={MAX_CAPTION_LENGTH}
++          placeholder="Write a caption…"
++          placeholderTextColor="#999"
++          style={styles.captionInput}
++        />
++        <Text style={styles.characterCount}>
++          {caption.length}/{MAX_CAPTION_LENGTH}
++        </Text>
++
++        {stage ? (
++          <View style={styles.stageRow}>
++            <ActivityIndicator size="small" />
++            <Text style={styles.stageText}>{stage}</Text>
++          </View>
++        ) : null}
++
++        <Pressable
++          onPress={publish}
++          disabled={posting || assets.length === 0}
++          style={({ pressed }) => [
++            styles.publishButton,
++            (posting || assets.length === 0) && styles.disabled,
++            pressed && styles.pressed,
++          ]}
++        >
++          {posting ? (
++            <ActivityIndicator color="#fff" />
++          ) : (
++            <Text style={styles.publishButtonText}>Post to Circle</Text>
++          )}
++        </Pressable>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  content: {
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++    padding: 16,
++    paddingBottom: 44,
++  },
++  headingRow: {
++    flexDirection: 'row',
++    alignItems: 'flex-start',
++    gap: 12,
++    marginBottom: 18,
++  },
++  heading: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 20,
++  },
++  subheading: {
++    marginTop: 5,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 13,
++    lineHeight: 19,
++  },
++  lockBadge: {
++    width: 34,
++    height: 34,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 17,
++    backgroundColor: '#f1f1f1',
++  },
++  mediaPicker: {
++    minHeight: 250,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    borderWidth: 1,
++    borderStyle: 'dashed',
++    borderColor: COLORS.border,
++    borderRadius: 16,
++    backgroundColor: '#fafafa',
++  },
++  mediaPickerTitle: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 16,
++  },
++  mediaPickerBody: {
++    maxWidth: 360,
++    marginTop: 6,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 18,
++    textAlign: 'center',
++  },
++  mediaGrid: {
++    flexDirection: 'row',
++    flexWrap: 'wrap',
++  },
++  mediaTile: {
++    width: '100%',
++    height: '100%',
++    borderRadius: 10,
++    backgroundColor: '#ececec',
++  },
++  videoTile: {
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: '#1c1c1e',
++  },
++  removeButton: {
++    position: 'absolute',
++    top: 6,
++    right: 6,
++    width: 25,
++    height: 25,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 13,
++    backgroundColor: 'rgba(0,0,0,0.72)',
++  },
++  secondaryButton: {
++    minHeight: 42,
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    gap: 6,
++    marginTop: 12,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    borderRadius: 10,
++  },
++  secondaryButtonText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 13,
++  },
++  captionInput: {
++    minHeight: 120,
++    marginTop: 18,
++    padding: 13,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    borderRadius: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 15,
++    textAlignVertical: 'top',
++  },
++  characterCount: {
++    alignSelf: 'flex-end',
++    marginTop: 5,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++  },
++  stageRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    gap: 8,
++    marginTop: 14,
++  },
++  stageText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 12,
++  },
++  publishButton: {
++    minHeight: 48,
++    alignItems: 'center',
++    justifyContent: 'center',
++    marginTop: 18,
++    borderRadius: 12,
++    backgroundColor: COLORS.primary,
++  },
++  publishButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 15,
++  },
++  disabled: {
++    opacity: 0.42,
++  },
++  pressed: {
++    opacity: 0.72,
++  },
++});
+diff --git a/src/screens/conversations/EditCirclePostScreen.js b/src/screens/conversations/EditCirclePostScreen.js
+new file mode 100644
+index 0000000..d50b633
+--- /dev/null
++++ b/src/screens/conversations/EditCirclePostScreen.js
+@@ -0,0 +1,288 @@
++import React, { useCallback, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Image,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { useFocusEffect } from '@react-navigation/native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { COLORS } from '../../theme/colors';
++import {
++  getCirclePost,
++  updateOwnCirclePostCaption,
++} from '../../services/circlePostService';
++
++const MAX_CAPTION_LENGTH = 2200;
++
++export function EditCirclePostScreen({ route, navigation }) {
++  const { postId } = route.params || {};
++  const [post, setPost] = useState(null);
++  const [caption, setCaption] = useState('');
++  const [loading, setLoading] = useState(true);
++  const [saving, setSaving] = useState(false);
++  const [error, setError] = useState('');
++
++  const load = useCallback(async () => {
++    if (!postId) return;
++    setLoading(true);
++    setError('');
++
++    try {
++      const row = await getCirclePost(postId);
++      if (!row.canEdit) {
++        throw new Error('Only the person who created this post can edit it.');
++      }
++      setPost(row);
++      setCaption(row.caption || '');
++    } catch (loadError) {
++      setError(loadError?.message || 'Could not edit this Circle post.');
++    } finally {
++      setLoading(false);
++    }
++  }, [postId]);
++
++  useFocusEffect(
++    useCallback(() => {
++      load();
++    }, [load])
++  );
++
++  const save = async () => {
++    if (!post || saving) return;
++    if (caption.length > MAX_CAPTION_LENGTH) {
++      Alert.alert(
++        'Caption too long',
++        `Circle post captions can be up to ${MAX_CAPTION_LENGTH} characters.`
++      );
++      return;
++    }
++
++    setSaving(true);
++    try {
++      await updateOwnCirclePostCaption(post.id, caption);
++      navigation.goBack();
++    } catch (saveError) {
++      Alert.alert(
++        'Caption not saved',
++        saveError?.message || 'Please try again.'
++      );
++    } finally {
++      setSaving(false);
++    }
++  };
++
++  if (loading) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <ActivityIndicator />
++        <Text style={styles.stateText}>Opening post editor…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  if (error || !post) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <Ionicons name="alert-circle-outline" size={36} color={COLORS.text} />
++        <Text style={styles.errorText}>{error || 'Post unavailable.'}</Text>
++      </SafeAreaView>
++    );
++  }
++
++  const firstMedia = post.media[0];
++
++  return (
++    <SafeAreaView edges={['bottom']} style={styles.screen}>
++      <ScrollView
++        keyboardShouldPersistTaps="handled"
++        contentContainerStyle={styles.content}
++      >
++        <View style={styles.notice}>
++          <Ionicons name="information-circle-outline" size={18} color={COLORS.text} />
++          <Text style={styles.noticeText}>
++            You can update the caption. Media stays fixed so the post keeps its original context.
++          </Text>
++        </View>
++
++        {firstMedia ? (
++          <View style={styles.preview}>
++            {firstMedia.mediaType === 'image' ? (
++              <Image
++                source={{ uri: firstMedia.url }}
++                style={styles.previewMedia}
++                resizeMode="cover"
++              />
++            ) : (
++              <View style={[styles.previewMedia, styles.videoPreview]}>
++                <Ionicons name="play-circle" size={48} color="#fff" />
++              </View>
++            )}
++            {post.media.length > 1 ? (
++              <View style={styles.countBadge}>
++                <Ionicons name="copy-outline" size={13} color="#fff" />
++                <Text style={styles.countText}>{post.media.length}</Text>
++              </View>
++            ) : null}
++          </View>
++        ) : null}
++
++        <TextInput
++          value={caption}
++          onChangeText={setCaption}
++          editable={!saving}
++          multiline
++          maxLength={MAX_CAPTION_LENGTH}
++          placeholder="Write a caption…"
++          placeholderTextColor="#999"
++          style={styles.input}
++        />
++        <Text style={styles.count}>{caption.length}/{MAX_CAPTION_LENGTH}</Text>
++
++        <Pressable
++          onPress={save}
++          disabled={saving}
++          style={({ pressed }) => [
++            styles.saveButton,
++            saving && styles.disabled,
++            pressed && styles.pressed,
++          ]}
++        >
++          {saving ? (
++            <ActivityIndicator color="#fff" />
++          ) : (
++            <Text style={styles.saveText}>Save Caption</Text>
++          )}
++        </Pressable>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  content: {
++    width: '100%',
++    maxWidth: 620,
++    alignSelf: 'center',
++    padding: 16,
++    paddingBottom: 42,
++  },
++  notice: {
++    flexDirection: 'row',
++    alignItems: 'flex-start',
++    gap: 9,
++    padding: 12,
++    borderRadius: 12,
++    backgroundColor: '#f4f4f4',
++  },
++  noticeText: {
++    flex: 1,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 18,
++  },
++  preview: {
++    width: 150,
++    height: 150,
++    alignSelf: 'center',
++    marginTop: 18,
++    overflow: 'hidden',
++    borderRadius: 14,
++    backgroundColor: '#ececec',
++  },
++  previewMedia: {
++    width: '100%',
++    height: '100%',
++  },
++  videoPreview: {
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: '#1c1c1e',
++  },
++  countBadge: {
++    position: 'absolute',
++    top: 8,
++    right: 8,
++    minWidth: 30,
++    height: 24,
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    gap: 3,
++    paddingHorizontal: 6,
++    borderRadius: 12,
++    backgroundColor: 'rgba(0,0,0,0.65)',
++  },
++  countText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 10,
++  },
++  input: {
++    minHeight: 150,
++    marginTop: 20,
++    padding: 13,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    borderRadius: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 15,
++    textAlignVertical: 'top',
++  },
++  count: {
++    alignSelf: 'flex-end',
++    marginTop: 5,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++  },
++  saveButton: {
++    minHeight: 48,
++    alignItems: 'center',
++    justifyContent: 'center',
++    marginTop: 18,
++    borderRadius: 12,
++    backgroundColor: COLORS.primary,
++  },
++  saveText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 15,
++  },
++  centerState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorText: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    textAlign: 'center',
++  },
++  disabled: {
++    opacity: 0.45,
++  },
++  pressed: {
++    opacity: 0.72,
++  },
++});
+diff --git a/src/services/circlePostService.js b/src/services/circlePostService.js
+new file mode 100644
+index 0000000..6a45f38
+--- /dev/null
++++ b/src/services/circlePostService.js
+@@ -0,0 +1,209 @@
++import { supabase } from '../lib/supabase';
++import { ensureAuthed } from './authService';
++import {
++  hydrateConversationMediaItems,
++  removeConversationMedia,
++} from './conversationMediaService';
++
++let circlePostRealtimeCounter = 0;
++
++function realtimeChannelName(scope = 'circle-posts') {
++  circlePostRealtimeCounter += 1;
++  return `${scope}_${Date.now()}_${circlePostRealtimeCounter}`;
++}
++
++function mapMedia(row) {
++  return {
++    id: row.id,
++    storagePath: row.storage_path,
++    mediaType: row.media_type,
++    width: Number(row.width || 0) || null,
++    height: Number(row.height || 0) || null,
++    durationMs: Number(row.duration_ms || 0) || null,
++    sortOrder: Number(row.sort_order || 0),
++    createdAt: row.created_at || null,
++  };
++}
++
++function mapPost(row) {
++  return {
++    id: row.post_id,
++    conversationId: row.conversation_id,
++    authorId: row.author_id,
++    authorName: row.author_name || 'Circle member',
++    authorAvatar: row.author_avatar || null,
++    caption: row.caption || '',
++    media: (row.media || []).map(mapMedia),
++    commentCount: Number(row.comment_count || 0),
++    canEdit: Boolean(row.can_edit),
++    createdAt: row.created_at,
++    editedAt: row.edited_at || null,
++  };
++}
++
++function mapComment(row) {
++  return {
++    id: row.comment_id,
++    postId: row.post_id,
++    userId: row.user_id,
++    displayName: row.display_name || 'Circle member',
++    avatarUri: row.avatar_url || null,
++    body: row.body || '',
++    createdAt: row.created_at,
++    editedAt: row.edited_at || null,
++    canDelete: Boolean(row.can_delete),
++  };
++}
++
++async function hydratePost(post) {
++  const media = await hydrateConversationMediaItems(post.media || []);
++  return {
++    ...post,
++    media: media.sort((a, b) => a.sortOrder - b.sortOrder),
++  };
++}
++
++export async function listCirclePosts(conversationId) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('get_circle_posts', {
++    p_conversation_id: conversationId,
++    p_limit_count: 60,
++    p_before: new Date().toISOString(),
++  });
++  if (error) throw error;
++
++  return Promise.all((data || []).map((row) => hydratePost(mapPost(row))));
++}
++
++export async function getCirclePost(postId) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('get_circle_post', {
++    p_post_id: postId,
++  });
++  if (error) throw error;
++
++  const row = Array.isArray(data) ? data[0] : data;
++  if (!row) throw new Error('This Circle post is unavailable.');
++  return hydratePost(mapPost(row));
++}
++
++export async function createCirclePost({
++  conversationId,
++  caption,
++  mediaItems,
++}) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('create_circle_post', {
++    p_conversation_id: conversationId,
++    p_caption: caption?.trim() || null,
++    p_media: (mediaItems || []).map((item) => ({
++      storage_path: item.storagePath,
++      media_type: item.mediaType,
++      width: item.width || null,
++      height: item.height || null,
++      duration_ms: item.durationMs || null,
++    })),
++  });
++  if (error) throw error;
++  return data;
++}
++
++export async function listCirclePostComments(postId) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('get_circle_post_comments', {
++    p_post_id: postId,
++    p_limit_count: 200,
++    p_before: new Date().toISOString(),
++  });
++  if (error) throw error;
++  return (data || []).map(mapComment);
++}
++
++export async function addCirclePostComment(postId, body) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('add_circle_post_comment', {
++    p_post_id: postId,
++    p_body: body.trim(),
++  });
++  if (error) throw error;
++
++  const row = Array.isArray(data) ? data[0] : data;
++  if (!row) throw new Error('The comment was not returned.');
++  return mapComment(row);
++}
++
++export async function deleteOwnCirclePostComment(commentId) {
++  await ensureAuthed();
++  const { error } = await supabase.rpc('delete_own_circle_post_comment', {
++    p_comment_id: commentId,
++  });
++  if (error) throw error;
++}
++
++export async function updateOwnCirclePostCaption(postId, caption) {
++  await ensureAuthed();
++  const { error } = await supabase.rpc('update_own_circle_post_caption', {
++    p_post_id: postId,
++    p_caption: caption?.trim() || null,
++  });
++  if (error) throw error;
++}
++
++export async function deleteOwnCirclePost(postId) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('delete_own_circle_post', {
++    p_post_id: postId,
++  });
++  if (error) throw error;
++
++  const paths = data?.storage_paths || [];
++  try {
++    await removeConversationMedia(paths);
++  } catch {
++    // The private database post is already gone. A later storage cleanup can
++    // remove an orphaned object without making it visible to the Circle.
++  }
++
++  return {
++    conversationId: data?.conversation_id || null,
++    storagePaths: paths,
++  };
++}
++
++export function subscribeToCirclePostChanges({
++  conversationId,
++  postId,
++  onChange,
++}) {
++  if (!onChange) return () => {};
++
++  const channel = supabase
++    .channel(realtimeChannelName(`circle_posts_${conversationId || postId || 'all'}`))
++    .on(
++      'postgres_changes',
++      {
++        event: '*',
++        schema: 'public',
++        table: 'conversation_posts',
++        ...(conversationId
++          ? { filter: `conversation_id=eq.${conversationId}` }
++          : {}),
++      },
++      onChange
++    )
++    .on(
++      'postgres_changes',
++      { event: '*', schema: 'public', table: 'conversation_post_media' },
++      onChange
++    )
++    .on(
++      'postgres_changes',
++      { event: '*', schema: 'public', table: 'conversation_post_comments' },
++      onChange
++    )
++    .subscribe();
++
++  return () => {
++    supabase.removeChannel(channel);
++  };
++}
+diff --git a/supabase/migrations/20260722_014_circle_posts.sql b/supabase/migrations/20260722_014_circle_posts.sql
+new file mode 100644
+index 0000000..625f531
+--- /dev/null
++++ b/supabase/migrations/20260722_014_circle_posts.sql
+@@ -0,0 +1,827 @@
++-- Circles Step 9C — intentional private Circle posts
++--
++-- Timeline media remains an automatic view over chat attachments. Circle posts
++-- are deliberate, separately uploaded publications that belong to a Circle.
++-- Ordinary direct chats cannot create or view Circle posts unless that direct
++-- conversation is explicitly promoted to a two-person Circle in the future.
++
++create extension if not exists pgcrypto;
++
++create table if not exists public.conversation_posts (
++  id uuid primary key default gen_random_uuid(),
++  conversation_id uuid not null references public.conversations(id) on delete cascade,
++  author_id uuid not null references public.users(id) on delete cascade,
++  caption text,
++  created_at timestamptz not null default now(),
++  updated_at timestamptz not null default now(),
++  edited_at timestamptz,
++  constraint conversation_posts_caption_length_check check (
++    caption is null or length(caption) <= 2200
++  )
++);
++
++create index if not exists conversation_posts_conversation_created_index
++  on public.conversation_posts (conversation_id, created_at desc);
++
++create index if not exists conversation_posts_author_index
++  on public.conversation_posts (author_id, created_at desc);
++
++create table if not exists public.conversation_post_media (
++  id uuid primary key default gen_random_uuid(),
++  post_id uuid not null references public.conversation_posts(id) on delete cascade,
++  storage_path text not null,
++  media_type text not null check (media_type in ('image', 'video')),
++  width integer,
++  height integer,
++  duration_ms integer,
++  sort_order integer not null default 0,
++  created_at timestamptz not null default now(),
++  unique (post_id, sort_order)
++);
++
++create index if not exists conversation_post_media_post_order_index
++  on public.conversation_post_media (post_id, sort_order);
++
++create table if not exists public.conversation_post_comments (
++  id uuid primary key default gen_random_uuid(),
++  post_id uuid not null references public.conversation_posts(id) on delete cascade,
++  user_id uuid not null references public.users(id) on delete cascade,
++  body text not null,
++  created_at timestamptz not null default now(),
++  edited_at timestamptz,
++  constraint conversation_post_comments_body_check check (
++    length(trim(body)) between 1 and 1000
++  )
++);
++
++create index if not exists conversation_post_comments_post_created_index
++  on public.conversation_post_comments (post_id, created_at asc);
++
++create or replace function public.circle_posts_are_enabled(
++  p_conversation_id uuid,
++  p_user_id uuid default auth.uid()
++)
++returns boolean
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select p_user_id is not null
++    and exists (
++      select 1
++      from public.conversations conversation
++      where conversation.id = p_conversation_id
++        and (conversation.kind = 'group' or conversation.circle_enabled)
++        and public.conversation_is_member(conversation.id, p_user_id)
++    );
++$$;
++
++revoke all on function public.circle_posts_are_enabled(uuid, uuid) from public;
++grant execute on function public.circle_posts_are_enabled(uuid, uuid) to authenticated;
++
++alter table public.conversation_posts enable row level security;
++alter table public.conversation_post_media enable row level security;
++alter table public.conversation_post_comments enable row level security;
++
++drop policy if exists "Circle members can view Circle posts"
++  on public.conversation_posts;
++create policy "Circle members can view Circle posts"
++on public.conversation_posts
++for select
++to authenticated
++using (
++  public.circle_posts_are_enabled(conversation_id, auth.uid())
++);
++
++drop policy if exists "Circle members can create their own Circle posts"
++  on public.conversation_posts;
++create policy "Circle members can create their own Circle posts"
++on public.conversation_posts
++for insert
++to authenticated
++with check (
++  author_id = auth.uid()
++  and public.circle_posts_are_enabled(conversation_id, auth.uid())
++);
++
++drop policy if exists "Authors can edit their Circle posts"
++  on public.conversation_posts;
++create policy "Authors can edit their Circle posts"
++on public.conversation_posts
++for update
++to authenticated
++using (author_id = auth.uid())
++with check (
++  author_id = auth.uid()
++  and public.circle_posts_are_enabled(conversation_id, auth.uid())
++);
++
++drop policy if exists "Authors can delete their Circle posts"
++  on public.conversation_posts;
++create policy "Authors can delete their Circle posts"
++on public.conversation_posts
++for delete
++to authenticated
++using (author_id = auth.uid());
++
++drop policy if exists "Circle members can view Circle post media"
++  on public.conversation_post_media;
++create policy "Circle members can view Circle post media"
++on public.conversation_post_media
++for select
++to authenticated
++using (
++  exists (
++    select 1
++    from public.conversation_posts post_row
++    where post_row.id = conversation_post_media.post_id
++      and public.circle_posts_are_enabled(post_row.conversation_id, auth.uid())
++  )
++);
++
++drop policy if exists "Authors can attach media to their Circle posts"
++  on public.conversation_post_media;
++create policy "Authors can attach media to their Circle posts"
++on public.conversation_post_media
++for insert
++to authenticated
++with check (
++  exists (
++    select 1
++    from public.conversation_posts post_row
++    where post_row.id = conversation_post_media.post_id
++      and post_row.author_id = auth.uid()
++      and public.circle_posts_are_enabled(post_row.conversation_id, auth.uid())
++  )
++);
++
++drop policy if exists "Authors can delete their Circle post media"
++  on public.conversation_post_media;
++create policy "Authors can delete their Circle post media"
++on public.conversation_post_media
++for delete
++to authenticated
++using (
++  exists (
++    select 1
++    from public.conversation_posts post_row
++    where post_row.id = conversation_post_media.post_id
++      and post_row.author_id = auth.uid()
++  )
++);
++
++drop policy if exists "Circle members can view Circle post comments"
++  on public.conversation_post_comments;
++create policy "Circle members can view Circle post comments"
++on public.conversation_post_comments
++for select
++to authenticated
++using (
++  exists (
++    select 1
++    from public.conversation_posts post_row
++    where post_row.id = conversation_post_comments.post_id
++      and public.circle_posts_are_enabled(post_row.conversation_id, auth.uid())
++  )
++);
++
++drop policy if exists "Circle members can comment on Circle posts"
++  on public.conversation_post_comments;
++create policy "Circle members can comment on Circle posts"
++on public.conversation_post_comments
++for insert
++to authenticated
++with check (
++  user_id = auth.uid()
++  and exists (
++    select 1
++    from public.conversation_posts post_row
++    where post_row.id = conversation_post_comments.post_id
++      and public.circle_posts_are_enabled(post_row.conversation_id, auth.uid())
++  )
++);
++
++drop policy if exists "Comment authors can edit their Circle comments"
++  on public.conversation_post_comments;
++create policy "Comment authors can edit their Circle comments"
++on public.conversation_post_comments
++for update
++to authenticated
++using (user_id = auth.uid())
++with check (user_id = auth.uid());
++
++drop policy if exists "Comment authors can delete their Circle comments"
++  on public.conversation_post_comments;
++create policy "Comment authors can delete their Circle comments"
++on public.conversation_post_comments
++for delete
++to authenticated
++using (user_id = auth.uid());
++
++create or replace function public.create_circle_post(
++  p_conversation_id uuid,
++  p_caption text default null,
++  p_media jsonb default '[]'::jsonb
++)
++returns uuid
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_post_id uuid;
++  v_caption text := nullif(trim(coalesce(p_caption, '')), '');
++  v_media_count integer;
++  v_expected_prefix text;
++  v_invalid_media boolean;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if not public.circle_posts_are_enabled(p_conversation_id, v_viewer_id) then
++    raise exception 'Circle posts are available only to accepted Circle members';
++  end if;
++
++  if v_caption is not null and length(v_caption) > 2200 then
++    raise exception 'Circle post captions must be 2200 characters or fewer';
++  end if;
++
++  if p_media is null or jsonb_typeof(p_media) <> 'array' then
++    raise exception 'Circle post media must be an array';
++  end if;
++
++  v_media_count := jsonb_array_length(p_media);
++  if v_media_count < 1 or v_media_count > 10 then
++    raise exception 'Circle posts require between 1 and 10 photos or videos';
++  end if;
++
++  v_expected_prefix := p_conversation_id::text || '/posts/' || v_viewer_id::text || '/';
++
++  select exists (
++    select 1
++    from jsonb_array_elements(p_media) as media_item(value)
++    where jsonb_typeof(media_item.value) <> 'object'
++      or coalesce(media_item.value->>'storage_path', '') = ''
++      or position(v_expected_prefix in (media_item.value->>'storage_path')) <> 1
++      or coalesce(media_item.value->>'media_type', '') not in ('image', 'video')
++  )
++  into v_invalid_media;
++
++  if v_invalid_media then
++    raise exception 'One or more Circle post attachments are invalid';
++  end if;
++
++  insert into public.conversation_posts (
++    conversation_id,
++    author_id,
++    caption
++  )
++  values (
++    p_conversation_id,
++    v_viewer_id,
++    v_caption
++  )
++  returning id into v_post_id;
++
++  insert into public.conversation_post_media (
++    post_id,
++    storage_path,
++    media_type,
++    width,
++    height,
++    duration_ms,
++    sort_order
++  )
++  select
++    v_post_id,
++    media_item->>'storage_path',
++    media_item->>'media_type',
++    nullif(media_item->>'width', '')::integer,
++    nullif(media_item->>'height', '')::integer,
++    nullif(media_item->>'duration_ms', '')::integer,
++    (ordinality - 1)::integer
++  from jsonb_array_elements(p_media) with ordinality
++    as attachment(media_item, ordinality);
++
++  update public.conversations conversation
++  set updated_at = now()
++  where conversation.id = p_conversation_id;
++
++  return v_post_id;
++end;
++$$;
++
++revoke all on function public.create_circle_post(uuid, text, jsonb) from public;
++grant execute on function public.create_circle_post(uuid, text, jsonb) to authenticated;
++
++create or replace function public.get_circle_posts(
++  p_conversation_id uuid,
++  p_limit_count integer default 60,
++  p_before timestamptz default now()
++)
++returns table (
++  post_id uuid,
++  conversation_id uuid,
++  author_id uuid,
++  author_name text,
++  author_avatar text,
++  caption text,
++  media jsonb,
++  comment_count bigint,
++  can_edit boolean,
++  created_at timestamptz,
++  edited_at timestamptz
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select
++    post_row.id as post_id,
++    post_row.conversation_id,
++    post_row.author_id,
++    author.display_name as author_name,
++    author.avatar_url as author_avatar,
++    post_row.caption,
++    coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'id', media_row.id,
++          'storage_path', media_row.storage_path,
++          'media_type', media_row.media_type,
++          'width', media_row.width,
++          'height', media_row.height,
++          'duration_ms', media_row.duration_ms,
++          'sort_order', media_row.sort_order,
++          'created_at', media_row.created_at
++        )
++        order by media_row.sort_order
++      )
++      from public.conversation_post_media media_row
++      where media_row.post_id = post_row.id
++    ), '[]'::jsonb) as media,
++    (
++      select count(*)
++      from public.conversation_post_comments comment_row
++      where comment_row.post_id = post_row.id
++    ) as comment_count,
++    post_row.author_id = auth.uid() as can_edit,
++    post_row.created_at,
++    post_row.edited_at
++  from public.conversation_posts post_row
++  join public.users author on author.id = post_row.author_id
++  where post_row.conversation_id = p_conversation_id
++    and post_row.created_at < coalesce(p_before, now())
++    and public.circle_posts_are_enabled(p_conversation_id, auth.uid())
++  order by post_row.created_at desc
++  limit greatest(1, least(coalesce(p_limit_count, 60), 120));
++$$;
++
++revoke all on function public.get_circle_posts(uuid, integer, timestamptz) from public;
++grant execute on function public.get_circle_posts(uuid, integer, timestamptz) to authenticated;
++
++create or replace function public.get_circle_post(p_post_id uuid)
++returns table (
++  post_id uuid,
++  conversation_id uuid,
++  author_id uuid,
++  author_name text,
++  author_avatar text,
++  caption text,
++  media jsonb,
++  comment_count bigint,
++  can_edit boolean,
++  created_at timestamptz,
++  edited_at timestamptz
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select
++    post_row.id as post_id,
++    post_row.conversation_id,
++    post_row.author_id,
++    author.display_name as author_name,
++    author.avatar_url as author_avatar,
++    post_row.caption,
++    coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'id', media_row.id,
++          'storage_path', media_row.storage_path,
++          'media_type', media_row.media_type,
++          'width', media_row.width,
++          'height', media_row.height,
++          'duration_ms', media_row.duration_ms,
++          'sort_order', media_row.sort_order,
++          'created_at', media_row.created_at
++        )
++        order by media_row.sort_order
++      )
++      from public.conversation_post_media media_row
++      where media_row.post_id = post_row.id
++    ), '[]'::jsonb) as media,
++    (
++      select count(*)
++      from public.conversation_post_comments comment_row
++      where comment_row.post_id = post_row.id
++    ) as comment_count,
++    post_row.author_id = auth.uid() as can_edit,
++    post_row.created_at,
++    post_row.edited_at
++  from public.conversation_posts post_row
++  join public.users author on author.id = post_row.author_id
++  where post_row.id = p_post_id
++    and public.circle_posts_are_enabled(post_row.conversation_id, auth.uid());
++$$;
++
++revoke all on function public.get_circle_post(uuid) from public;
++grant execute on function public.get_circle_post(uuid) to authenticated;
++
++create or replace function public.get_circle_post_comments(
++  p_post_id uuid,
++  p_limit_count integer default 100,
++  p_before timestamptz default now()
++)
++returns table (
++  comment_id uuid,
++  post_id uuid,
++  user_id uuid,
++  display_name text,
++  avatar_url text,
++  body text,
++  created_at timestamptz,
++  edited_at timestamptz,
++  can_delete boolean
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select
++    comment_row.id as comment_id,
++    comment_row.post_id,
++    comment_row.user_id,
++    comment_user.display_name,
++    comment_user.avatar_url,
++    comment_row.body,
++    comment_row.created_at,
++    comment_row.edited_at,
++    comment_row.user_id = auth.uid() as can_delete
++  from public.conversation_post_comments comment_row
++  join public.conversation_posts post_row on post_row.id = comment_row.post_id
++  join public.users comment_user on comment_user.id = comment_row.user_id
++  where comment_row.post_id = p_post_id
++    and comment_row.created_at < coalesce(p_before, now())
++    and public.circle_posts_are_enabled(post_row.conversation_id, auth.uid())
++  order by comment_row.created_at asc
++  limit greatest(1, least(coalesce(p_limit_count, 100), 300));
++$$;
++
++revoke all on function public.get_circle_post_comments(uuid, integer, timestamptz) from public;
++grant execute on function public.get_circle_post_comments(uuid, integer, timestamptz) to authenticated;
++
++create or replace function public.add_circle_post_comment(
++  p_post_id uuid,
++  p_body text
++)
++returns table (
++  comment_id uuid,
++  post_id uuid,
++  user_id uuid,
++  display_name text,
++  avatar_url text,
++  body text,
++  created_at timestamptz,
++  edited_at timestamptz,
++  can_delete boolean
++)
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_body text := trim(coalesce(p_body, ''));
++  v_conversation_id uuid;
++  v_comment_id uuid;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if length(v_body) < 1 or length(v_body) > 1000 then
++    raise exception 'Comments must be between 1 and 1000 characters';
++  end if;
++
++  select post_row.conversation_id
++  into v_conversation_id
++  from public.conversation_posts post_row
++  where post_row.id = p_post_id;
++
++  if v_conversation_id is null
++     or not public.circle_posts_are_enabled(v_conversation_id, v_viewer_id) then
++    raise exception 'Circle post not found or unavailable';
++  end if;
++
++  insert into public.conversation_post_comments (post_id, user_id, body)
++  values (p_post_id, v_viewer_id, v_body)
++  returning id into v_comment_id;
++
++  return query
++  select
++    comment_row.id,
++    comment_row.post_id,
++    comment_row.user_id,
++    comment_user.display_name,
++    comment_user.avatar_url,
++    comment_row.body,
++    comment_row.created_at,
++    comment_row.edited_at,
++    true
++  from public.conversation_post_comments comment_row
++  join public.users comment_user on comment_user.id = comment_row.user_id
++  where comment_row.id = v_comment_id;
++end;
++$$;
++
++revoke all on function public.add_circle_post_comment(uuid, text) from public;
++grant execute on function public.add_circle_post_comment(uuid, text) to authenticated;
++
++create or replace function public.delete_own_circle_post_comment(
++  p_comment_id uuid
++)
++returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++begin
++  delete from public.conversation_post_comments comment_row
++  where comment_row.id = p_comment_id
++    and comment_row.user_id = auth.uid();
++
++  if not found then
++    raise exception 'Comment not found or not owned by you';
++  end if;
++end;
++$$;
++
++revoke all on function public.delete_own_circle_post_comment(uuid) from public;
++grant execute on function public.delete_own_circle_post_comment(uuid) to authenticated;
++
++create or replace function public.update_own_circle_post_caption(
++  p_post_id uuid,
++  p_caption text default null
++)
++returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_caption text := nullif(trim(coalesce(p_caption, '')), '');
++  v_conversation_id uuid;
++begin
++  if v_caption is not null and length(v_caption) > 2200 then
++    raise exception 'Circle post captions must be 2200 characters or fewer';
++  end if;
++
++  update public.conversation_posts post_row
++  set
++    caption = v_caption,
++    updated_at = now(),
++    edited_at = now()
++  where post_row.id = p_post_id
++    and post_row.author_id = auth.uid()
++  returning post_row.conversation_id into v_conversation_id;
++
++  if not found then
++    raise exception 'Circle post not found or not owned by you';
++  end if;
++
++  update public.conversations conversation
++  set updated_at = now()
++  where conversation.id = v_conversation_id;
++end;
++$$;
++
++revoke all on function public.update_own_circle_post_caption(uuid, text) from public;
++grant execute on function public.update_own_circle_post_caption(uuid, text) to authenticated;
++
++create or replace function public.delete_own_circle_post(p_post_id uuid)
++returns jsonb
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_conversation_id uuid;
++  v_paths text[];
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  select
++    post_row.conversation_id,
++    coalesce(
++      array_agg(media_row.storage_path)
++        filter (where media_row.storage_path is not null),
++      array[]::text[]
++    )
++  into v_conversation_id, v_paths
++  from public.conversation_posts post_row
++  left join public.conversation_post_media media_row
++    on media_row.post_id = post_row.id
++  where post_row.id = p_post_id
++    and post_row.author_id = v_viewer_id
++  group by post_row.id;
++
++  if v_conversation_id is null then
++    raise exception 'Circle post not found or not owned by you';
++  end if;
++
++  delete from public.conversation_posts post_row
++  where post_row.id = p_post_id
++    and post_row.author_id = v_viewer_id;
++
++  update public.conversations conversation
++  set updated_at = now()
++  where conversation.id = v_conversation_id;
++
++  return jsonb_build_object(
++    'conversation_id', v_conversation_id,
++    'storage_paths', to_jsonb(v_paths)
++  );
++end;
++$$;
++
++revoke all on function public.delete_own_circle_post(uuid) from public;
++grant execute on function public.delete_own_circle_post(uuid) to authenticated;
++
++-- Replace the details payload so the profile's Posts count is authoritative.
++create or replace function public.get_conversation_details(p_conversation_id uuid)
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_result jsonb;
++begin
++  if not public.conversation_is_member(p_conversation_id, v_viewer_id) then
++    raise exception 'You are not a member of this private conversation';
++  end if;
++
++  select jsonb_build_object(
++    'conversation', jsonb_build_object(
++      'id', conversation.id,
++      'kind', conversation.kind,
++      'is_circle', (conversation.kind = 'group' or conversation.circle_enabled),
++      'circle_enabled', conversation.circle_enabled,
++      'circle_activated_at', conversation.circle_activated_at,
++      'other_user_id', case
++        when conversation.kind = 'direct' then other_user.id
++        else null
++      end,
++      'title', case
++        when conversation.kind = 'direct' and not conversation.circle_enabled
++          then coalesce(other_user.display_name, 'Connection')
++        else coalesce(
++          nullif(trim(conversation.title), ''),
++          case when conversation.kind = 'direct' then 'Private Circle' else 'Private group' end
++        )
++      end,
++      'avatar_url', case
++        when conversation.kind = 'direct' and not conversation.circle_enabled
++          then other_user.avatar_url
++        else conversation.avatar_url
++      end,
++      'avatar_path', case
++        when conversation.kind = 'group' or conversation.circle_enabled
++          then conversation.avatar_path
++        else null
++      end,
++      'bio', case
++        when conversation.kind = 'direct' and not conversation.circle_enabled
++          then null
++        else conversation.bio
++      end,
++      'created_at', conversation.created_at,
++      'created_by', conversation.created_by,
++      'can_edit', conversation.kind = 'group',
++      'timeline_count', (
++        select count(*)
++        from public.message_media timeline_media
++        join public.messages timeline_message
++          on timeline_message.id = timeline_media.message_id
++        where timeline_message.conversation_id = conversation.id
++      ),
++      'post_count', (
++        select count(*)
++        from public.conversation_posts post_row
++        where post_row.conversation_id = conversation.id
++      )
++    ),
++    'members', coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'user_id', member_user.id,
++          'display_name', member_user.display_name,
++          'avatar_url', member_user.avatar_url,
++          'role', member_row.role,
++          'joined_at', member_row.joined_at,
++          'is_me', member_user.id = v_viewer_id
++        )
++        order by
++          case member_row.role when 'owner' then 0 when 'admin' then 1 else 2 end,
++          member_row.joined_at
++      )
++      from public.conversation_members member_row
++      join public.users member_user on member_user.id = member_row.user_id
++      where member_row.conversation_id = conversation.id
++    ), '[]'::jsonb),
++    'pending_invitations', coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'invitation_id', invitation.id,
++          'user_id', invited_user.id,
++          'display_name', invited_user.display_name,
++          'avatar_url', invited_user.avatar_url,
++          'status', invitation.status,
++          'created_at', invitation.created_at
++        )
++        order by invitation.created_at
++      )
++      from public.conversation_invitations invitation
++      join public.users invited_user on invited_user.id = invitation.invited_user_id
++      where invitation.conversation_id = conversation.id
++        and invitation.status = 'pending'
++    ), '[]'::jsonb)
++  )
++  into v_result
++  from public.conversations conversation
++  left join lateral (
++    select user_row.id, user_row.display_name, user_row.avatar_url
++    from public.conversation_members other_member
++    join public.users user_row on user_row.id = other_member.user_id
++    where other_member.conversation_id = conversation.id
++      and other_member.user_id <> v_viewer_id
++    order by other_member.joined_at
++    limit 1
++  ) other_user on true
++  where conversation.id = p_conversation_id;
++
++  return v_result;
++end;
++$$;
++
++revoke all on function public.get_conversation_details(uuid) from public;
++grant execute on function public.get_conversation_details(uuid) to authenticated;
++
++-- Post and comment changes update private Circle profiles in Realtime.
++do $$
++begin
++  if exists (
++    select 1 from pg_publication where pubname = 'supabase_realtime'
++  ) then
++    if not exists (
++      select 1 from pg_publication_tables
++      where pubname = 'supabase_realtime'
++        and schemaname = 'public'
++        and tablename = 'conversation_posts'
++    ) then
++      alter publication supabase_realtime add table public.conversation_posts;
++    end if;
++
++    if not exists (
++      select 1 from pg_publication_tables
++      where pubname = 'supabase_realtime'
++        and schemaname = 'public'
++        and tablename = 'conversation_post_media'
++    ) then
++      alter publication supabase_realtime add table public.conversation_post_media;
++    end if;
++
++    if not exists (
++      select 1 from pg_publication_tables
++      where pubname = 'supabase_realtime'
++        and schemaname = 'public'
++        and tablename = 'conversation_post_comments'
++    ) then
++      alter publication supabase_realtime add table public.conversation_post_comments;
++    end if;
++  end if;
++end;
++$$;

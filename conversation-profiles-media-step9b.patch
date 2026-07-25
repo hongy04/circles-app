@@ -1,0 +1,3591 @@
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/App.js /mnt/data/circles_step9b_work/App.js
+--- /mnt/data/circles_step9b_baseline/App.js	2026-07-21 19:31:20.253729019 +0000
++++ /mnt/data/circles_step9b_work/App.js	2026-07-21 19:29:10.907730243 +0000
+@@ -38,7 +38,9 @@
+ import { InboxScreen } from './src/screens/conversations/InboxScreen';
+ import { ChatScreen } from './src/screens/conversations/ChatScreen';
+ import { CreateGroupScreen } from './src/screens/conversations/CreateGroupScreen';
+-import { ConversationDetailsScreen } from './src/screens/conversations/ConversationDetailsScreen';
++import { CircleProfileScreen } from './src/screens/conversations/CircleProfileScreen';
++import { EditCircleScreen } from './src/screens/conversations/EditCircleScreen';
++import { ConversationMediaViewerScreen } from './src/screens/conversations/ConversationMediaViewerScreen';
+ 
+ /* ---------------- Layout & helpers ---------------- */
+ const { width: W, height: H } = Dimensions.get('window');
+@@ -238,9 +240,19 @@
+         options={{ title: 'New Private Group' }}
+       />
+       <CirclesStackNav.Screen
+-        name="ConversationDetails"
+-        component={ConversationDetailsScreen}
+-        options={{ title: 'Shared Space' }}
++        name="CircleProfile"
++        component={CircleProfileScreen}
++        options={{ title: 'Circle' }}
++      />
++      <CirclesStackNav.Screen
++        name="EditCircle"
++        component={EditCircleScreen}
++        options={{ title: 'Edit Circle' }}
++      />
++      <CirclesStackNav.Screen
++        name="ConversationMedia"
++        component={ConversationMediaViewerScreen}
++        options={{ headerShown: false, presentation: 'fullScreenModal' }}
+       />
+     </CirclesStackNav.Navigator>
+   );
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/README_CONVERSATIONS_STEP_9B.md /mnt/data/circles_step9b_work/README_CONVERSATIONS_STEP_9B.md
+--- /mnt/data/circles_step9b_baseline/README_CONVERSATIONS_STEP_9B.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9b_work/README_CONVERSATIONS_STEP_9B.md	2026-07-21 19:30:48.399182718 +0000
+@@ -0,0 +1,147 @@
++# Circles Step 9B — Circle Profiles, Media Messages, and Timeline
++
++This checkpoint applies the confirmed Circle design before building private
++Circle posts.
++
++## Product behavior
++
++### Chat header
++
++The three-dot button is removed.
++
++The Chat header now shows the person or group avatar and name in the center,
++similar to iMessage. Tapping that identity opens the Circle profile.
++
++### Circle profile
++
++A Circle profile now follows the same basic visual language as a user profile:
++
++- large avatar;
++- name and private-Circle label;
++- bio;
++- Timeline, Posts, and member counts;
++- accepted-member strip;
++- `Timeline | Posts` tabs.
++
++The Posts tab remains a clearly separated placeholder until Step 9C.
++
++### Group identity
++
++Every accepted group member may edit:
++
++- Circle profile photo;
++- Circle name;
++- Circle bio.
++
++Pending invitees cannot open the group, view its profile, or access its media.
++
++### Private media messages
++
++Chat supports up to six photos/videos in one message.
++
++Current validation:
++
++- 25 MB maximum per attachment;
++- 30 seconds maximum per video;
++- optional text caption;
++- media-only messages are allowed.
++
++All media is stored in the private `conversation-media` bucket.
++
++### Automatic Timeline
++
++Sent media automatically appears in the Circle Timeline.
++
++The Timeline does not upload or copy the file again. It queries the original
++`message_media` row and keeps the original message, sender, timestamp, and
++caption relationship.
++
++Long-pressing your own message allows deletion. Deleting a media message removes
++it from both Chat and Timeline.
++
++## Required migration
++
++Run this file in the Supabase SQL Editor:
++
++`supabase/migrations/20260721_011_circle_profiles_media_timeline.sql`
++
++The migration:
++
++- adds group Circle bio and private avatar paths;
++- creates the private conversation-media bucket;
++- adds membership-aware Storage policies;
++- allows media-only messages;
++- creates `message_media`;
++- adds media-aware message and inbox RPCs;
++- adds the automatic Timeline RPC;
++- adds sender-only message deletion;
++- allows accepted group members to update group identity.
++
++## Apply
++
++Copy the package contents into:
++
++`C:\Users\honge\Dev\circles-app`
++
++Allow Windows to merge and replace files.
++
++Then restart Expo:
++
++```powershell
++cd C:\Users\honge\Dev\circles-app
++npx expo start --tunnel --clear
++```
++
++## Test the new Chat header
++
++1. Open Hongy and Alex's direct conversation.
++2. Confirm there is no three-dot button.
++3. Confirm Alex's avatar and name appear in the center header.
++4. Tap the header.
++5. Confirm the private Circle profile opens.
++6. Confirm both Hongy and Alex appear in the member strip.
++
++## Test a group Circle profile
++
++1. Open the accepted Hongy/Alex/Sam group.
++2. Tap the group avatar/name in Chat.
++3. Confirm the Timeline and Posts tabs are visible.
++4. Tap **Edit Circle**.
++5. Change the group name, bio, and profile photo.
++6. Save.
++7. Return to Chat and confirm the header updates.
++8. Return to Circles and confirm the pinned Circle avatar/name update.
++9. Switch to Alex and confirm the same group identity appears.
++10. Confirm a pending or declined account cannot access it.
++
++## Test photo messages and Timeline
++
++1. In Hongy and Alex's direct Chat, tap the plus button.
++2. Choose one photo and send it without text.
++3. Confirm it appears in Chat.
++4. Tap the Chat header and confirm the same photo appears in Timeline.
++5. Tap the Timeline tile and confirm the full-screen viewer opens.
++6. Send several photos with a text caption.
++7. Confirm all files appear once in Chat and once as references in Timeline.
++8. Switch accounts and confirm the other accepted member can view them.
++9. Long-press the sender's media message and delete it.
++10. Confirm it disappears from both Chat and Timeline.
++
++## Test video and sound
++
++1. Send a video under 25 MB and 30 seconds.
++2. Open it full-screen.
++3. Confirm sound works even when the iPhone silent switch is enabled.
++4. Test mute/unmute and native playback controls.
++5. Confirm a non-member cannot obtain a signed media URL.
++
++## Commit
++
++After the full multi-account test passes:
++
++```powershell
++git status
++git add App.js src supabase/migrations docs README_CONVERSATIONS_STEP_9B.md
++git commit -m "Add Circle profiles and private media timeline"
++git push
++```
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/docs/CONVERSATION_SPACES_ARCHITECTURE.md /mnt/data/circles_step9b_work/docs/CONVERSATION_SPACES_ARCHITECTURE.md
+--- /mnt/data/circles_step9b_baseline/docs/CONVERSATION_SPACES_ARCHITECTURE.md	2026-07-21 19:31:20.295583427 +0000
++++ /mnt/data/circles_step9b_work/docs/CONVERSATION_SPACES_ARCHITECTURE.md	2026-07-21 19:30:03.449657113 +0000
+@@ -204,14 +204,40 @@
+ and replaces the visible inbox with real accepted connections, accepted group
+ memberships, and pending private-group invitations.
+ 
+-## Inbox identity: pinned Circles
++## Locked interaction and profile design
++
++The three-dot details affordance is removed from the Chat header.
++
++Chat uses an iMessage-like identity header:
++
++- the Circle or direct connection avatar appears above the name;
++- tapping the avatar/name opens the Circle profile;
++- there is no separate generic details page hidden behind an overflow icon.
++
++The Circle profile should feel structurally related to a user profile:
++
++- large Circle avatar;
++- Circle name and bio;
++- Timeline, Posts, and member counts;
++- member identity strip;
++- a segmented `Timeline | Posts` content area.
++
++For a direct Circle, the displayed identity defaults to the other connected
++person while the Timeline and future Posts still belong to the private
++two-person Circle.
++
++For a group Circle, every accepted member may update the shared Circle name,
++bio, and avatar. Pending invitees have no profile or media access. The group
++avatar is stored in private conversation storage and resolved through
++membership-authorized signed URLs.
++
++## Step 9B implementation
++
++Step 9B adds private photo/video messages and the automatic Timeline.
++
++- Each photo/video is uploaded once under a conversation-owned private path.
++- `message_media` links the object to its original message and sender.
++- Timeline queries those original rows; it never duplicates the file.
++- Long-press deletion by the sender removes the message from Chat and Timeline.
++- The separate Posts tab remains intentionally empty until Step 9C.
+ 
+-The inbox should retain the familiar clarity of iMessage while making Circles'
+-identity visible. Pinned conversations are presented as large circular items
+-above the standard message list.
+-
+-Private groups begin pinned for every accepted member because group formation is
+-intentional and represents a shared Circle. Pin state remains personal: one
+-member may unpin a group without changing another member's inbox. Pending group
+-invitations never appear as pinned conversations because an invitation does not
+-yet grant membership or access.
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/src/components/conversations/ConversationHeaderTitle.js /mnt/data/circles_step9b_work/src/components/conversations/ConversationHeaderTitle.js
+--- /mnt/data/circles_step9b_baseline/src/components/conversations/ConversationHeaderTitle.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9b_work/src/components/conversations/ConversationHeaderTitle.js	2026-07-21 19:25:18.159205246 +0000
+@@ -0,0 +1,65 @@
++import React from 'react';
++import { Pressable, StyleSheet, Text, View } from 'react-native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { Avatar } from '../Avatar';
++import { COLORS } from '../../theme/colors';
++
++export function ConversationHeaderTitle({
++  name,
++  avatarUri,
++  onPress,
++}) {
++  return (
++    <Pressable
++      onPress={onPress}
++      accessibilityRole="button"
++      accessibilityLabel={`Open ${name || 'Circle'} profile`}
++      style={({ pressed }) => [
++        styles.root,
++        pressed && styles.pressed,
++      ]}
++    >
++      <Avatar
++        size={34}
++        name={name || 'Circle'}
++        uri={avatarUri}
++      />
++      <View style={styles.nameRow}>
++        <Text style={styles.name} numberOfLines={1}>
++          {name || 'Circle'}
++        </Text>
++        <Ionicons
++          name="chevron-forward"
++          size={11}
++          color={COLORS.subtext}
++        />
++      </View>
++    </Pressable>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    minWidth: 130,
++    maxWidth: 230,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 8,
++    paddingVertical: 2,
++  },
++  nameRow: {
++    maxWidth: '100%',
++    flexDirection: 'row',
++    alignItems: 'center',
++    marginTop: 2,
++  },
++  name: {
++    maxWidth: 190,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
++  },
++  pressed: {
++    opacity: 0.62,
++  },
++});
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/src/screens/conversations/ChatScreen.js /mnt/data/circles_step9b_work/src/screens/conversations/ChatScreen.js
+--- /mnt/data/circles_step9b_baseline/src/screens/conversations/ChatScreen.js	2026-07-21 19:31:20.274287248 +0000
++++ /mnt/data/circles_step9b_work/src/screens/conversations/ChatScreen.js	2026-07-21 19:29:41.088475373 +0000
+@@ -3,9 +3,11 @@
+   ActivityIndicator,
+   Alert,
+   FlatList,
++  Image,
+   KeyboardAvoidingView,
+   Platform,
+   Pressable,
++  ScrollView,
+   StyleSheet,
+   Text,
+   TextInput,
+@@ -15,14 +17,26 @@
+ import { useFocusEffect } from '@react-navigation/native';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import * as Haptics from 'expo-haptics';
++import * as ImagePicker from 'expo-image-picker';
+ import { COLORS } from '../../theme/colors';
++import { ConversationHeaderTitle } from '../../components/conversations/ConversationHeaderTitle';
+ import {
++  deleteOwnConversationMessage,
++  getConversationDetails,
+   getCurrentConversationUser,
+   listConversationMessages,
+   markConversationRead,
+   sendConversationMessage,
+   subscribeToConversationChanges,
+ } from '../../services/conversationService';
++import {
++  removeConversationMedia,
++  uploadConversationAsset,
++} from '../../services/conversationMediaService';
++
++const MAX_ATTACHMENTS = 6;
++const MAX_FILE_BYTES = 25 * 1024 * 1024;
++const MAX_VIDEO_DURATION_MS = 30 * 1000;
+ 
+ function formatTime(timestamp) {
+   const date = new Date(timestamp);
+@@ -30,15 +44,132 @@
+   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+ }
+ 
++function normalizeAsset(asset) {
++  return {
++    id: asset.assetId || `${asset.uri}-${Date.now()}-${Math.random()}`,
++    uri: asset.uri,
++    mediaType: asset.type === 'video' ? 'video' : 'image',
++    mimeType:
++      asset.mimeType
++      || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg'),
++    width: asset.width || null,
++    height: asset.height || null,
++    durationMs: asset.duration || null,
++    fileSize: asset.fileSize || null,
++  };
++}
++
++function validateAssets(assets) {
++  if (assets.length > MAX_ATTACHMENTS) {
++    return `Choose up to ${MAX_ATTACHMENTS} photos or videos per message.`;
++  }
++
++  const tooLarge = assets.find(
++    (asset) => asset.fileSize && asset.fileSize > MAX_FILE_BYTES
++  );
++  if (tooLarge) return 'Each attachment must be 25 MB or smaller.';
++
++  const tooLong = assets.find(
++    (asset) =>
++      asset.mediaType === 'video'
++      && asset.durationMs
++      && asset.durationMs > MAX_VIDEO_DURATION_MS
++  );
++  if (tooLong) return 'Videos must be 30 seconds or shorter.';
++
++  return null;
++}
++
++function SelectedMedia({ assets, onRemove, disabled }) {
++  if (!assets.length) return null;
++
++  return (
++    <ScrollView
++      horizontal
++      showsHorizontalScrollIndicator={false}
++      contentContainerStyle={styles.selectedMediaRow}
++      keyboardShouldPersistTaps="handled"
++    >
++      {assets.map((asset) => (
++        <View key={asset.id} style={styles.selectedTile}>
++          {asset.mediaType === 'image' ? (
++            <Image source={{ uri: asset.uri }} style={styles.selectedImage} />
++          ) : (
++            <View style={styles.selectedVideo}>
++              <Ionicons name="videocam" size={25} color="#fff" />
++            </View>
++          )}
++          <Pressable
++            onPress={() => onRemove(asset.id)}
++            disabled={disabled}
++            style={styles.removeAttachment}
++          >
++            <Ionicons name="close" size={14} color="#fff" />
++          </Pressable>
++        </View>
++      ))}
++    </ScrollView>
++  );
++}
++
++function MessageMediaGrid({ items, onOpen }) {
++  if (!items?.length) return null;
++
++  const displayItems = items.slice(0, 6);
++  const tileWidth = displayItems.length === 1 ? 242 : 119;
++  const tileHeight = displayItems.length === 1 ? 242 : 119;
++
++  return (
++    <View style={[
++      styles.messageMediaGrid,
++      displayItems.length === 1 && styles.singleMediaGrid,
++    ]}>
++      {displayItems.map((item, index) => (
++        <Pressable
++          key={item.id}
++          onPress={() => onOpen(index)}
++          style={({ pressed }) => [
++            styles.messageMediaTile,
++            { width: tileWidth, height: tileHeight },
++            pressed && styles.pressed,
++          ]}
++        >
++          {item.mediaType === 'image' ? (
++            <Image source={{ uri: item.url }} style={styles.messageMediaImage} />
++          ) : (
++            <View style={styles.messageVideoTile}>
++              <Ionicons name="play-circle" size={42} color="#fff" />
++            </View>
++          )}
++        </Pressable>
++      ))}
++    </View>
++  );
++}
++
+ export function ChatScreen({ route, navigation }) {
+-  const { conversationId, name = 'Conversation', kind = 'direct' } = route.params || {};
++  const {
++    conversationId,
++    name = 'Conversation',
++    kind = 'direct',
++    avatarUri: initialAvatarUri = null,
++  } = route.params || {};
++
+   const insets = useSafeAreaInsets();
+   const listRef = useRef(null);
++  const [conversation, setConversation] = useState({
++    title: name,
++    kind,
++    avatar_url: initialAvatarUri,
++  });
+   const [currentUserId, setCurrentUserId] = useState(null);
+   const [messages, setMessages] = useState([]);
+   const [input, setInput] = useState('');
++  const [selectedAssets, setSelectedAssets] = useState([]);
+   const [loading, setLoading] = useState(true);
+   const [sending, setSending] = useState(false);
++  const [uploadStage, setUploadStage] = useState('');
++  const [deletingMessageId, setDeletingMessageId] = useState(null);
+   const [error, setError] = useState(null);
+ 
+   const load = useCallback(async ({ quiet = false } = {}) => {
+@@ -47,12 +178,14 @@
+     setError(null);
+ 
+     try {
+-      const [user, rows] = await Promise.all([
++      const [user, rows, details] = await Promise.all([
+         getCurrentConversationUser(),
+         listConversationMessages(conversationId),
++        getConversationDetails(conversationId),
+       ]);
+       setCurrentUserId(user.id);
+       setMessages(rows);
++      if (details?.conversation) setConversation(details.conversation);
+       await markConversationRead(conversationId);
+     } catch (loadError) {
+       setError(loadError?.message || 'Could not load this private conversation.');
+@@ -63,26 +196,28 @@
+ 
+   useEffect(() => {
+     navigation.setOptions({
+-      title: name,
+-      headerRight: () => (
+-        <Pressable
+-          onPress={() => navigation.navigate('ConversationDetails', {
++      title: '',
++      headerTitleAlign: 'center',
++      headerStyle: { height: 70, backgroundColor: COLORS.bg },
++      headerRight: () => null,
++      headerTitle: () => (
++        <ConversationHeaderTitle
++          name={conversation?.title || name}
++          avatarUri={conversation?.avatar_url || initialAvatarUri}
++          onPress={() => navigation.navigate('CircleProfile', {
+             conversationId,
+-            name,
+           })}
+-          hitSlop={10}
+-          accessibilityRole="button"
+-          accessibilityLabel="Open shared private space"
+-        >
+-          <Ionicons
+-            name="ellipsis-horizontal-circle"
+-            size={24}
+-            color={COLORS.text}
+-          />
+-        </Pressable>
++        />
+       ),
+     });
+-  }, [conversationId, name, navigation]);
++  }, [
++    conversation?.avatar_url,
++    conversation?.title,
++    conversationId,
++    initialAvatarUri,
++    name,
++    navigation,
++  ]);
+ 
+   useFocusEffect(
+     useCallback(() => {
+@@ -95,6 +230,7 @@
+     return subscribeToConversationChanges({
+       conversationId,
+       onMessage: () => load({ quiet: true }),
++      onMediaChange: () => load({ quiet: true }),
+       onConversationChange: () => load({ quiet: true }),
+     });
+   }, [conversationId, load]);
+@@ -106,58 +242,226 @@
+     return () => clearTimeout(timer);
+   }, [messages.length]);
+ 
++  const pickMedia = async () => {
++    if (sending) return;
++
++    try {
++      const permission =
++        await ImagePicker.requestMediaLibraryPermissionsAsync();
++
++      if (permission.status !== 'granted') {
++        Alert.alert(
++          'Photo permission needed',
++          'Allow photo access to send private media in this Circle.'
++        );
++        return;
++      }
++
++      const result = await ImagePicker.launchImageLibraryAsync({
++        mediaTypes: ImagePicker.MediaTypeOptions.All,
++        allowsMultipleSelection: true,
++        selectionLimit: MAX_ATTACHMENTS,
++        quality: 0.9,
++        videoQuality:
++          ImagePicker.UIImagePickerControllerQualityType.Medium,
++      });
++
++      if (result.canceled) return;
++
++      const nextAssets = (result.assets || []).map(normalizeAsset);
++      const merged = [...selectedAssets, ...nextAssets].slice(0, MAX_ATTACHMENTS);
++      const validationError = validateAssets(merged);
++
++      if (validationError) {
++        Alert.alert('Media not supported', validationError);
++        return;
++      }
++
++      setSelectedAssets(merged);
++    } catch (pickerError) {
++      Alert.alert(
++        'Could not open your library',
++        pickerError?.message || 'Please try again.'
++      );
++    }
++  };
++
+   const send = async () => {
+     const body = input.trim();
+-    if (!body || sending) return;
++    if ((!body && selectedAssets.length === 0) || sending) return;
++
++    const validationError = validateAssets(selectedAssets);
++    if (validationError) {
++      Alert.alert('Media not supported', validationError);
++      return;
++    }
+ 
+-    setInput('');
+     setSending(true);
++    setUploadStage(selectedAssets.length ? 'Preparing media…' : '');
++    const uploadedPaths = [];
+ 
+     try {
+       await Haptics.selectionAsync();
+-      const message = await sendConversationMessage(conversationId, body);
++      const uploaded = [];
++
++      for (let index = 0; index < selectedAssets.length; index += 1) {
++        const asset = selectedAssets[index];
++        setUploadStage(
++          `Uploading ${index + 1} of ${selectedAssets.length}…`
++        );
++
++        const result = await uploadConversationAsset({
++          conversationId,
++          category: 'messages',
++          uri: asset.uri,
++          mimeType: asset.mimeType,
++        });
++
++        uploadedPaths.push(result.storagePath);
++        uploaded.push({
++          storagePath: result.storagePath,
++          mediaType: asset.mediaType,
++          width: asset.width,
++          height: asset.height,
++          durationMs: asset.durationMs,
++        });
++      }
++
++      setUploadStage('Sending…');
++      const message = await sendConversationMessage(
++        conversationId,
++        body,
++        uploaded
++      );
++
+       setMessages((current) => {
+         if (current.some((item) => item.id === message.id)) return current;
+         return [message, ...current];
+       });
++      setInput('');
++      setSelectedAssets([]);
+       await markConversationRead(conversationId);
+     } catch (sendError) {
+-      setInput(body);
++      if (uploadedPaths.length) {
++        removeConversationMedia(uploadedPaths).catch(() => {});
++      }
++
+       Alert.alert(
+         'Message not sent',
+         sendError?.message || 'Please try again.'
+       );
+     } finally {
+       setSending(false);
++      setUploadStage('');
+     }
+   };
+ 
++  const confirmDelete = (message) => {
++    if (message.senderId !== currentUserId || deletingMessageId) return;
++
++    Alert.alert(
++      'Delete this message?',
++      message.media.length
++        ? 'It will be removed from Chat and the Circle Timeline.'
++        : 'It will be removed for every member of this Circle.',
++      [
++        { text: 'Cancel', style: 'cancel' },
++        {
++          text: 'Delete',
++          style: 'destructive',
++          onPress: async () => {
++            setDeletingMessageId(message.id);
++            try {
++              await deleteOwnConversationMessage(message.id);
++              setMessages((current) =>
++                current.filter((item) => item.id !== message.id)
++              );
++            } catch (deleteError) {
++              Alert.alert(
++                'Message not deleted',
++                deleteError?.message || 'Please try again.'
++              );
++            } finally {
++              setDeletingMessageId(null);
++            }
++          },
++        },
++      ]
++    );
++  };
++
++  const openMedia = (message, startIndex) => {
++    const items = message.media.map((item) => ({
++      ...item,
++      senderName: message.senderName,
++      senderAvatar: message.senderAvatar,
++      messageBody: message.body,
++      createdAt: message.createdAt,
++    }));
++
++    navigation.navigate('ConversationMedia', {
++      items,
++      startIndex,
++    });
++  };
++
+   const renderMessage = ({ item }) => {
+     const mine = item.senderId === currentUserId;
++    const hasText = Boolean(item.body);
++    const hasMedia = item.media?.length > 0;
+ 
+     return (
+-      <View style={styles.messageWrap}>
+-        {!mine && kind === 'group' ? (
++      <Pressable
++        onLongPress={() => confirmDelete(item)}
++        delayLongPress={430}
++        disabled={!mine || deletingMessageId === item.id}
++        style={styles.messageWrap}
++      >
++        {!mine && conversation?.kind === 'group' ? (
+           <Text style={styles.senderName}>{item.senderName}</Text>
+         ) : null}
++
+         <View style={[
+-          styles.bubble,
+-          mine ? styles.mineBubble : styles.otherBubble,
++          styles.messageContent,
++          mine ? styles.mineContent : styles.otherContent,
+         ]}>
+-          <Text style={[
+-            styles.messageText,
+-            mine ? styles.mineText : styles.otherText,
+-          ]}>
+-            {item.body}
+-          </Text>
++          {hasMedia ? (
++            <MessageMediaGrid
++              items={item.media}
++              onOpen={(index) => openMedia(item, index)}
++            />
++          ) : null}
++
++          {hasText ? (
++            <View style={[
++              styles.bubble,
++              mine ? styles.mineBubble : styles.otherBubble,
++              hasMedia && styles.textWithMedia,
++            ]}>
++              <Text style={[
++                styles.messageText,
++                mine ? styles.mineText : styles.otherText,
++              ]}>
++                {item.body}
++              </Text>
++            </View>
++          ) : null}
++
++          {deletingMessageId === item.id ? (
++            <ActivityIndicator
++              size="small"
++              style={styles.deletingIndicator}
++            />
++          ) : null}
+         </View>
++
+         <Text style={[
+           styles.messageTime,
+           mine ? styles.mineTime : styles.otherTime,
+         ]}>
+           {formatTime(item.createdAt)}
+         </Text>
+-      </View>
++      </Pressable>
+     );
+   };
+ 
+@@ -186,13 +490,18 @@
+         </View>
+       ) : messages.length === 0 ? (
+         <View style={styles.emptyState}>
+-          <View style={styles.emptyIcon}>
+-            <Ionicons name="lock-closed" size={25} color={COLORS.text} />
+-          </View>
+-          <Text style={styles.emptyTitle}>A private space for you</Text>
++          <ConversationHeaderTitle
++            name={conversation?.title || name}
++            avatarUri={conversation?.avatar_url || initialAvatarUri}
++            onPress={() => navigation.navigate('CircleProfile', {
++              conversationId,
++            })}
++          />
++          <Text style={styles.emptyTitle}>A private Circle</Text>
+           <Text style={styles.emptyBody}>
+-            Messages are visible only to accepted members. Send the first
+-            message to begin this shared history.
++            Messages and shared media are visible only to accepted members.
++            Photos and videos you send will automatically become this Circle’s
++            Timeline.
+           </Text>
+         </View>
+       ) : (
+@@ -210,12 +519,40 @@
+       {!loading && !error ? (
+         <KeyboardAvoidingView
+           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+-          keyboardVerticalOffset={Platform.OS === 'ios' ? 86 : 0}
++          keyboardVerticalOffset={Platform.OS === 'ios' ? 92 : 0}
+         >
++          <SelectedMedia
++            assets={selectedAssets}
++            disabled={sending}
++            onRemove={(assetId) => setSelectedAssets((current) =>
++              current.filter((asset) => asset.id !== assetId)
++            )}
++          />
++
++          {uploadStage ? (
++            <View style={styles.uploadStage}>
++              <ActivityIndicator size="small" />
++              <Text style={styles.uploadStageText}>{uploadStage}</Text>
++            </View>
++          ) : null}
++
+           <View style={[
+             styles.composer,
+             { paddingBottom: Math.max(8, insets.bottom) },
+           ]}>
++            <Pressable
++              onPress={pickMedia}
++              disabled={sending}
++              accessibilityRole="button"
++              accessibilityLabel="Choose photos or videos"
++              style={({ pressed }) => [
++                styles.addButton,
++                pressed && styles.pressed,
++              ]}
++            >
++              <Ionicons name="add" size={25} color={COLORS.text} />
++            </Pressable>
++
+             <View style={styles.inputWrap}>
+               <TextInput
+                 value={input}
+@@ -224,21 +561,30 @@
+                 placeholderTextColor="#9e9e9e"
+                 multiline
+                 maxLength={4000}
++                editable={!sending}
+                 style={styles.input}
+                 onFocus={() => setTimeout(() => {
+-                  listRef.current?.scrollToOffset?.({ offset: 0, animated: true });
++                  listRef.current?.scrollToOffset?.({
++                    offset: 0,
++                    animated: true,
++                  });
+                 }, 60)}
+               />
+             </View>
+ 
+             <Pressable
+               onPress={send}
+-              disabled={sending || !input.trim()}
++              disabled={
++                sending
++                || (!input.trim() && selectedAssets.length === 0)
++              }
+               accessibilityRole="button"
+               accessibilityLabel="Send message"
+               style={({ pressed }) => [
+                 styles.sendButton,
+-                input.trim() ? styles.sendButtonReady : styles.sendButtonDisabled,
++                input.trim() || selectedAssets.length
++                  ? styles.sendButtonReady
++                  : styles.sendButtonDisabled,
+                 pressed && styles.pressed,
+               ]}
+             >
+@@ -265,7 +611,6 @@
+     alignItems: 'center',
+     justifyContent: 'center',
+     paddingHorizontal: 28,
+-    backgroundColor: COLORS.bg,
+   },
+   stateText: {
+     marginTop: 10,
+@@ -289,8 +634,33 @@
+     color: '#fff',
+     fontFamily: 'Manrope_700Bold',
+   },
++  emptyState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 34,
++  },
++  emptyProfile: {
++    alignItems: 'center',
++  },
++  emptyTitle: {
++    marginTop: 8,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 17,
++  },
++  emptyBody: {
++    maxWidth: 420,
++    marginTop: 7,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 13,
++    lineHeight: 19,
++    textAlign: 'center',
++  },
+   messageList: {
+     flexGrow: 1,
++    justifyContent: 'flex-start',
+     paddingTop: 10,
+     paddingBottom: 8,
+   },
+@@ -299,27 +669,39 @@
+     paddingVertical: 4,
+   },
+   senderName: {
+-    marginLeft: 7,
++    marginLeft: 11,
+     marginBottom: 3,
+     color: COLORS.subtext,
+     fontFamily: 'Manrope_600SemiBold',
+     fontSize: 11,
+   },
+-  bubble: {
++  messageContent: {
+     maxWidth: '78%',
++  },
++  mineContent: {
++    alignSelf: 'flex-end',
++    alignItems: 'flex-end',
++  },
++  otherContent: {
++    alignSelf: 'flex-start',
++    alignItems: 'flex-start',
++  },
++  bubble: {
++    maxWidth: 300,
+     paddingHorizontal: 14,
+     paddingVertical: 10,
+     borderRadius: 18,
+   },
+   mineBubble: {
+-    alignSelf: 'flex-end',
+-    borderBottomRightRadius: 6,
+     backgroundColor: COLORS.primary,
++    borderBottomRightRadius: 6,
+   },
+   otherBubble: {
+-    alignSelf: 'flex-start',
+-    borderBottomLeftRadius: 6,
+     backgroundColor: '#e9e9eb',
++    borderBottomLeftRadius: 6,
++  },
++  textWithMedia: {
++    marginTop: 4,
+   },
+   messageText: {
+     fontFamily: 'Manrope_400Regular',
+@@ -330,7 +712,7 @@
+     color: '#fff',
+   },
+   otherText: {
+-    color: COLORS.text,
++    color: '#000',
+   },
+   messageTime: {
+     marginTop: 3,
+@@ -344,67 +726,127 @@
+   otherTime: {
+     alignSelf: 'flex-start',
+   },
+-  emptyState: {
++  messageMediaGrid: {
++    width: 242,
++    flexDirection: 'row',
++    flexWrap: 'wrap',
++    gap: 4,
++  },
++  singleMediaGrid: {
++    width: 242,
++  },
++  messageMediaTile: {
++    overflow: 'hidden',
++    borderRadius: 14,
++    backgroundColor: '#1c1c1e',
++  },
++  messageMediaImage: {
++    width: '100%',
++    height: '100%',
++  },
++  messageVideoTile: {
+     flex: 1,
+     alignItems: 'center',
+     justifyContent: 'center',
+-    paddingHorizontal: 34,
++    backgroundColor: '#1c1c1e',
++  },
++  deletingIndicator: {
++    marginTop: 5,
++  },
++  selectedMediaRow: {
++    paddingHorizontal: 10,
++    paddingTop: 8,
++    paddingBottom: 4,
++  },
++  selectedTile: {
++    width: 66,
++    height: 66,
++    overflow: 'visible',
++    marginRight: 7,
++    borderRadius: 10,
++    backgroundColor: '#1c1c1e',
+   },
+-  emptyIcon: {
+-    width: 54,
+-    height: 54,
++  selectedImage: {
++    width: '100%',
++    height: '100%',
++    borderRadius: 10,
++  },
++  selectedVideo: {
++    flex: 1,
+     alignItems: 'center',
+     justifyContent: 'center',
+-    borderRadius: 27,
+-    backgroundColor: '#f1f1f1',
++    borderRadius: 10,
++    backgroundColor: '#1c1c1e',
+   },
+-  emptyTitle: {
+-    marginTop: 14,
+-    color: COLORS.text,
+-    fontFamily: 'Manrope_700Bold',
+-    fontSize: 17,
++  removeAttachment: {
++    position: 'absolute',
++    top: -6,
++    right: -6,
++    width: 22,
++    height: 22,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 11,
++    borderWidth: 2,
++    borderColor: COLORS.bg,
++    backgroundColor: '#4a4a4a',
+   },
+-  emptyBody: {
+-    marginTop: 6,
++  uploadStage: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingVertical: 5,
++  },
++  uploadStageText: {
++    marginLeft: 7,
+     color: COLORS.subtext,
+-    fontFamily: 'Manrope_400Regular',
+-    lineHeight: 20,
+-    textAlign: 'center',
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
+   },
+   composer: {
+     flexDirection: 'row',
+     alignItems: 'flex-end',
+-    paddingHorizontal: 9,
+     paddingTop: 8,
++    paddingHorizontal: 9,
+     borderTopWidth: StyleSheet.hairlineWidth,
+     borderTopColor: COLORS.border,
+     backgroundColor: COLORS.bg,
+   },
++  addButton: {
++    width: 38,
++    height: 38,
++    alignItems: 'center',
++    justifyContent: 'center',
++    marginRight: 5,
++    borderRadius: 19,
++    backgroundColor: '#ededed',
++  },
+   inputWrap: {
+     flex: 1,
+-    minHeight: 40,
++    minHeight: 38,
+     maxHeight: 120,
+     justifyContent: 'center',
+-    paddingHorizontal: 13,
+-    paddingVertical: Platform.OS === 'ios' ? 8 : 5,
+-    borderWidth: 1,
+-    borderColor: COLORS.border,
+-    borderRadius: 20,
+-    backgroundColor: '#fff',
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: '#c7c7cc',
++    borderRadius: 19,
++    backgroundColor: COLORS.bg,
+   },
+   input: {
+-    maxHeight: 96,
++    minHeight: 38,
++    maxHeight: 116,
++    paddingHorizontal: 13,
++    paddingTop: Platform.OS === 'ios' ? 9 : 6,
++    paddingBottom: Platform.OS === 'ios' ? 8 : 6,
+     color: COLORS.text,
+     fontFamily: 'Manrope_400Regular',
+-    fontSize: 16,
+-    padding: 0,
++    fontSize: 15,
+   },
+   sendButton: {
+     width: 38,
+     height: 38,
+     alignItems: 'center',
+     justifyContent: 'center',
+-    marginLeft: 8,
++    marginLeft: 7,
+     borderRadius: 19,
+   },
+   sendButtonReady: {
+@@ -414,6 +856,6 @@
+     backgroundColor: '#d1d1d6',
+   },
+   pressed: {
+-    opacity: 0.75,
++    opacity: 0.72,
+   },
+ });
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/src/screens/conversations/CircleProfileScreen.js /mnt/data/circles_step9b_work/src/screens/conversations/CircleProfileScreen.js
+--- /mnt/data/circles_step9b_baseline/src/screens/conversations/CircleProfileScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9b_work/src/screens/conversations/CircleProfileScreen.js	2026-07-21 19:26:48.384141752 +0000
+@@ -0,0 +1,570 @@
++import React, { useCallback, useMemo, useState } from 'react';
++import {
++  ActivityIndicator,
++  FlatList,
++  Image,
++  Platform,
++  Pressable,
++  RefreshControl,
++  StyleSheet,
++  Text,
++  View,
++  useWindowDimensions,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { useFocusEffect } from '@react-navigation/native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { Avatar } from '../../components/Avatar';
++import { COLORS } from '../../theme/colors';
++import {
++  getConversationDetails,
++  listConversationTimeline,
++  subscribeToConversationChanges,
++} from '../../services/conversationService';
++
++function Stat({ value, label, onPress }) {
++  const content = (
++    <>
++      <Text style={styles.statValue}>{value}</Text>
++      <Text style={styles.statLabel}>{label}</Text>
++    </>
++  );
++
++  if (!onPress) return <View style={styles.stat}>{content}</View>;
++
++  return (
++    <Pressable
++      onPress={onPress}
++      style={({ pressed }) => [styles.stat, pressed && styles.pressed]}
++    >
++      {content}
++    </Pressable>
++  );
++}
++
++function TimelineTile({ item, size, onPress }) {
++  return (
++    <Pressable
++      onPress={onPress}
++      style={({ pressed }) => [
++        styles.timelineTile,
++        { width: size, height: size },
++        pressed && styles.pressed,
++      ]}
++    >
++      {item.mediaType === 'image' ? (
++        <Image source={{ uri: item.url }} style={styles.tileMedia} />
++      ) : (
++        <View style={styles.videoTile}>
++          <Ionicons name="play" size={28} color="#fff" />
++        </View>
++      )}
++
++      {item.mediaType === 'video' ? (
++        <View style={styles.videoBadge}>
++          <Ionicons name="videocam" size={13} color="#fff" />
++        </View>
++      ) : null}
++    </Pressable>
++  );
++}
++
++export function CircleProfileScreen({ route, navigation }) {
++  const { conversationId } = route.params || {};
++  const { width } = useWindowDimensions();
++  const [details, setDetails] = useState(null);
++  const [timeline, setTimeline] = useState([]);
++  const [activeTab, setActiveTab] = useState('timeline');
++  const [loading, setLoading] = useState(true);
++  const [refreshing, setRefreshing] = useState(false);
++  const [error, setError] = useState('');
++
++  const load = useCallback(async ({ quiet = false } = {}) => {
++    if (!conversationId) return;
++    if (!quiet) setLoading(true);
++    setError('');
++
++    try {
++      const [detailRows, timelineRows] = await Promise.all([
++        getConversationDetails(conversationId),
++        listConversationTimeline(conversationId),
++      ]);
++      setDetails(detailRows);
++      setTimeline(timelineRows);
++    } catch (loadError) {
++      setError(loadError?.message || 'Could not open this private Circle.');
++    } finally {
++      setLoading(false);
++      setRefreshing(false);
++    }
++  }, [conversationId]);
++
++  useFocusEffect(
++    useCallback(() => {
++      load();
++    }, [load])
++  );
++
++  useFocusEffect(
++    useCallback(() => {
++      if (!conversationId) return undefined;
++      return subscribeToConversationChanges({
++        conversationId,
++        onMessage: () => load({ quiet: true }),
++        onMediaChange: () => load({ quiet: true }),
++        onConversationChange: () => load({ quiet: true }),
++      });
++    }, [conversationId, load])
++  );
++
++  const conversation = details?.conversation;
++  const members = details?.members || [];
++  const gridWidth = Math.min(width, 720);
++  const tileSize = Math.floor(gridWidth / 3);
++
++  const viewerItems = useMemo(
++    () => timeline.map((item) => ({
++      ...item,
++      senderName: item.senderName || 'Circle member',
++    })),
++    [timeline]
++  );
++
++  const header = conversation ? (
++    <>
++      <View style={styles.profileHeader}>
++        <Avatar
++          size={92}
++          name={conversation.title}
++          uri={conversation.avatar_url}
++        />
++
++        <Text style={styles.title}>{conversation.title}</Text>
++
++        <View style={styles.privacyRow}>
++          <Ionicons name="lock-closed" size={12} color={COLORS.subtext} />
++          <Text style={styles.privacyText}>
++            {conversation.kind === 'group'
++              ? 'Invitation-only Circle'
++              : 'Private two-person Circle'}
++          </Text>
++        </View>
++
++        <Text style={styles.bio}>
++          {conversation.bio
++            || (conversation.kind === 'group'
++              ? 'A private shared profile for this Circle.'
++              : 'A private shared profile built through your conversation.')}
++        </Text>
++
++        <View style={styles.statsRow}>
++          <Stat
++            value={Number(conversation.timeline_count || timeline.length)}
++            label="Timeline"
++            onPress={() => setActiveTab('timeline')}
++          />
++          <Stat
++            value={Number(conversation.post_count || 0)}
++            label="Posts"
++            onPress={() => setActiveTab('posts')}
++          />
++          <Stat value={members.length} label="Members" />
++        </View>
++
++        {conversation.can_edit ? (
++          <Pressable
++            onPress={() => navigation.navigate('EditCircle', {
++              conversationId,
++            })}
++            style={({ pressed }) => [
++              styles.editButton,
++              pressed && styles.pressed,
++            ]}
++          >
++            <Text style={styles.editButtonText}>Edit Circle</Text>
++          </Pressable>
++        ) : null}
++      </View>
++
++      <View style={styles.membersStrip}>
++        <Text style={styles.membersHeading}>Members</Text>
++        <FlatList
++          horizontal
++          data={members}
++          keyExtractor={(item) => item.user_id}
++          showsHorizontalScrollIndicator={false}
++          contentContainerStyle={styles.membersList}
++          renderItem={({ item }) => (
++            <Pressable
++              onPress={() => navigation.navigate('Profile', {
++                userId: item.user_id,
++              })}
++              style={({ pressed }) => [
++                styles.member,
++                pressed && styles.pressed,
++              ]}
++            >
++              <Avatar
++                size={52}
++                name={item.display_name || 'Member'}
++                uri={item.avatar_url}
++              />
++              <Text style={styles.memberName} numberOfLines={1}>
++                {item.is_me ? 'You' : item.display_name || 'Member'}
++              </Text>
++            </Pressable>
++          )}
++        />
++      </View>
++
++      <View style={styles.tabs}>
++        <Pressable
++          onPress={() => setActiveTab('timeline')}
++          style={[
++            styles.tab,
++            activeTab === 'timeline' && styles.activeTab,
++          ]}
++        >
++          <Ionicons
++            name="time-outline"
++            size={18}
++            color={activeTab === 'timeline' ? COLORS.text : COLORS.subtext}
++          />
++          <Text style={[
++            styles.tabText,
++            activeTab === 'timeline' && styles.activeTabText,
++          ]}>
++            Timeline
++          </Text>
++        </Pressable>
++
++        <Pressable
++          onPress={() => setActiveTab('posts')}
++          style={[
++            styles.tab,
++            activeTab === 'posts' && styles.activeTab,
++          ]}
++        >
++          <Ionicons
++            name="grid-outline"
++            size={18}
++            color={activeTab === 'posts' ? COLORS.text : COLORS.subtext}
++          />
++          <Text style={[
++            styles.tabText,
++            activeTab === 'posts' && styles.activeTabText,
++          ]}>
++            Posts
++          </Text>
++        </Pressable>
++      </View>
++    </>
++  ) : null;
++
++  if (loading && !conversation) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <ActivityIndicator />
++        <Text style={styles.stateText}>Opening Circle profile…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  if (error && !conversation) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <Ionicons name="lock-closed-outline" size={36} color={COLORS.text} />
++        <Text style={styles.errorText}>{error}</Text>
++        <Pressable onPress={() => load()} style={styles.retryButton}>
++          <Text style={styles.retryText}>Try again</Text>
++        </Pressable>
++      </SafeAreaView>
++    );
++  }
++
++  const timelineData = activeTab === 'timeline' ? timeline : [];
++
++  return (
++    <SafeAreaView edges={['bottom']} style={styles.screen}>
++      <View style={styles.contentWidth}>
++        <FlatList
++          data={timelineData}
++          keyExtractor={(item) => item.id}
++          numColumns={3}
++          ListHeaderComponent={header}
++          renderItem={({ item, index }) => (
++            <TimelineTile
++              item={item}
++              size={tileSize}
++              onPress={() => navigation.navigate('ConversationMedia', {
++                items: viewerItems,
++                startIndex: index,
++              })}
++            />
++          )}
++          ListEmptyComponent={(
++            <View style={styles.emptyState}>
++              <Ionicons
++                name={activeTab === 'timeline'
++                  ? 'images-outline'
++                  : 'albums-outline'}
++                size={38}
++                color={COLORS.subtext}
++              />
++              <Text style={styles.emptyTitle}>
++                {activeTab === 'timeline'
++                  ? 'No shared media yet'
++                  : 'No Circle posts yet'}
++              </Text>
++              <Text style={styles.emptyBody}>
++                {activeTab === 'timeline'
++                  ? 'Photos and videos sent in Chat will appear here automatically, without being uploaded twice.'
++                  : 'Circle posts will be intentional posts made for this private shared profile. That separate post flow comes next.'}
++              </Text>
++            </View>
++          )}
++          refreshControl={(
++            <RefreshControl
++              refreshing={refreshing}
++              onRefresh={() => {
++                setRefreshing(true);
++                load({ quiet: true });
++              }}
++              tintColor={COLORS.text}
++            />
++          )}
++          contentContainerStyle={styles.listContent}
++          showsVerticalScrollIndicator={false}
++        />
++      </View>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  contentWidth: {
++    flex: 1,
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++    borderLeftWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
++    borderRightWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
++    borderColor: COLORS.border,
++  },
++  listContent: {
++    flexGrow: 1,
++    paddingBottom: 44,
++  },
++  profileHeader: {
++    alignItems: 'center',
++    paddingHorizontal: 22,
++    paddingTop: 22,
++    paddingBottom: 18,
++  },
++  title: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 22,
++    textAlign: 'center',
++  },
++  privacyRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 4,
++    marginTop: 5,
++  },
++  privacyText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
++  },
++  bio: {
++    maxWidth: 440,
++    marginTop: 10,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 14,
++    lineHeight: 20,
++    textAlign: 'center',
++  },
++  statsRow: {
++    width: '100%',
++    maxWidth: 400,
++    flexDirection: 'row',
++    marginTop: 19,
++  },
++  stat: {
++    flex: 1,
++    alignItems: 'center',
++    paddingVertical: 6,
++  },
++  statValue: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 17,
++  },
++  statLabel: {
++    marginTop: 1,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++  },
++  editButton: {
++    width: '100%',
++    maxWidth: 360,
++    minHeight: 38,
++    alignItems: 'center',
++    justifyContent: 'center',
++    marginTop: 16,
++    borderRadius: 9,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: '#f4f4f4',
++  },
++  editButtonText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 13,
++  },
++  membersStrip: {
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderTopColor: COLORS.border,
++    paddingTop: 12,
++    paddingBottom: 11,
++  },
++  membersHeading: {
++    marginLeft: 14,
++    marginBottom: 9,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 13,
++  },
++  membersList: {
++    paddingHorizontal: 10,
++  },
++  member: {
++    width: 72,
++    alignItems: 'center',
++    marginHorizontal: 2,
++  },
++  memberName: {
++    width: 70,
++    marginTop: 5,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 10,
++    textAlign: 'center',
++  },
++  tabs: {
++    height: 48,
++    flexDirection: 'row',
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++  },
++  tab: {
++    flex: 1,
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    gap: 6,
++    borderBottomWidth: 2,
++    borderBottomColor: 'transparent',
++  },
++  activeTab: {
++    borderBottomColor: COLORS.text,
++  },
++  tabText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 12,
++  },
++  activeTabText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  timelineTile: {
++    overflow: 'hidden',
++    borderWidth: 0.5,
++    borderColor: COLORS.bg,
++    backgroundColor: '#ececec',
++  },
++  tileMedia: {
++    width: '100%',
++    height: '100%',
++  },
++  videoTile: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: '#1c1c1e',
++  },
++  videoBadge: {
++    position: 'absolute',
++    top: 7,
++    right: 7,
++    width: 24,
++    height: 24,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 12,
++    backgroundColor: 'rgba(0,0,0,0.58)',
++  },
++  emptyState: {
++    alignItems: 'center',
++    paddingHorizontal: 36,
++    paddingVertical: 54,
++  },
++  emptyTitle: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 16,
++  },
++  emptyBody: {
++    maxWidth: 420,
++    marginTop: 6,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 13,
++    lineHeight: 19,
++    textAlign: 'center',
++  },
++  centerState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorText: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    textAlign: 'center',
++  },
++  retryButton: {
++    marginTop: 14,
++    paddingHorizontal: 16,
++    paddingVertical: 9,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  retryText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  pressed: {
++    opacity: 0.7,
++  },
++});
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/src/screens/conversations/ConversationMediaViewerScreen.js /mnt/data/circles_step9b_work/src/screens/conversations/ConversationMediaViewerScreen.js
+--- /mnt/data/circles_step9b_baseline/src/screens/conversations/ConversationMediaViewerScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9b_work/src/screens/conversations/ConversationMediaViewerScreen.js	2026-07-21 19:25:49.009351557 +0000
+@@ -0,0 +1,259 @@
++import React, { useEffect, useMemo, useState } from 'react';
++import {
++  ActivityIndicator,
++  Image,
++  Pressable,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { Audio, Video } from 'expo-av';
++
++function formatTimestamp(timestamp) {
++  const date = new Date(timestamp);
++  if (!Number.isFinite(date.getTime())) return '';
++  return date.toLocaleString([], {
++    month: 'short',
++    day: 'numeric',
++    hour: 'numeric',
++    minute: '2-digit',
++  });
++}
++
++export function ConversationMediaViewerScreen({ route, navigation }) {
++  const items = useMemo(() => route.params?.items || [], [route.params?.items]);
++  const requestedIndex = Number(route.params?.startIndex || 0);
++  const [index, setIndex] = useState(
++    Math.max(0, Math.min(requestedIndex, Math.max(0, items.length - 1)))
++  );
++  const [muted, setMuted] = useState(false);
++  const [loading, setLoading] = useState(true);
++  const item = items[index];
++
++  useEffect(() => {
++    Audio.setAudioModeAsync({
++      playsInSilentModeIOS: true,
++      staysActiveInBackground: false,
++      shouldDuckAndroid: true,
++      playThroughEarpieceAndroid: false,
++    }).catch(() => {});
++  }, []);
++
++  useEffect(() => {
++    setLoading(true);
++  }, [item?.id]);
++
++  if (!item) {
++    return (
++      <SafeAreaView style={styles.root}>
++        <Pressable onPress={() => navigation.goBack()} style={styles.closeButton}>
++          <Ionicons name="close" size={28} color="#fff" />
++        </Pressable>
++        <View style={styles.center}>
++          <Text style={styles.emptyText}>This media is unavailable.</Text>
++        </View>
++      </SafeAreaView>
++    );
++  }
++
++  const previous = () => {
++    if (index > 0) setIndex((value) => value - 1);
++  };
++
++  const next = () => {
++    if (index + 1 < items.length) setIndex((value) => value + 1);
++  };
++
++  return (
++    <SafeAreaView style={styles.root}>
++      <View style={styles.topBar}>
++        <Pressable
++          onPress={() => navigation.goBack()}
++          hitSlop={10}
++          style={styles.topButton}
++        >
++          <Ionicons name="close" size={28} color="#fff" />
++        </Pressable>
++
++        <View style={styles.meta}>
++          <Text style={styles.sender} numberOfLines={1}>
++            {item.senderName || 'Circle media'}
++          </Text>
++          <Text style={styles.time}>{formatTimestamp(item.createdAt)}</Text>
++        </View>
++
++        {item.mediaType === 'video' ? (
++          <Pressable
++            onPress={() => setMuted((value) => !value)}
++            hitSlop={10}
++            style={styles.topButton}
++          >
++            <Ionicons
++              name={muted ? 'volume-mute' : 'volume-high'}
++              size={23}
++              color="#fff"
++            />
++          </Pressable>
++        ) : (
++          <View style={styles.topButton} />
++        )}
++      </View>
++
++      <View style={styles.stage}>
++        {item.mediaType === 'video' ? (
++          <Video
++            key={item.id}
++            source={{ uri: item.url }}
++            style={styles.media}
++            resizeMode="contain"
++            shouldPlay
++            isMuted={muted}
++            volume={1}
++            useNativeControls
++            onLoad={() => setLoading(false)}
++            onError={() => setLoading(false)}
++          />
++        ) : (
++          <Image
++            key={item.id}
++            source={{ uri: item.url }}
++            style={styles.media}
++            resizeMode="contain"
++            onLoad={() => setLoading(false)}
++            onError={() => setLoading(false)}
++          />
++        )}
++
++        {loading ? (
++          <View style={styles.loading}>
++            <ActivityIndicator color="#fff" />
++          </View>
++        ) : null}
++
++        <View style={styles.navigationLayer} pointerEvents="box-none">
++          <Pressable
++            onPress={previous}
++            disabled={index === 0}
++            style={styles.leftZone}
++          />
++          <Pressable
++            onPress={next}
++            disabled={index + 1 >= items.length}
++            style={styles.rightZone}
++          />
++        </View>
++      </View>
++
++      <View style={styles.footer}>
++        <Text style={styles.counter}>
++          {index + 1} of {items.length}
++        </Text>
++        {item.messageBody ? (
++          <Text style={styles.caption} numberOfLines={3}>
++            {item.messageBody}
++          </Text>
++        ) : null}
++      </View>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    flex: 1,
++    backgroundColor: '#000',
++  },
++  topBar: {
++    minHeight: 58,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 8,
++  },
++  topButton: {
++    width: 46,
++    height: 46,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  closeButton: {
++    position: 'absolute',
++    zIndex: 2,
++    top: 10,
++    left: 8,
++    width: 46,
++    height: 46,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  meta: {
++    flex: 1,
++    alignItems: 'center',
++  },
++  sender: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 14,
++  },
++  time: {
++    marginTop: 1,
++    color: 'rgba(255,255,255,0.66)',
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++  },
++  stage: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  media: {
++    width: '100%',
++    height: '100%',
++  },
++  loading: {
++    ...StyleSheet.absoluteFillObject,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  navigationLayer: {
++    ...StyleSheet.absoluteFillObject,
++    flexDirection: 'row',
++  },
++  leftZone: {
++    width: '32%',
++    height: '100%',
++  },
++  rightZone: {
++    flex: 1,
++    height: '100%',
++  },
++  footer: {
++    minHeight: 66,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 18,
++    paddingVertical: 8,
++  },
++  counter: {
++    color: 'rgba(255,255,255,0.74)',
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
++  },
++  caption: {
++    marginTop: 5,
++    color: '#fff',
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 13,
++    textAlign: 'center',
++  },
++  center: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  emptyText: {
++    color: '#fff',
++    fontFamily: 'Manrope_600SemiBold',
++  },
++});
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/src/screens/conversations/EditCircleScreen.js /mnt/data/circles_step9b_work/src/screens/conversations/EditCircleScreen.js
+--- /mnt/data/circles_step9b_baseline/src/screens/conversations/EditCircleScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9b_work/src/screens/conversations/EditCircleScreen.js	2026-07-21 19:27:26.426143784 +0000
+@@ -0,0 +1,362 @@
++import React, { useCallback, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Image,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { useFocusEffect } from '@react-navigation/native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import * as ImagePicker from 'expo-image-picker';
++import { Avatar } from '../../components/Avatar';
++import { COLORS } from '../../theme/colors';
++import {
++  getConversationDetails,
++  updateGroupCircleProfile,
++} from '../../services/conversationService';
++import {
++  removeConversationMedia,
++  uploadConversationAsset,
++} from '../../services/conversationMediaService';
++
++export function EditCircleScreen({ route, navigation }) {
++  const { conversationId } = route.params || {};
++  const [details, setDetails] = useState(null);
++  const [title, setTitle] = useState('');
++  const [bio, setBio] = useState('');
++  const [avatarAsset, setAvatarAsset] = useState(null);
++  const [loading, setLoading] = useState(true);
++  const [saving, setSaving] = useState(false);
++
++  const load = useCallback(async () => {
++    if (!conversationId) return;
++
++    try {
++      const result = await getConversationDetails(conversationId);
++      if (result?.conversation?.kind !== 'group') {
++        throw new Error('Only group Circles have editable shared identity.');
++      }
++
++      setDetails(result);
++      setTitle(result.conversation.title || '');
++      setBio(result.conversation.bio || '');
++    } catch (error) {
++      Alert.alert('Circle unavailable', error?.message || 'Please try again.');
++      navigation.goBack();
++    } finally {
++      setLoading(false);
++    }
++  }, [conversationId, navigation]);
++
++  useFocusEffect(
++    useCallback(() => {
++      load();
++    }, [load])
++  );
++
++  const pickAvatar = async () => {
++    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
++
++    if (permission.status !== 'granted') {
++      Alert.alert(
++        'Photo permission needed',
++        'Allow photo access to choose a Circle profile picture.'
++      );
++      return;
++    }
++
++    const result = await ImagePicker.launchImageLibraryAsync({
++      mediaTypes: ImagePicker.MediaTypeOptions.Images,
++      allowsEditing: true,
++      aspect: [1, 1],
++      quality: 0.9,
++    });
++
++    if (result.canceled) return;
++    const asset = result.assets?.[0];
++    if (!asset?.uri) return;
++
++    setAvatarAsset({
++      uri: asset.uri,
++      mimeType: asset.mimeType || 'image/jpeg',
++    });
++  };
++
++  const save = async () => {
++    const cleanTitle = title.trim();
++    const cleanBio = bio.trim();
++
++    if (!cleanTitle) {
++      Alert.alert('Circle name required', 'Enter a name for this Circle.');
++      return;
++    }
++
++    if (cleanTitle.length > 60) {
++      Alert.alert('Circle name too long', 'Use 60 characters or fewer.');
++      return;
++    }
++
++    if (cleanBio.length > 160) {
++      Alert.alert('Bio too long', 'Use 160 characters or fewer.');
++      return;
++    }
++
++    setSaving(true);
++    let uploadedPath = null;
++
++    try {
++      if (avatarAsset) {
++        const upload = await uploadConversationAsset({
++          conversationId,
++          category: 'avatars',
++          uri: avatarAsset.uri,
++          mimeType: avatarAsset.mimeType,
++        });
++        uploadedPath = upload.storagePath;
++      }
++
++      await updateGroupCircleProfile({
++        conversationId,
++        title: cleanTitle,
++        bio: cleanBio,
++        avatarPath: uploadedPath,
++      });
++
++      navigation.goBack();
++    } catch (error) {
++      if (uploadedPath) {
++        removeConversationMedia([uploadedPath]).catch(() => {});
++      }
++
++      Alert.alert(
++        'Circle not updated',
++        error?.message || 'Please try again.'
++      );
++    } finally {
++      setSaving(false);
++    }
++  };
++
++  if (loading) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <ActivityIndicator />
++      </SafeAreaView>
++    );
++  }
++
++  const conversation = details?.conversation;
++
++  return (
++    <SafeAreaView edges={['bottom']} style={styles.screen}>
++      <ScrollView
++        contentContainerStyle={styles.content}
++        keyboardShouldPersistTaps="handled"
++      >
++        <Pressable
++          onPress={pickAvatar}
++          disabled={saving}
++          style={({ pressed }) => [
++            styles.avatarButton,
++            pressed && styles.pressed,
++          ]}
++        >
++          {avatarAsset ? (
++            <Image source={{ uri: avatarAsset.uri }} style={styles.avatarImage} />
++          ) : (
++            <Avatar
++              size={104}
++              name={conversation?.title || 'Circle'}
++              uri={conversation?.avatar_url}
++            />
++          )}
++          <View style={styles.cameraBadge}>
++            <Ionicons name="camera" size={17} color="#fff" />
++          </View>
++        </Pressable>
++
++        <Text style={styles.changePhoto}>Change Circle photo</Text>
++        <Text style={styles.helper}>
++          Any accepted member can update this shared group identity.
++        </Text>
++
++        <Text style={styles.label}>CIRCLE NAME</Text>
++        <TextInput
++          value={title}
++          onChangeText={setTitle}
++          maxLength={60}
++          editable={!saving}
++          placeholder="Circle name"
++          style={styles.input}
++        />
++        <Text style={styles.counter}>{title.length}/60</Text>
++
++        <Text style={styles.label}>CIRCLE BIO</Text>
++        <TextInput
++          value={bio}
++          onChangeText={setBio}
++          maxLength={160}
++          editable={!saving}
++          placeholder="What is this Circle about?"
++          multiline
++          style={[styles.input, styles.bioInput]}
++        />
++        <Text style={styles.counter}>{bio.length}/160</Text>
++
++        <Pressable
++          onPress={save}
++          disabled={saving}
++          style={({ pressed }) => [
++            styles.saveButton,
++            (pressed || saving) && styles.pressed,
++          ]}
++        >
++          {saving ? (
++            <ActivityIndicator color="#fff" />
++          ) : (
++            <Text style={styles.saveText}>Save Circle Profile</Text>
++          )}
++        </Pressable>
++
++        <View style={styles.privacyNote}>
++          <Ionicons name="lock-closed-outline" size={20} color={COLORS.text} />
++          <Text style={styles.privacyText}>
++            The Circle photo is stored privately and is only available to
++            accepted members.
++          </Text>
++        </View>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  content: {
++    width: '100%',
++    maxWidth: 600,
++    alignSelf: 'center',
++    paddingHorizontal: 18,
++    paddingTop: 22,
++    paddingBottom: 48,
++  },
++  centerState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: COLORS.bg,
++  },
++  avatarButton: {
++    width: 112,
++    height: 112,
++    alignSelf: 'center',
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  avatarImage: {
++    width: 104,
++    height: 104,
++    borderRadius: 52,
++  },
++  cameraBadge: {
++    position: 'absolute',
++    right: 1,
++    bottom: 5,
++    width: 34,
++    height: 34,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 17,
++    borderWidth: 3,
++    borderColor: COLORS.bg,
++    backgroundColor: COLORS.primary,
++  },
++  changePhoto: {
++    marginTop: 8,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 14,
++    textAlign: 'center',
++  },
++  helper: {
++    maxWidth: 360,
++    alignSelf: 'center',
++    marginTop: 4,
++    marginBottom: 28,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 17,
++    textAlign: 'center',
++  },
++  label: {
++    marginTop: 16,
++    marginBottom: 7,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 11,
++    letterSpacing: 0.6,
++  },
++  input: {
++    minHeight: 48,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    borderRadius: 12,
++    paddingHorizontal: 13,
++    color: COLORS.text,
++    backgroundColor: '#f8f8f8',
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 15,
++  },
++  bioInput: {
++    minHeight: 112,
++    paddingTop: 12,
++    textAlignVertical: 'top',
++  },
++  counter: {
++    marginTop: 5,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 10,
++    textAlign: 'right',
++  },
++  saveButton: {
++    minHeight: 48,
++    alignItems: 'center',
++    justifyContent: 'center',
++    marginTop: 26,
++    borderRadius: 12,
++    backgroundColor: COLORS.primary,
++  },
++  saveText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  privacyNote: {
++    flexDirection: 'row',
++    marginTop: 18,
++    padding: 14,
++    borderRadius: 13,
++    backgroundColor: '#f1f1f1',
++  },
++  privacyText: {
++    flex: 1,
++    marginLeft: 10,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 18,
++  },
++  pressed: {
++    opacity: 0.7,
++  },
++});
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/src/screens/conversations/InboxScreen.js /mnt/data/circles_step9b_work/src/screens/conversations/InboxScreen.js
+--- /mnt/data/circles_step9b_baseline/src/screens/conversations/InboxScreen.js	2026-07-21 19:31:20.264170225 +0000
++++ /mnt/data/circles_step9b_work/src/screens/conversations/InboxScreen.js	2026-07-21 19:28:58.785096035 +0000
+@@ -274,6 +274,7 @@
+       conversationId: conversation.id,
+       name: conversation.title,
+       kind: conversation.kind,
++      avatarUri: conversation.avatarUri,
+     });
+   };
+ 
+@@ -303,6 +304,7 @@
+           conversationId,
+           name: invitation.title,
+           kind: 'group',
++          avatarUri: null,
+         });
+       }
+     } catch (responseError) {
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/src/services/conversationMediaService.js /mnt/data/circles_step9b_work/src/services/conversationMediaService.js
+--- /mnt/data/circles_step9b_baseline/src/services/conversationMediaService.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9b_work/src/services/conversationMediaService.js	2026-07-21 19:24:19.210194468 +0000
+@@ -0,0 +1,117 @@
++import * as FileSystem from 'expo-file-system/legacy';
++import { decode } from 'base64-arraybuffer';
++import { supabase } from '../lib/supabase';
++import { ensureAuthed } from './authService';
++import { compressIfImage, normalizeMime } from './uploadService';
++
++export const CONVERSATION_MEDIA_BUCKET = 'conversation-media';
++
++function sanitizeSegment(value) {
++  return String(value || '')
++    .trim()
++    .replace(/[^a-zA-Z0-9_-]/g, '');
++}
++
++function extensionForMime(mime) {
++  if (mime === 'image/png') return 'png';
++  if (mime === 'image/webp') return 'webp';
++  if (mime.startsWith('video/')) return 'mp4';
++  return 'jpg';
++}
++
++export async function uploadConversationAsset({
++  conversationId,
++  category = 'messages',
++  uri,
++  mimeType,
++}) {
++  const { user } = await ensureAuthed();
++  const safeConversationId = sanitizeSegment(conversationId);
++  const safeCategory = sanitizeSegment(category);
++
++  if (!safeConversationId || !safeCategory || !uri) {
++    throw new Error('Conversation media is missing required information.');
++  }
++
++  const prepared = await compressIfImage(uri, mimeType || 'image/jpeg');
++  const normalizedMime = normalizeMime(prepared.mime);
++  const extension = extensionForMime(normalizedMime);
++  const filename = `${Date.now()}_${Math.floor(Math.random() * 1e7)}.${extension}`;
++  const storagePath = `${safeConversationId}/${safeCategory}/${user.id}/${filename}`;
++
++  const base64 = await FileSystem.readAsStringAsync(prepared.uri, {
++    encoding: 'base64',
++  });
++
++  const { error } = await supabase.storage
++    .from(CONVERSATION_MEDIA_BUCKET)
++    .upload(storagePath, decode(base64), {
++      contentType: normalizedMime,
++      upsert: false,
++    });
++
++  if (error) throw error;
++
++  return {
++    storagePath,
++    mimeType: normalizedMime,
++  };
++}
++
++export async function createConversationMediaSignedUrl(
++  storagePath,
++  expiresIn = 3600
++) {
++  if (!storagePath) return null;
++
++  const { data, error } = await supabase.storage
++    .from(CONVERSATION_MEDIA_BUCKET)
++    .createSignedUrl(storagePath, expiresIn);
++
++  if (error) throw error;
++  return data?.signedUrl || null;
++}
++
++export async function createConversationMediaSignedUrls(
++  storagePaths,
++  expiresIn = 3600
++) {
++  const uniquePaths = Array.from(new Set((storagePaths || []).filter(Boolean)));
++  if (!uniquePaths.length) return new Map();
++
++  const { data, error } = await supabase.storage
++    .from(CONVERSATION_MEDIA_BUCKET)
++    .createSignedUrls(uniquePaths, expiresIn);
++
++  if (error) throw error;
++
++  const map = new Map();
++  (data || []).forEach((item, index) => {
++    const path = item.path || uniquePaths[index];
++    if (path && item.signedUrl) map.set(path, item.signedUrl);
++  });
++  return map;
++}
++
++export async function hydrateConversationMediaItems(items = []) {
++  const signedUrls = await createConversationMediaSignedUrls(
++    items.map((item) => item.storagePath)
++  );
++
++  return items.map((item) => ({
++    ...item,
++    url: signedUrls.get(item.storagePath) || null,
++  }));
++}
++
++export async function removeConversationMedia(storagePaths = []) {
++  const paths = Array.from(new Set(storagePaths.filter(Boolean)));
++  if (!paths.length) return [];
++
++  const { data, error } = await supabase.storage
++    .from(CONVERSATION_MEDIA_BUCKET)
++    .remove(paths);
++
++  if (error) throw error;
++  return data || [];
++}
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/src/services/conversationService.js /mnt/data/circles_step9b_work/src/services/conversationService.js
+--- /mnt/data/circles_step9b_baseline/src/services/conversationService.js	2026-07-21 19:31:20.284469598 +0000
++++ /mnt/data/circles_step9b_work/src/services/conversationService.js	2026-07-21 19:25:03.978040075 +0000
+@@ -1,5 +1,10 @@
+ import { supabase } from '../lib/supabase';
+ import { ensureAuthed } from './authService';
++import {
++  createConversationMediaSignedUrl,
++  hydrateConversationMediaItems,
++  removeConversationMedia,
++} from './conversationMediaService';
+ 
+ function mapConversation(row) {
+   return {
+@@ -7,6 +12,7 @@
+     kind: row.kind,
+     title: row.display_title || 'Conversation',
+     avatarUri: row.display_avatar || null,
++    avatarPath: row.display_avatar_path || null,
+     otherUserId: row.other_user_id || null,
+     lastMessage: row.last_message || null,
+     lastMessageAt: row.last_message_at || null,
+@@ -31,6 +37,24 @@
+   };
+ }
+ 
++function mapMedia(row) {
++  return {
++    id: row.id || row.media_id,
++    messageId: row.message_id || null,
++    storagePath: row.storage_path,
++    mediaType: row.media_type,
++    width: Number(row.width || 0) || null,
++    height: Number(row.height || 0) || null,
++    durationMs: Number(row.duration_ms || 0) || null,
++    sortOrder: Number(row.sort_order || 0),
++    senderId: row.sender_id || null,
++    senderName: row.sender_name || null,
++    senderAvatar: row.sender_avatar || null,
++    messageBody: row.message_body || null,
++    createdAt: row.created_at || null,
++  };
++}
++
+ function mapMessage(row) {
+   return {
+     id: row.message_id,
+@@ -38,11 +62,48 @@
+     senderId: row.sender_id,
+     senderName: row.sender_name || 'Member',
+     senderAvatar: row.sender_avatar || null,
+-    body: row.body,
++    body: row.body || '',
++    media: (row.media || []).map(mapMedia),
+     createdAt: row.created_at,
+   };
+ }
+ 
++async function hydrateMessages(messages) {
++  const flatMedia = messages.flatMap((message) =>
++    message.media.map((item) => ({ ...item, messageId: message.id }))
++  );
++  const hydrated = await hydrateConversationMediaItems(flatMedia);
++  const byMessage = new Map();
++
++  hydrated.forEach((item) => {
++    const current = byMessage.get(item.messageId) || [];
++    current.push(item);
++    byMessage.set(item.messageId, current);
++  });
++
++  return messages.map((message) => ({
++    ...message,
++    media: (byMessage.get(message.id) || [])
++      .sort((a, b) => a.sortOrder - b.sortOrder),
++  }));
++}
++
++async function hydrateConversationAvatar(conversation) {
++  if (!conversation.avatarPath) return conversation;
++
++  try {
++    const signed = await createConversationMediaSignedUrl(
++      conversation.avatarPath
++    );
++    return {
++      ...conversation,
++      avatarUri: signed || conversation.avatarUri,
++    };
++  } catch {
++    return conversation;
++  }
++}
++
+ export async function getCurrentConversationUser() {
+   const { user } = await ensureAuthed();
+   return user;
+@@ -52,7 +113,10 @@
+   await ensureAuthed();
+   const { data, error } = await supabase.rpc('get_my_conversations');
+   if (error) throw error;
+-  return (data || []).map(mapConversation);
++
++  return Promise.all((data || []).map((row) =>
++    hydrateConversationAvatar(mapConversation(row))
++  ));
+ }
+ 
+ export async function listConversationInvitations() {
+@@ -108,19 +172,59 @@
+     p_before: new Date().toISOString(),
+   });
+   if (error) throw error;
+-  return (data || []).map(mapMessage);
++  return hydrateMessages((data || []).map(mapMessage));
+ }
+ 
+-export async function sendConversationMessage(conversationId, body) {
++export async function sendConversationMessage(
++  conversationId,
++  body,
++  mediaItems = []
++) {
+   await ensureAuthed();
+-  const { data, error } = await supabase.rpc('send_conversation_message', {
+-    p_conversation_id: conversationId,
+-    p_body: body,
+-  });
++  const { data, error } = await supabase.rpc(
++    'send_conversation_message_with_media',
++    {
++      p_conversation_id: conversationId,
++      p_body: body?.trim() || null,
++      p_media: mediaItems.map((item) => ({
++        storage_path: item.storagePath,
++        media_type: item.mediaType,
++        width: item.width || null,
++        height: item.height || null,
++        duration_ms: item.durationMs || null,
++      })),
++    }
++  );
++
+   if (error) throw error;
+   const row = Array.isArray(data) ? data[0] : data;
+   if (!row) throw new Error('The message was sent, but no message row returned.');
+-  return mapMessage(row);
++
++  const [message] = await hydrateMessages([mapMessage(row)]);
++  return message;
++}
++
++export async function deleteOwnConversationMessage(messageId) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc(
++    'delete_own_conversation_message',
++    { p_message_id: messageId }
++  );
++
++  if (error) throw error;
++  const paths = data?.storage_paths || [];
++
++  try {
++    await removeConversationMedia(paths);
++  } catch {
++    // The database deletion is authoritative. A later cleanup can remove an
++    // orphaned private object without exposing it to the Timeline or chat.
++  }
++
++  return {
++    conversationId: data?.conversation_id || null,
++    storagePaths: paths,
++  };
+ }
+ 
+ export async function markConversationRead(conversationId) {
+@@ -146,28 +250,84 @@
+     p_conversation_id: conversationId,
+   });
+   if (error) throw error;
+-  return data || null;
++
++  const result = data || null;
++  const avatarPath = result?.conversation?.avatar_path;
++
++  if (result?.conversation && avatarPath) {
++    try {
++      result.conversation.avatar_url =
++        await createConversationMediaSignedUrl(avatarPath);
++    } catch {
++      // The profile still works with initials if the signed URL cannot load.
++    }
++  }
++
++  return result;
++}
++
++export async function listConversationTimeline(conversationId) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('get_conversation_timeline', {
++    p_conversation_id: conversationId,
++    p_limit_count: 120,
++    p_before: new Date().toISOString(),
++  });
++
++  if (error) throw error;
++  return hydrateConversationMediaItems((data || []).map(mapMedia));
++}
++
++export async function updateGroupCircleProfile({
++  conversationId,
++  title,
++  bio,
++  avatarPath,
++}) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc(
++    'update_group_circle_profile',
++    {
++      p_conversation_id: conversationId,
++      p_title: title,
++      p_bio: bio || null,
++      p_avatar_path: avatarPath || null,
++    }
++  );
++
++  if (error) throw error;
++  return data;
+ }
+ 
+ export function subscribeToConversationChanges({
+   conversationId,
+   onMessage,
+   onConversationChange,
++  onMediaChange,
+ }) {
+   const channels = [];
+ 
+-  if (conversationId && onMessage) {
++  if (conversationId && (onMessage || onMediaChange)) {
+     const messageChannel = supabase
+       .channel(`conversation_messages_${conversationId}`)
+       .on(
+         'postgres_changes',
+         {
+-          event: 'INSERT',
++          event: '*',
+           schema: 'public',
+           table: 'messages',
+           filter: `conversation_id=eq.${conversationId}`,
+         },
+-        onMessage
++        onMessage || onMediaChange
++      )
++      .on(
++        'postgres_changes',
++        {
++          event: '*',
++          schema: 'public',
++          table: 'message_media',
++        },
++        onMediaChange || onMessage
+       )
+       .subscribe();
+     channels.push(messageChannel);
+@@ -186,6 +346,11 @@
+         { event: '*', schema: 'public', table: 'conversation_invitations' },
+         onConversationChange
+       )
++      .on(
++        'postgres_changes',
++        { event: 'UPDATE', schema: 'public', table: 'conversations' },
++        onConversationChange
++      )
+       .subscribe();
+     channels.push(membershipChannel);
+   }
+diff -ruN '--exclude=conversation-profiles-media-step9b.patch' /mnt/data/circles_step9b_baseline/supabase/migrations/20260721_011_circle_profiles_media_timeline.sql /mnt/data/circles_step9b_work/supabase/migrations/20260721_011_circle_profiles_media_timeline.sql
+--- /mnt/data/circles_step9b_baseline/supabase/migrations/20260721_011_circle_profiles_media_timeline.sql	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9b_work/supabase/migrations/20260721_011_circle_profiles_media_timeline.sql	2026-07-21 19:23:56.338323461 +0000
+@@ -0,0 +1,806 @@
++-- Circles Step 9B — Circle profiles, private chat media, and automatic Timeline
++--
++-- This migration keeps one private Storage object per sent photo/video. The
++-- Timeline is a membership-protected view over message_media; it does not copy
++-- uploads into a second archive.
++
++create extension if not exists pgcrypto;
++
++alter table public.conversations
++  add column if not exists bio text,
++  add column if not exists avatar_path text;
++
++do $$
++begin
++  if not exists (
++    select 1
++    from pg_constraint
++    where conname = 'conversations_bio_length_check'
++      and conrelid = 'public.conversations'::regclass
++  ) then
++    alter table public.conversations
++      add constraint conversations_bio_length_check
++      check (bio is null or length(bio) <= 160);
++  end if;
++end;
++$$;
++
++-- Media-only messages are valid. Text, when present, still has the same limits.
++alter table public.messages
++  alter column body drop not null;
++
++alter table public.messages
++  drop constraint if exists messages_body_check;
++
++alter table public.messages
++  drop constraint if exists messages_body_length_check;
++
++alter table public.messages
++  add constraint messages_body_length_check
++  check (
++    body is null
++    or length(trim(body)) between 1 and 4000
++  );
++
++create table if not exists public.message_media (
++  id uuid primary key default gen_random_uuid(),
++  message_id uuid not null references public.messages(id) on delete cascade,
++  storage_path text not null,
++  media_type text not null check (media_type in ('image', 'video')),
++  width integer,
++  height integer,
++  duration_ms integer,
++  sort_order integer not null default 0,
++  created_at timestamptz not null default now(),
++  unique (message_id, sort_order)
++);
++
++create index if not exists message_media_message_order_index
++  on public.message_media (message_id, sort_order);
++
++create index if not exists message_media_created_index
++  on public.message_media (created_at desc);
++
++alter table public.message_media enable row level security;
++
++drop policy if exists "Conversation members can view message media" on public.message_media;
++create policy "Conversation members can view message media"
++on public.message_media
++for select
++to authenticated
++using (
++  exists (
++    select 1
++    from public.messages message
++    where message.id = message_media.message_id
++      and public.conversation_is_member(message.conversation_id, auth.uid())
++  )
++);
++
++drop policy if exists "Senders can insert their message media" on public.message_media;
++create policy "Senders can insert their message media"
++on public.message_media
++for insert
++to authenticated
++with check (
++  exists (
++    select 1
++    from public.messages message
++    where message.id = message_media.message_id
++      and message.sender_id = auth.uid()
++      and public.conversation_is_member(message.conversation_id, auth.uid())
++  )
++);
++
++drop policy if exists "Senders can delete their message media" on public.message_media;
++create policy "Senders can delete their message media"
++on public.message_media
++for delete
++to authenticated
++using (
++  exists (
++    select 1
++    from public.messages message
++    where message.id = message_media.message_id
++      and message.sender_id = auth.uid()
++  )
++);
++
++-- Private bucket shared only through conversation membership.
++insert into storage.buckets (
++  id,
++  name,
++  public,
++  file_size_limit,
++  allowed_mime_types
++)
++values (
++  'conversation-media',
++  'conversation-media',
++  false,
++  26214400,
++  array['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime']
++)
++on conflict (id) do update
++set
++  public = false,
++  file_size_limit = excluded.file_size_limit,
++  allowed_mime_types = excluded.allowed_mime_types;
++
++create or replace function public.conversation_id_from_storage_name(p_name text)
++returns uuid
++language sql
++immutable
++set search_path = public
++as $$
++  select case
++    when split_part(coalesce(p_name, ''), '/', 1)
++      ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
++    then split_part(p_name, '/', 1)::uuid
++    else null
++  end;
++$$;
++
++revoke all on function public.conversation_id_from_storage_name(text) from public;
++grant execute on function public.conversation_id_from_storage_name(text) to authenticated;
++
++drop policy if exists "Conversation members can read private media" on storage.objects;
++create policy "Conversation members can read private media"
++on storage.objects
++for select
++to authenticated
++using (
++  bucket_id = 'conversation-media'
++  and public.conversation_is_member(
++    public.conversation_id_from_storage_name(name),
++    auth.uid()
++  )
++);
++
++drop policy if exists "Conversation members can upload private media" on storage.objects;
++create policy "Conversation members can upload private media"
++on storage.objects
++for insert
++to authenticated
++with check (
++  bucket_id = 'conversation-media'
++  and public.conversation_is_member(
++    public.conversation_id_from_storage_name(name),
++    auth.uid()
++  )
++  and (storage.foldername(name))[3] = auth.uid()::text
++);
++
++drop policy if exists "Uploaders can update private conversation media" on storage.objects;
++create policy "Uploaders can update private conversation media"
++on storage.objects
++for update
++to authenticated
++using (
++  bucket_id = 'conversation-media'
++  and public.conversation_is_member(
++    public.conversation_id_from_storage_name(name),
++    auth.uid()
++  )
++  and (storage.foldername(name))[3] = auth.uid()::text
++)
++with check (
++  bucket_id = 'conversation-media'
++  and public.conversation_is_member(
++    public.conversation_id_from_storage_name(name),
++    auth.uid()
++  )
++  and (storage.foldername(name))[3] = auth.uid()::text
++);
++
++drop policy if exists "Uploaders can delete private conversation media" on storage.objects;
++create policy "Uploaders can delete private conversation media"
++on storage.objects
++for delete
++to authenticated
++using (
++  bucket_id = 'conversation-media'
++  and public.conversation_is_member(
++    public.conversation_id_from_storage_name(name),
++    auth.uid()
++  )
++  and (storage.foldername(name))[3] = auth.uid()::text
++);
++
++-- get_my_conversations gains the private group avatar path and media-aware
++-- last-message labels.
++drop function if exists public.get_my_conversations();
++
++create function public.get_my_conversations()
++returns table (
++  conversation_id uuid,
++  kind text,
++  display_title text,
++  display_avatar text,
++  display_avatar_path text,
++  other_user_id uuid,
++  last_message text,
++  last_message_at timestamptz,
++  unread_count bigint,
++  is_pinned boolean,
++  member_count bigint,
++  pending_invitation_count bigint,
++  created_at timestamptz
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  with mine as (
++    select
++      conversation.id,
++      conversation.kind,
++      conversation.title,
++      conversation.avatar_url,
++      conversation.avatar_path,
++      conversation.created_at,
++      conversation.updated_at,
++      membership.last_read_at,
++      membership.is_pinned
++    from public.conversations conversation
++    join public.conversation_members membership
++      on membership.conversation_id = conversation.id
++     and membership.user_id = auth.uid()
++  )
++  select
++    mine.id as conversation_id,
++    mine.kind,
++    case
++      when mine.kind = 'direct'
++        then coalesce(other_user.display_name, 'Connection')
++      else coalesce(nullif(trim(mine.title), ''), 'Private group')
++    end as display_title,
++    case
++      when mine.kind = 'direct' then other_user.avatar_url
++      else mine.avatar_url
++    end as display_avatar,
++    case
++      when mine.kind = 'group' then mine.avatar_path
++      else null
++    end as display_avatar_path,
++    case when mine.kind = 'direct' then other_user.id else null end,
++    coalesce(
++      nullif(last_message.body, ''),
++      case
++        when last_message.media_count = 1 and last_message.first_media_type = 'image'
++          then 'Photo'
++        when last_message.media_count = 1 and last_message.first_media_type = 'video'
++          then 'Video'
++        when last_message.media_count > 1
++          then last_message.media_count::text || ' attachments'
++        else null
++      end
++    ) as last_message,
++    last_message.created_at,
++    (
++      select count(*)
++      from public.messages unread
++      where unread.conversation_id = mine.id
++        and unread.sender_id <> auth.uid()
++        and unread.created_at > mine.last_read_at
++    ),
++    mine.is_pinned,
++    (
++      select count(*)
++      from public.conversation_members member_rows
++      where member_rows.conversation_id = mine.id
++    ),
++    (
++      select count(*)
++      from public.conversation_invitations invite_rows
++      where invite_rows.conversation_id = mine.id
++        and invite_rows.status = 'pending'
++    ),
++    mine.created_at
++  from mine
++  left join lateral (
++    select user_row.id, user_row.display_name, user_row.avatar_url
++    from public.conversation_members other_member
++    join public.users user_row on user_row.id = other_member.user_id
++    where other_member.conversation_id = mine.id
++      and other_member.user_id <> auth.uid()
++    order by other_member.joined_at asc
++    limit 1
++  ) other_user on true
++  left join lateral (
++    select
++      message.body,
++      message.created_at,
++      count(media.id) as media_count,
++      min(media.media_type) filter (where media.sort_order = 0) as first_media_type
++    from public.messages message
++    left join public.message_media media on media.message_id = message.id
++    where message.conversation_id = mine.id
++    group by message.id
++    order by message.created_at desc
++    limit 1
++  ) last_message on true
++  order by
++    mine.is_pinned desc,
++    coalesce(last_message.created_at, mine.updated_at, mine.created_at) desc;
++$$;
++
++revoke all on function public.get_my_conversations() from public;
++grant execute on function public.get_my_conversations() to authenticated;
++
++drop function if exists public.get_conversation_messages(uuid, integer, timestamptz);
++
++create function public.get_conversation_messages(
++  p_conversation_id uuid,
++  p_limit_count integer default 100,
++  p_before timestamptz default now()
++)
++returns table (
++  message_id uuid,
++  conversation_id uuid,
++  sender_id uuid,
++  sender_name text,
++  sender_avatar text,
++  body text,
++  media jsonb,
++  created_at timestamptz
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select
++    message.id,
++    message.conversation_id,
++    message.sender_id,
++    sender.display_name,
++    sender.avatar_url,
++    message.body,
++    coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'id', media_row.id,
++          'storage_path', media_row.storage_path,
++          'media_type', media_row.media_type,
++          'width', media_row.width,
++          'height', media_row.height,
++          'duration_ms', media_row.duration_ms,
++          'sort_order', media_row.sort_order
++        )
++        order by media_row.sort_order
++      )
++      from public.message_media media_row
++      where media_row.message_id = message.id
++    ), '[]'::jsonb),
++    message.created_at
++  from public.messages message
++  join public.users sender on sender.id = message.sender_id
++  where message.conversation_id = p_conversation_id
++    and message.created_at < coalesce(p_before, now())
++    and public.conversation_is_member(p_conversation_id, auth.uid())
++  order by message.created_at desc
++  limit greatest(1, least(coalesce(p_limit_count, 100), 200));
++$$;
++
++revoke all on function public.get_conversation_messages(uuid, integer, timestamptz) from public;
++grant execute on function public.get_conversation_messages(uuid, integer, timestamptz) to authenticated;
++
++create or replace function public.send_conversation_message_with_media(
++  p_conversation_id uuid,
++  p_body text default null,
++  p_media jsonb default '[]'::jsonb
++)
++returns table (
++  message_id uuid,
++  conversation_id uuid,
++  sender_id uuid,
++  sender_name text,
++  sender_avatar text,
++  body text,
++  media jsonb,
++  created_at timestamptz
++)
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_clean_body text := nullif(trim(coalesce(p_body, '')), '');
++  v_media jsonb := coalesce(p_media, '[]'::jsonb);
++  v_message public.messages%rowtype;
++  v_item jsonb;
++  v_index integer := 0;
++  v_path text;
++  v_type text;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if not public.conversation_is_member(p_conversation_id, v_viewer_id) then
++    raise exception 'You are not a member of this private conversation';
++  end if;
++
++  if jsonb_typeof(v_media) <> 'array' then
++    raise exception 'Message media must be an array';
++  end if;
++
++  if jsonb_array_length(v_media) > 6 then
++    raise exception 'A message can contain at most six attachments';
++  end if;
++
++  if v_clean_body is null and jsonb_array_length(v_media) = 0 then
++    raise exception 'Message cannot be empty';
++  end if;
++
++  if v_clean_body is not null and length(v_clean_body) > 4000 then
++    raise exception 'Message is too long';
++  end if;
++
++  insert into public.messages (conversation_id, sender_id, body)
++  values (p_conversation_id, v_viewer_id, v_clean_body)
++  returning * into v_message;
++
++  for v_item in select value from jsonb_array_elements(v_media)
++  loop
++    v_path := nullif(trim(v_item ->> 'storage_path'), '');
++    v_type := lower(nullif(trim(v_item ->> 'media_type'), ''));
++
++    if v_path is null
++      or v_path not like p_conversation_id::text
++        || '/messages/' || v_viewer_id::text || '/%' then
++      raise exception 'Attachment path does not belong to this conversation and sender';
++    end if;
++
++    if v_type not in ('image', 'video') then
++      raise exception 'Attachment type must be image or video';
++    end if;
++
++    insert into public.message_media (
++      message_id,
++      storage_path,
++      media_type,
++      width,
++      height,
++      duration_ms,
++      sort_order
++    )
++    values (
++      v_message.id,
++      v_path,
++      v_type,
++      nullif(v_item ->> 'width', '')::integer,
++      nullif(v_item ->> 'height', '')::integer,
++      nullif(v_item ->> 'duration_ms', '')::integer,
++      v_index
++    );
++
++    v_index := v_index + 1;
++  end loop;
++
++  update public.conversations conversation
++  set updated_at = v_message.created_at
++  where conversation.id = p_conversation_id;
++
++  return query
++  select
++    v_message.id,
++    v_message.conversation_id,
++    v_message.sender_id,
++    sender.display_name,
++    sender.avatar_url,
++    v_message.body,
++    coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'id', media_row.id,
++          'storage_path', media_row.storage_path,
++          'media_type', media_row.media_type,
++          'width', media_row.width,
++          'height', media_row.height,
++          'duration_ms', media_row.duration_ms,
++          'sort_order', media_row.sort_order
++        )
++        order by media_row.sort_order
++      )
++      from public.message_media media_row
++      where media_row.message_id = v_message.id
++    ), '[]'::jsonb),
++    v_message.created_at
++  from public.users sender
++  where sender.id = v_viewer_id;
++end;
++$$;
++
++revoke all on function public.send_conversation_message_with_media(uuid, text, jsonb) from public;
++grant execute on function public.send_conversation_message_with_media(uuid, text, jsonb) to authenticated;
++
++create or replace function public.delete_own_conversation_message(
++  p_message_id uuid
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_paths text[];
++  v_conversation_id uuid;
++begin
++  select
++    message.conversation_id,
++    coalesce(array_agg(media.storage_path) filter (where media.storage_path is not null), array[]::text[])
++  into v_conversation_id, v_paths
++  from public.messages message
++  left join public.message_media media on media.message_id = message.id
++  where message.id = p_message_id
++    and message.sender_id = v_viewer_id
++  group by message.id;
++
++  if v_conversation_id is null then
++    raise exception 'Message not found or not owned by you';
++  end if;
++
++  delete from public.messages message
++  where message.id = p_message_id
++    and message.sender_id = v_viewer_id;
++
++  update public.conversations conversation
++  set updated_at = now()
++  where conversation.id = v_conversation_id;
++
++  return jsonb_build_object(
++    'conversation_id', v_conversation_id,
++    'storage_paths', to_jsonb(v_paths)
++  );
++end;
++$$;
++
++revoke all on function public.delete_own_conversation_message(uuid) from public;
++grant execute on function public.delete_own_conversation_message(uuid) to authenticated;
++
++create or replace function public.get_conversation_timeline(
++  p_conversation_id uuid,
++  p_limit_count integer default 120,
++  p_before timestamptz default now()
++)
++returns table (
++  media_id uuid,
++  message_id uuid,
++  storage_path text,
++  media_type text,
++  width integer,
++  height integer,
++  duration_ms integer,
++  sort_order integer,
++  sender_id uuid,
++  sender_name text,
++  sender_avatar text,
++  message_body text,
++  created_at timestamptz
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select
++    media.id,
++    message.id,
++    media.storage_path,
++    media.media_type,
++    media.width,
++    media.height,
++    media.duration_ms,
++    media.sort_order,
++    message.sender_id,
++    sender.display_name,
++    sender.avatar_url,
++    message.body,
++    message.created_at
++  from public.message_media media
++  join public.messages message on message.id = media.message_id
++  join public.users sender on sender.id = message.sender_id
++  where message.conversation_id = p_conversation_id
++    and message.created_at < coalesce(p_before, now())
++    and public.conversation_is_member(p_conversation_id, auth.uid())
++  order by message.created_at desc, media.sort_order
++  limit greatest(1, least(coalesce(p_limit_count, 120), 300));
++$$;
++
++revoke all on function public.get_conversation_timeline(uuid, integer, timestamptz) from public;
++grant execute on function public.get_conversation_timeline(uuid, integer, timestamptz) to authenticated;
++
++create or replace function public.update_group_circle_profile(
++  p_conversation_id uuid,
++  p_title text,
++  p_bio text default null,
++  p_avatar_path text default null
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_title text := nullif(trim(coalesce(p_title, '')), '');
++  v_bio text := nullif(trim(coalesce(p_bio, '')), '');
++  v_conversation public.conversations%rowtype;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if not public.conversation_is_member(p_conversation_id, v_viewer_id) then
++    raise exception 'Only accepted members can edit this Circle';
++  end if;
++
++  if v_title is null then
++    raise exception 'Circle name is required';
++  end if;
++
++  if length(v_title) > 60 then
++    raise exception 'Circle name must be 60 characters or fewer';
++  end if;
++
++  if v_bio is not null and length(v_bio) > 160 then
++    raise exception 'Circle bio must be 160 characters or fewer';
++  end if;
++
++  if p_avatar_path is not null
++    and p_avatar_path not like p_conversation_id::text
++      || '/avatars/' || v_viewer_id::text || '/%' then
++    raise exception 'Circle avatar path does not belong to this member';
++  end if;
++
++  update public.conversations conversation
++  set
++    title = v_title,
++    bio = v_bio,
++    avatar_path = coalesce(p_avatar_path, conversation.avatar_path),
++    updated_at = now()
++  where conversation.id = p_conversation_id
++    and conversation.kind = 'group'
++  returning * into v_conversation;
++
++  if not found then
++    raise exception 'Only group Circles have shared editable identity';
++  end if;
++
++  return jsonb_build_object(
++    'id', v_conversation.id,
++    'title', v_conversation.title,
++    'bio', v_conversation.bio,
++    'avatar_path', v_conversation.avatar_path,
++    'updated_at', v_conversation.updated_at
++  );
++end;
++$$;
++
++revoke all on function public.update_group_circle_profile(uuid, text, text, text) from public;
++grant execute on function public.update_group_circle_profile(uuid, text, text, text) to authenticated;
++
++create or replace function public.get_conversation_details(p_conversation_id uuid)
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_result jsonb;
++begin
++  if not public.conversation_is_member(p_conversation_id, v_viewer_id) then
++    raise exception 'You are not a member of this private conversation';
++  end if;
++
++  select jsonb_build_object(
++    'conversation', jsonb_build_object(
++      'id', conversation.id,
++      'kind', conversation.kind,
++      'title', case
++        when conversation.kind = 'direct'
++          then coalesce(other_user.display_name, 'Connection')
++        else coalesce(nullif(trim(conversation.title), ''), 'Private group')
++      end,
++      'avatar_url', case
++        when conversation.kind = 'direct' then other_user.avatar_url
++        else conversation.avatar_url
++      end,
++      'avatar_path', case
++        when conversation.kind = 'group' then conversation.avatar_path
++        else null
++      end,
++      'bio', case
++        when conversation.kind = 'direct'
++          then 'A private Circle shared by two connected people.'
++        else conversation.bio
++      end,
++      'created_at', conversation.created_at,
++      'created_by', conversation.created_by,
++      'can_edit', conversation.kind = 'group',
++      'timeline_count', (
++        select count(*)
++        from public.message_media timeline_media
++        join public.messages timeline_message
++          on timeline_message.id = timeline_media.message_id
++        where timeline_message.conversation_id = conversation.id
++      ),
++      'post_count', 0
++    ),
++    'members', coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'user_id', member_user.id,
++          'display_name', member_user.display_name,
++          'avatar_url', member_user.avatar_url,
++          'role', member_row.role,
++          'joined_at', member_row.joined_at,
++          'is_me', member_user.id = v_viewer_id
++        )
++        order by
++          case member_row.role when 'owner' then 0 when 'admin' then 1 else 2 end,
++          member_row.joined_at
++      )
++      from public.conversation_members member_row
++      join public.users member_user on member_user.id = member_row.user_id
++      where member_row.conversation_id = conversation.id
++    ), '[]'::jsonb),
++    'pending_invitations', coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'invitation_id', invitation.id,
++          'user_id', invited_user.id,
++          'display_name', invited_user.display_name,
++          'avatar_url', invited_user.avatar_url,
++          'status', invitation.status,
++          'created_at', invitation.created_at
++        )
++        order by invitation.created_at
++      )
++      from public.conversation_invitations invitation
++      join public.users invited_user on invited_user.id = invitation.invited_user_id
++      where invitation.conversation_id = conversation.id
++        and invitation.status = 'pending'
++    ), '[]'::jsonb)
++  )
++  into v_result
++  from public.conversations conversation
++  left join lateral (
++    select user_row.display_name, user_row.avatar_url
++    from public.conversation_members other_member
++    join public.users user_row on user_row.id = other_member.user_id
++    where other_member.conversation_id = conversation.id
++      and other_member.user_id <> v_viewer_id
++    order by other_member.joined_at
++    limit 1
++  ) other_user on true
++  where conversation.id = p_conversation_id;
++
++  return v_result;
++end;
++$$;
++
++revoke all on function public.get_conversation_details(uuid) from public;
++grant execute on function public.get_conversation_details(uuid) to authenticated;
++
++do $$
++begin
++  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
++     and not exists (
++       select 1
++       from pg_publication_tables
++       where pubname = 'supabase_realtime'
++         and schemaname = 'public'
++         and tablename = 'message_media'
++     ) then
++    alter publication supabase_realtime add table public.message_media;
++  end if;
++end;
++$$;

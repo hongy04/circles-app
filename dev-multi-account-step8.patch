@@ -1,0 +1,1267 @@
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step8_baseline/circles-app/.env.example /mnt/data/circles_step8_work/circles-app/.env.example
+--- /mnt/data/circles_step8_baseline/circles-app/.env.example	2026-07-19 16:54:26.000000000 +0000
++++ /mnt/data/circles_step8_work/circles-app/.env.example	2026-07-21 01:30:06.270845408 +0000
+@@ -7,8 +7,21 @@
+ EXPO_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+ EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
+ 
+-# Development-only login. Leave these unset in the production environment.
++# Primary development-only login. Leave these unset in production.
+ EXPO_PUBLIC_DEV_EMAIL=dev@circles.local
+-EXPO_PUBLIC_DEV_PASSWORD=YOUR_DEV_ACCOUNT_PASSWORD
++EXPO_PUBLIC_DEV_PASSWORD=YOUR_PRIMARY_DEV_ACCOUNT_PASSWORD
++EXPO_PUBLIC_DEV_NAME=Hongy
+ EXPO_PUBLIC_DEV_BYPASS_CODE=000000
+ EXPO_PUBLIC_DEV_PHONE=+15550000000
++
++# Optional controlled test accounts for multi-user testing.
++# Create matching confirmed email/password users in Supabase Authentication first.
++# Test credentials are visible in the local development bundle. Never reuse a
++# real password and never place real user data in these accounts.
++EXPO_PUBLIC_DEV_ACCOUNT_2_EMAIL=dev+alex@circles.local
++EXPO_PUBLIC_DEV_ACCOUNT_2_PASSWORD=YOUR_TEST_ACCOUNT_2_PASSWORD
++EXPO_PUBLIC_DEV_ACCOUNT_2_NAME=Alex Test
++
++EXPO_PUBLIC_DEV_ACCOUNT_3_EMAIL=dev+sam@circles.local
++EXPO_PUBLIC_DEV_ACCOUNT_3_PASSWORD=YOUR_TEST_ACCOUNT_3_PASSWORD
++EXPO_PUBLIC_DEV_ACCOUNT_3_NAME=Sam Test
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step8_baseline/circles-app/App.js /mnt/data/circles_step8_work/circles-app/App.js
+--- /mnt/data/circles_step8_baseline/circles-app/App.js	2026-07-21 01:01:38.036393814 +0000
++++ /mnt/data/circles_step8_work/circles-app/App.js	2026-07-21 01:30:54.278617787 +0000
+@@ -36,6 +36,7 @@
+ import { ProfileScreen } from './src/screens/profile/ProfileScreen';
+ import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
+ import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
++import { DevAccountsScreen } from './src/screens/dev/DevAccountsScreen';
+ 
+ /* ---------------- Layout & helpers ---------------- */
+ const { width: W, height: H } = Dimensions.get('window');
+@@ -80,6 +81,9 @@
+           <RootStack.Screen name="Profile" component={ProfileScreen} />
+           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
+           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
++          {IS_DEVELOPMENT ? (
++            <RootStack.Screen name="DevAccounts" component={DevAccountsScreen} />
++          ) : null}
+           <RootStack.Screen name="PostDetail" component={PostDetailScreen} />
+           <RootStack.Screen name="EditPost" component={EditPostScreen} />
+         </RootStack.Navigator>
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step8_baseline/circles-app/README_DEV_MULTI_ACCOUNT_STEP_8.md /mnt/data/circles_step8_work/circles-app/README_DEV_MULTI_ACCOUNT_STEP_8.md
+--- /mnt/data/circles_step8_baseline/circles-app/README_DEV_MULTI_ACCOUNT_STEP_8.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step8_work/circles-app/README_DEV_MULTI_ACCOUNT_STEP_8.md	2026-07-21 01:32:36.824204441 +0000
+@@ -0,0 +1,152 @@
++# Circles Step 8 — Controlled Multi-Account Testing
++
++This checkpoint adds development-only account switching so the real connection,
++profile, feed, story, comment, like, and ownership rules can be tested without
++real SMS numbers.
++
++It also records the messaging direction in:
++
++`docs/CONVERSATION_SPACES_ARCHITECTURE.md`
++
++That document treats each DM or group chat as an automatically created private
++shared profile with Chat, an automatic sent-media Timeline, deliberate Posts,
++and People/Details.
++
++## Safety boundaries
++
++- The screen is registered only when both `EXPO_PUBLIC_APP_MODE=development`
++  and React Native `__DEV__` are true.
++- Database helpers accept only confirmed `dev@circles.local` or
++  `dev+...@circles.local` auth users.
++- Helpers never modify relationships involving a non-development user.
++- Test passwords are client-visible development credentials. Never reuse a real
++  password or place real personal data in these accounts.
++- No service-role key is used by the app.
++
++## 1. Run the migration
++
++Run this file in Supabase SQL Editor:
++
++`supabase/migrations/20260720_007_dev_test_accounts.sql`
++
++It adds three restricted development RPCs:
++
++- `dev_ensure_test_profile`
++- `dev_prepare_test_network`
++- `dev_reset_test_relationships`
++
++The prepare RPC creates missing `public.users` rows and mutual-contact edges for
++confirmed Circles development auth users. It does not create Auth users.
++
++## 2. Create two test users in Supabase
++
++Open Supabase Dashboard → **Authentication** → **Users** → **Add user**.
++
++Create:
++
++1. `dev+alex@circles.local`
++2. `dev+sam@circles.local`
++
++For each user:
++
++- assign a unique test-only password;
++- enable the option to mark/auto-confirm the email;
++- do not use a real password or real identity.
++
++Your existing `dev@circles.local` account remains the primary account.
++
++## 3. Update `.env.local`
++
++Add these variables using the exact emails and passwords created above:
++
++```env
++EXPO_PUBLIC_DEV_NAME=Hongy
++
++EXPO_PUBLIC_DEV_ACCOUNT_2_EMAIL=dev+alex@circles.local
++EXPO_PUBLIC_DEV_ACCOUNT_2_PASSWORD=YOUR_TEST_ACCOUNT_2_PASSWORD
++EXPO_PUBLIC_DEV_ACCOUNT_2_NAME=Alex Test
++
++EXPO_PUBLIC_DEV_ACCOUNT_3_EMAIL=dev+sam@circles.local
++EXPO_PUBLIC_DEV_ACCOUNT_3_PASSWORD=YOUR_TEST_ACCOUNT_3_PASSWORD
++EXPO_PUBLIC_DEV_ACCOUNT_3_NAME=Sam Test
++```
++
++Do not send or upload `.env.local`. It should remain ignored by Git.
++
++## 4. Apply the app files
++
++Copy the package contents into the project root and allow Windows to replace or
++merge files.
++
++The main changed files are:
++
++- `.env.example`
++- `App.js`
++- `src/config/env.js`
++- `src/services/devTestService.js`
++- `src/screens/dev/DevAccountsScreen.js`
++- `src/screens/profile/AccountSettingsScreen.js`
++- the Step 8 migration
++- the Conversation Spaces architecture document
++
++## 5. Restart Expo
++
++The new environment variables are read when Metro starts, so use:
++
++```powershell
++cd C:\Users\honge\Dev\circles-app
++npx expo start --tunnel --clear
++```
++
++## 6. Prepare and test
++
++Open:
++
++**Me → Settings → Test accounts**
++
++Tap **Prepare mutual candidates**. It should report three accounts.
++
++Recommended sequence:
++
++1. While signed in as Hongy, open Mutuals and send Alex a request.
++2. Open Settings → Test accounts and switch to Alex.
++3. Open Mutuals → Requests and accept Hongy.
++4. Create a post and story as Alex.
++5. Switch to Hongy and confirm Alex's profile, post, and story are visible.
++6. Like and comment on Alex's post.
++7. Confirm Hongy cannot see edit/delete controls for Alex's content.
++8. Switch to Alex and confirm the like/comment appears and Alex can manage only
++   Alex-owned content.
++9. Use **Reset requests and connections**.
++10. Confirm profiles/posts/stories become private again and test pending and
++    decline states.
++
++## Expected privacy behavior
++
++### Mutual only
++
++- Profile metadata is visible enough to request a connection.
++- Private posts and stories are not visible.
++
++### Pending request
++
++- The relationship button shows Requested or Accept/Decline depending on the
++  account.
++- Private content remains restricted.
++
++### Accepted connection
++
++- Profile posts and active stories become visible.
++- Likes and comments work across accounts.
++- Ownership controls remain limited to the creator.
++
++## Commit
++
++After the multi-account flow passes:
++
++```powershell
++git status
++git add App.js .env.example src supabase/migrations docs README_DEV_MULTI_ACCOUNT_STEP_8.md
++git commit -m "Add controlled multi-account testing"
++git push
++```
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step8_baseline/circles-app/docs/CONVERSATION_SPACES_ARCHITECTURE.md /mnt/data/circles_step8_work/circles-app/docs/CONVERSATION_SPACES_ARCHITECTURE.md
+--- /mnt/data/circles_step8_baseline/circles-app/docs/CONVERSATION_SPACES_ARCHITECTURE.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step8_work/circles-app/docs/CONVERSATION_SPACES_ARCHITECTURE.md	2026-07-21 01:32:36.812246672 +0000
+@@ -0,0 +1,170 @@
++# Circles Conversation Spaces — Product and Architecture Direction
++
++## The idea
++
++A direct message or group chat should not be only a disposable stream of text.
++Creating any conversation automatically creates a private shared **Conversation
++Space** for exactly those members.
++
++The chat remains the immediate, everyday surface. The shared space becomes the
++place where the relationship's history can be revisited and intentionally
++built over time.
++
++This is a core Circles feature, not a secondary messaging add-on.
++
++## One conversation, four connected views
++
++### 1. Chat
++
++The familiar chronological message stream for text, reactions, replies, and
++photo/video messages.
++
++### 2. Timeline
++
++A private chronological archive generated automatically from media that was
++sent in the chat.
++
++Important rule: the timeline should reference the original message media; it
++should not upload or copy the file a second time. Every archived photo or video
++keeps its original sender, timestamp, message context, and conversation.
++
++The timeline is therefore a faithful shared-memory view, not a separate public
++feed.
++
++### 3. Posts
++
++A separate, intentional post surface inside the Conversation Space. Members can
++create classic multi-photo/video posts with captions and later comments or
++reactions.
++
++This remains distinct from the automatic timeline:
++
++- **Timeline:** "This was sent while we were talking."
++- **Post:** "We deliberately chose to preserve and present this here."
++
++### 4. People / Details
++
++Members, group name and photo, invitation controls, notification settings,
++pinning, shared-media counts, and leave/remove-member actions.
++
++A two-person DM uses the same architecture as a group; it simply has two
++members and can present the other person's name/photo as its default identity.
++
++## Privacy model
++
++Conversation Spaces are membership-gated at the database level.
++
++- Only current members may read the conversation, messages, timeline media,
++  conversation posts, comments, and reactions.
++- Only the message sender may edit or delete their message.
++- Only the post creator may edit or delete their Conversation Space post.
++- Removing or leaving a conversation removes future access to its private
++  space unless a later product decision explicitly preserves historical access.
++- Storage objects use conversation-owned paths and are served only through
++  membership-aware access rules or signed URLs.
++
++The client hiding a screen is never treated as the security boundary.
++
++## Proposed data model
++
++### `conversations`
++
++- `id uuid`
++- `kind text` (`direct` or `group`)
++- `title text`
++- `avatar_url text`
++- `created_by uuid`
++- `created_at timestamptz`
++
++### `conversation_members`
++
++- `conversation_id uuid`
++- `user_id uuid`
++- `role text` (`owner`, `admin`, `member`)
++- `joined_at timestamptz`
++- `last_read_at timestamptz`
++- notification and pin preferences
++
++A unique constraint on `(conversation_id, user_id)` prevents duplicate
++membership.
++
++### `messages`
++
++- `id uuid`
++- `conversation_id uuid`
++- `sender_id uuid`
++- `body text`
++- optional reply reference
++- `created_at`, `edited_at`, and deletion metadata
++
++The current prototype's free-form `group_id text` should be replaced by a real
++foreign key to `conversations.id`.
++
++### `message_media`
++
++- `id uuid`
++- `message_id uuid`
++- `storage_path text`
++- `media_type text`
++- dimensions, duration, and display order
++- `created_at timestamptz`
++
++The Timeline is primarily a membership-protected query over `message_media`
++joined back to its original message and sender. A separate duplicate timeline
++record is not required initially.
++
++### `conversation_posts`
++
++- `id uuid`
++- `conversation_id uuid`
++- `author_id uuid`
++- `caption text`
++- `created_at`, `updated_at`
++
++Supporting tables:
++
++- `conversation_post_media`
++- `conversation_post_comments`
++- `conversation_post_likes`
++
++These are intentionally separate from personal-profile posts because their
++audience and ownership belong to one private Conversation Space.
++
++## Navigation direction
++
++Opening an inbox item enters the Conversation Space with **Chat** as the default
++view. A clear header control opens the shared profile page, where Timeline,
++Posts, and People are available without making the user feel like they have
++left the conversation.
++
++The interface can later use a segmented control or horizontally swiped tabs:
++
++`Chat | Timeline | Posts | People`
++
++## Build sequence after multi-account testing
++
++### Step 9A — Real conversation foundation
++
++Create `conversations` and `conversation_members`, replace mock inbox groups,
++move messages to membership-aware conversation IDs, and add strict RLS.
++
++### Step 9B — Media messages and automatic timeline
++
++Send photos/videos in chat, store one media object, and render the derived
++chronological Timeline archive.
++
++### Step 9C — Private shared profile and posts
++
++Build the full Conversation Space page and its deliberate classic-post flow.
++
++### Step 9D — Group lifecycle polish
++
++Invites, roles, group editing, unread state, pinning, member removal/leaving,
++notifications, and storage cleanup.
++
++## Locked distinction
++
++The automatic Timeline and the classic Posts surface must not be collapsed into
++one feed. Their meaning is different, and that difference is the heart of this
++feature: shared life can be remembered naturally while members still retain a
++place for intentional expression.
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step8_baseline/circles-app/src/config/env.js /mnt/data/circles_step8_work/circles-app/src/config/env.js
+--- /mnt/data/circles_step8_baseline/circles-app/src/config/env.js	2026-07-19 16:54:26.000000000 +0000
++++ /mnt/data/circles_step8_work/circles-app/src/config/env.js	2026-07-21 01:30:06.258381171 +0000
+@@ -4,12 +4,12 @@
+   requestedMode === 'production' ? 'production' : 'development';
+ 
+ /*
+- * The development bypass is available only when BOTH conditions are true:
++ * Development helpers are available only when BOTH conditions are true:
+  * 1) EXPO_PUBLIC_APP_MODE=development
+  * 2) the JavaScript bundle is running with React Native's __DEV__ flag
+  *
+- * This prevents a release build from shipping an active 000000 bypass even if
+- * someone accidentally leaves the environment variable set to development.
++ * This prevents release builds from exposing test login or account-switching
++ * controls if an environment variable is accidentally left in development.
+  */
+ export const IS_DEVELOPMENT = APP_MODE === 'development' && __DEV__;
+ 
+@@ -21,11 +21,48 @@
+ 
+ export const DEV_EMAIL = process.env.EXPO_PUBLIC_DEV_EMAIL;
+ export const DEV_PASSWORD = process.env.EXPO_PUBLIC_DEV_PASSWORD;
++export const DEV_NAME = process.env.EXPO_PUBLIC_DEV_NAME || 'Primary Test';
+ export const DEV_BYPASS_CODE =
+   process.env.EXPO_PUBLIC_DEV_BYPASS_CODE || '000000';
+ export const DEV_PHONE =
+   process.env.EXPO_PUBLIC_DEV_PHONE || '+15550000000';
+ 
++const DEV_ACCOUNT_2_EMAIL = process.env.EXPO_PUBLIC_DEV_ACCOUNT_2_EMAIL;
++const DEV_ACCOUNT_2_PASSWORD = process.env.EXPO_PUBLIC_DEV_ACCOUNT_2_PASSWORD;
++const DEV_ACCOUNT_2_NAME =
++  process.env.EXPO_PUBLIC_DEV_ACCOUNT_2_NAME || 'Alex Test';
++
++const DEV_ACCOUNT_3_EMAIL = process.env.EXPO_PUBLIC_DEV_ACCOUNT_3_EMAIL;
++const DEV_ACCOUNT_3_PASSWORD = process.env.EXPO_PUBLIC_DEV_ACCOUNT_3_PASSWORD;
++const DEV_ACCOUNT_3_NAME =
++  process.env.EXPO_PUBLIC_DEV_ACCOUNT_3_NAME || 'Sam Test';
++
++/**
++ * Credentials are read only in local development builds. EXPO_PUBLIC values
++ * are visible to the client bundle, so these accounts must contain test data
++ * only and must never be reused for a real account.
++ */
++export const DEV_TEST_ACCOUNTS = [
++  {
++    key: 'primary',
++    email: DEV_EMAIL,
++    password: DEV_PASSWORD,
++    displayName: DEV_NAME,
++  },
++  {
++    key: 'account-2',
++    email: DEV_ACCOUNT_2_EMAIL,
++    password: DEV_ACCOUNT_2_PASSWORD,
++    displayName: DEV_ACCOUNT_2_NAME,
++  },
++  {
++    key: 'account-3',
++    email: DEV_ACCOUNT_3_EMAIL,
++    password: DEV_ACCOUNT_3_PASSWORD,
++    displayName: DEV_ACCOUNT_3_NAME,
++  },
++].filter((account) => Boolean(account.email && account.password));
++
+ export function validatePublicEnvironment() {
+   const missing = [];
+ 
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step8_baseline/circles-app/src/screens/dev/DevAccountsScreen.js /mnt/data/circles_step8_work/circles-app/src/screens/dev/DevAccountsScreen.js
+--- /mnt/data/circles_step8_baseline/circles-app/src/screens/dev/DevAccountsScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step8_work/circles-app/src/screens/dev/DevAccountsScreen.js	2026-07-21 01:30:06.308674347 +0000
+@@ -0,0 +1,463 @@
++import React, { useEffect, useMemo, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { Avatar } from '../../components/Avatar';
++import { COLORS } from '../../theme/colors';
++import {
++  getConfiguredDevAccounts,
++  getCurrentDevSession,
++  prepareDevTestNetwork,
++  resetDevTestRelationships,
++  switchDevAccount,
++} from '../../services/devTestService';
++
++export function DevAccountsScreen({ navigation }) {
++  const accounts = useMemo(() => getConfiguredDevAccounts(), []);
++  const [currentEmail, setCurrentEmail] = useState(null);
++  const [switchingEmail, setSwitchingEmail] = useState(null);
++  const [preparing, setPreparing] = useState(false);
++  const [resetting, setResetting] = useState(false);
++  const [preparedCount, setPreparedCount] = useState(null);
++
++  const refreshCurrent = async () => {
++    const session = await getCurrentDevSession();
++    setCurrentEmail(session?.user?.email?.toLowerCase() || null);
++  };
++
++  useEffect(() => {
++    refreshCurrent().catch((error) => {
++      Alert.alert('Account unavailable', error?.message || 'Please try again.');
++    });
++  }, []);
++
++  const onPrepare = async () => {
++    setPreparing(true);
++    try {
++      const rows = await prepareDevTestNetwork();
++      setPreparedCount(rows.length);
++      Alert.alert(
++        'Test network ready',
++        `${rows.length} development account${rows.length === 1 ? '' : 's'} found. They now appear as mutual-contact candidates until connected.`
++      );
++    } catch (error) {
++      Alert.alert(
++        'Could not prepare accounts',
++        error?.message || 'Run the Step 8 migration and try again.'
++      );
++    } finally {
++      setPreparing(false);
++    }
++  };
++
++  const onReset = () => {
++    Alert.alert(
++      'Reset test relationships?',
++      'Pending requests and accepted connections between development accounts will be removed. Their posts, stories, comments, and profiles will remain.',
++      [
++        { text: 'Cancel', style: 'cancel' },
++        {
++          text: 'Reset',
++          style: 'destructive',
++          onPress: async () => {
++            setResetting(true);
++            try {
++              const result = await resetDevTestRelationships();
++              Alert.alert(
++                'Relationships reset',
++                `${result.requests_deleted || 0} request record(s) and ${result.connections_deleted || 0} connection row(s) removed.`
++              );
++            } catch (error) {
++              Alert.alert(
++                'Reset failed',
++                error?.message || 'Please try again.'
++              );
++            } finally {
++              setResetting(false);
++            }
++          },
++        },
++      ]
++    );
++  };
++
++  const onSwitch = async (account) => {
++    const normalizedEmail = account.email.toLowerCase();
++    if (normalizedEmail === currentEmail) return;
++
++    setSwitchingEmail(normalizedEmail);
++    try {
++      await switchDevAccount(account);
++      setCurrentEmail(normalizedEmail);
++      navigation.reset({
++        index: 0,
++        routes: [{ name: 'MainTabs' }],
++      });
++    } catch (error) {
++      Alert.alert(
++        'Could not switch account',
++        `${error?.message || 'Sign-in failed.'}\n\nConfirm this exact email exists as a confirmed user in Supabase Authentication and that its local .env password matches.`
++      );
++    } finally {
++      setSwitchingEmail(null);
++    }
++  };
++
++  return (
++    <SafeAreaView edges={['top']} style={styles.screen}>
++      <View style={styles.topBar}>
++        <Pressable
++          onPress={() => navigation.goBack()}
++          hitSlop={10}
++          style={styles.topBarSide}
++        >
++          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
++        </Pressable>
++        <Text style={styles.topBarTitle}>Test Accounts</Text>
++        <View style={styles.topBarSide} />
++      </View>
++
++      <ScrollView contentContainerStyle={styles.content}>
++        <View style={styles.notice}>
++          <Ionicons name="flask-outline" size={23} color={COLORS.text} />
++          <View style={styles.noticeText}>
++            <Text style={styles.noticeTitle}>Development only</Text>
++            <Text style={styles.noticeBody}>
++              These accounts are isolated test identities. This screen and its
++              switching controls are excluded from production builds.
++            </Text>
++          </View>
++        </View>
++
++        <Text style={styles.sectionTitle}>CONFIGURED ACCOUNTS</Text>
++        <View style={styles.card}>
++          {accounts.map((account, index) => {
++            const email = account.email.toLowerCase();
++            const isCurrent = email === currentEmail;
++            const isSwitching = switchingEmail === email;
++
++            return (
++              <View key={account.key}>
++                {index > 0 ? <View style={styles.separator} /> : null}
++                <View style={styles.accountRow}>
++                  <Avatar size={46} name={account.displayName} />
++                  <View style={styles.accountText}>
++                    <Text style={styles.accountName}>{account.displayName}</Text>
++                    <Text style={styles.accountEmail} numberOfLines={1}>
++                      {account.email}
++                    </Text>
++                  </View>
++
++                  <Pressable
++                    onPress={() => onSwitch(account)}
++                    disabled={isCurrent || Boolean(switchingEmail)}
++                    style={({ pressed }) => [
++                      styles.switchButton,
++                      isCurrent && styles.currentButton,
++                      (pressed || isSwitching) && styles.pressed,
++                    ]}
++                  >
++                    {isSwitching ? (
++                      <ActivityIndicator size="small" color="#fff" />
++                    ) : (
++                      <Text
++                        style={[
++                          styles.switchButtonText,
++                          isCurrent && styles.currentButtonText,
++                        ]}
++                      >
++                        {isCurrent ? 'Current' : 'Switch'}
++                      </Text>
++                    )}
++                  </Pressable>
++                </View>
++              </View>
++            );
++          })}
++        </View>
++
++        {accounts.length < 2 ? (
++          <View style={styles.warning}>
++            <Ionicons name="alert-circle-outline" size={20} color="#8a4b08" />
++            <Text style={styles.warningText}>
++              Only one account is configured. Add account 2 and account 3 to
++              .env.local, then restart Expo with --clear.
++            </Text>
++          </View>
++        ) : null}
++
++        <Text style={styles.sectionTitle}>TEST NETWORK</Text>
++        <View style={styles.card}>
++          <Pressable
++            onPress={onPrepare}
++            disabled={preparing || Boolean(switchingEmail)}
++            style={({ pressed }) => [
++              styles.actionRow,
++              (pressed || preparing) && styles.pressed,
++            ]}
++          >
++            <View style={styles.actionIcon}>
++              <Ionicons name="people-outline" size={20} color={COLORS.text} />
++            </View>
++            <View style={styles.actionText}>
++              <Text style={styles.actionTitle}>Prepare mutual candidates</Text>
++              <Text style={styles.actionSubtitle}>
++                Creates missing public test profiles and mutual-contact edges.
++                {preparedCount !== null ? ` Last found: ${preparedCount}.` : ''}
++              </Text>
++            </View>
++            {preparing ? (
++              <ActivityIndicator />
++            ) : (
++              <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
++            )}
++          </Pressable>
++
++          <View style={styles.separatorIndented} />
++
++          <Pressable
++            onPress={onReset}
++            disabled={resetting || Boolean(switchingEmail)}
++            style={({ pressed }) => [
++              styles.actionRow,
++              (pressed || resetting) && styles.pressed,
++            ]}
++          >
++            <View style={[styles.actionIcon, styles.resetIcon]}>
++              <Ionicons name="refresh-outline" size={20} color="#b42318" />
++            </View>
++            <View style={styles.actionText}>
++              <Text style={[styles.actionTitle, styles.resetTitle]}>
++                Reset requests and connections
++              </Text>
++              <Text style={styles.actionSubtitle}>
++                Keeps content, but returns all test identities to mutual-only.
++              </Text>
++            </View>
++            {resetting ? <ActivityIndicator /> : null}
++          </Pressable>
++        </View>
++
++        <View style={styles.stepsCard}>
++          <Text style={styles.stepsTitle}>Recommended test order</Text>
++          <Text style={styles.step}>1. Prepare the test network.</Text>
++          <Text style={styles.step}>2. From Hongy, request Alex.</Text>
++          <Text style={styles.step}>3. Switch to Alex and accept.</Text>
++          <Text style={styles.step}>4. Create a post and story as Alex.</Text>
++          <Text style={styles.step}>5. Switch back and test privacy, likes, comments, and ownership.</Text>
++          <Text style={styles.step}>6. Reset relationships and repeat decline/pending states.</Text>
++        </View>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: '#f7f7f7',
++  },
++  topBar: {
++    minHeight: 52,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 10,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  topBarSide: {
++    width: 52,
++    height: 42,
++    alignItems: 'flex-start',
++    justifyContent: 'center',
++  },
++  topBarTitle: {
++    flex: 1,
++    textAlign: 'center',
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 16,
++  },
++  content: {
++    width: '100%',
++    maxWidth: 700,
++    alignSelf: 'center',
++    padding: 16,
++    paddingBottom: 44,
++  },
++  notice: {
++    flexDirection: 'row',
++    padding: 15,
++    borderRadius: 15,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++    marginBottom: 22,
++  },
++  noticeText: {
++    flex: 1,
++    marginLeft: 12,
++  },
++  noticeTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  noticeBody: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 18,
++    marginTop: 3,
++  },
++  sectionTitle: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 11,
++    letterSpacing: 0.6,
++    marginLeft: 4,
++    marginBottom: 7,
++  },
++  card: {
++    overflow: 'hidden',
++    borderRadius: 14,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++    marginBottom: 22,
++  },
++  accountRow: {
++    minHeight: 72,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 14,
++    paddingVertical: 11,
++  },
++  accountText: {
++    flex: 1,
++    marginHorizontal: 12,
++  },
++  accountName: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  accountEmail: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    marginTop: 2,
++  },
++  switchButton: {
++    minWidth: 76,
++    minHeight: 38,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++    paddingHorizontal: 12,
++  },
++  currentButton: {
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    backgroundColor: '#f2f2f2',
++  },
++  switchButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 12,
++  },
++  currentButtonText: {
++    color: COLORS.text,
++  },
++  separator: {
++    height: StyleSheet.hairlineWidth,
++    backgroundColor: COLORS.border,
++    marginLeft: 72,
++  },
++  warning: {
++    flexDirection: 'row',
++    alignItems: 'flex-start',
++    borderRadius: 12,
++    backgroundColor: '#fff6e8',
++    padding: 12,
++    marginTop: -10,
++    marginBottom: 22,
++  },
++  warningText: {
++    flex: 1,
++    color: '#8a4b08',
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 18,
++    marginLeft: 8,
++  },
++  actionRow: {
++    minHeight: 72,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 14,
++    paddingVertical: 12,
++  },
++  actionIcon: {
++    width: 38,
++    height: 38,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 11,
++    backgroundColor: '#f1f1f1',
++    marginRight: 12,
++  },
++  resetIcon: {
++    backgroundColor: '#fff1f0',
++  },
++  actionText: {
++    flex: 1,
++    paddingRight: 10,
++  },
++  actionTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  resetTitle: {
++    color: '#b42318',
++  },
++  actionSubtitle: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 17,
++    marginTop: 2,
++  },
++  separatorIndented: {
++    height: StyleSheet.hairlineWidth,
++    backgroundColor: COLORS.border,
++    marginLeft: 64,
++  },
++  stepsCard: {
++    borderRadius: 14,
++    backgroundColor: '#111',
++    padding: 16,
++  },
++  stepsTitle: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    marginBottom: 8,
++  },
++  step: {
++    color: 'rgba(255,255,255,0.78)',
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 19,
++  },
++  pressed: {
++    opacity: 0.7,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step8_baseline/circles-app/src/screens/profile/AccountSettingsScreen.js /mnt/data/circles_step8_work/circles-app/src/screens/profile/AccountSettingsScreen.js
+--- /mnt/data/circles_step8_baseline/circles-app/src/screens/profile/AccountSettingsScreen.js	2026-07-20 20:09:07.000000000 +0000
++++ /mnt/data/circles_step8_work/circles-app/src/screens/profile/AccountSettingsScreen.js	2026-07-21 01:30:54.284927838 +0000
+@@ -166,6 +166,17 @@
+ 
+           <Text style={styles.sectionLabel}>APP</Text>
+           <View style={styles.section}>
++            {IS_DEVELOPMENT ? (
++              <>
++                <SettingRow
++                  icon="flask-outline"
++                  title="Test accounts"
++                  subtitle="Switch identities and exercise multi-user privacy flows"
++                  onPress={() => navigation.navigate('DevAccounts')}
++                />
++                <View style={styles.separator} />
++              </>
++            ) : null}
+             <SettingRow
+               icon="information-circle-outline"
+               title="Circles"
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step8_baseline/circles-app/src/services/devTestService.js /mnt/data/circles_step8_work/circles-app/src/services/devTestService.js
+--- /mnt/data/circles_step8_baseline/circles-app/src/services/devTestService.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step8_work/circles-app/src/services/devTestService.js	2026-07-21 01:30:06.283416270 +0000
+@@ -0,0 +1,107 @@
++import {
++  DEV_TEST_ACCOUNTS,
++  IS_DEVELOPMENT,
++} from '../config/env';
++import { supabase } from '../lib/supabase';
++
++function assertDevelopment() {
++  if (!IS_DEVELOPMENT) {
++    throw new Error('Development account tools are unavailable in production.');
++  }
++}
++
++export function getConfiguredDevAccounts() {
++  assertDevelopment();
++  return DEV_TEST_ACCOUNTS;
++}
++
++export async function getCurrentDevSession() {
++  assertDevelopment();
++
++  const {
++    data: { session },
++    error,
++  } = await supabase.auth.getSession();
++
++  if (error) throw error;
++  return session;
++}
++
++async function signInConfiguredAccount(account) {
++  const {
++    data: { session },
++    error,
++  } = await supabase.auth.signInWithPassword({
++    email: account.email,
++    password: account.password,
++  });
++
++  if (error) throw error;
++  if (!session?.user) {
++    throw new Error('The test account signed in without creating a session.');
++  }
++
++  return session;
++}
++
++export async function ensureCurrentDevProfile(displayName) {
++  assertDevelopment();
++
++  const { error } = await supabase.rpc('dev_ensure_test_profile', {
++    p_display_name: displayName || null,
++  });
++
++  if (error) throw error;
++}
++
++export async function prepareDevTestNetwork() {
++  assertDevelopment();
++
++  const { data, error } = await supabase.rpc('dev_prepare_test_network');
++  if (error) throw error;
++  return data || [];
++}
++
++export async function resetDevTestRelationships() {
++  assertDevelopment();
++
++  const { data, error } = await supabase.rpc('dev_reset_test_relationships');
++  if (error) throw error;
++  return data || {};
++}
++
++export async function switchDevAccount(account) {
++  assertDevelopment();
++
++  if (!account?.email || !account?.password) {
++    throw new Error('This development account is not fully configured.');
++  }
++
++  const previousSession = await getCurrentDevSession();
++  const previousEmail = previousSession?.user?.email?.toLowerCase();
++  const previousAccount = DEV_TEST_ACCOUNTS.find(
++    (candidate) => candidate.email?.toLowerCase() === previousEmail
++  );
++
++  await supabase.auth.signOut();
++
++  try {
++    const session = await signInConfiguredAccount(account);
++    await ensureCurrentDevProfile(account.displayName);
++    const network = await prepareDevTestNetwork();
++
++    return { session, network };
++  } catch (error) {
++    // Avoid leaving the tester unexpectedly signed out when the target account
++    // has a typo or has not yet been created in Supabase Authentication.
++    if (previousAccount) {
++      try {
++        await signInConfiguredAccount(previousAccount);
++      } catch {
++        // Preserve the original switching error below.
++      }
++    }
++
++    throw error;
++  }
++}
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step8_baseline/circles-app/supabase/migrations/20260720_007_dev_test_accounts.sql /mnt/data/circles_step8_work/circles-app/supabase/migrations/20260720_007_dev_test_accounts.sql
+--- /mnt/data/circles_step8_baseline/circles-app/supabase/migrations/20260720_007_dev_test_accounts.sql	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step8_work/circles-app/supabase/migrations/20260720_007_dev_test_accounts.sql	2026-07-21 01:33:21.726013376 +0000
+@@ -0,0 +1,218 @@
++-- Circles Step 8 — controlled multi-account development testing
++--
++-- These helpers operate only on confirmed auth users whose email is either:
++--   dev@circles.local
++--   dev+anything@circles.local
++--
++-- They never create auth users and never touch relationships involving a
++-- non-development account. The app also hides all callers outside __DEV__.
++
++create or replace function public.is_circles_dev_test_email(candidate text)
++returns boolean
++language sql
++immutable
++set search_path = public
++as $$
++  select lower(coalesce(candidate, ''))
++    ~ '^dev(\+[a-z0-9._-]+)?@circles\.local$';
++$$;
++
++revoke all on function public.is_circles_dev_test_email(text) from public;
++
++
++create or replace function public.dev_ensure_test_profile(
++  p_display_name text default null
++)
++returns void
++language plpgsql
++security definer
++set search_path = public, auth, extensions
++as $$
++declare
++  viewer_id uuid := auth.uid();
++  viewer_email text;
++  fallback_name text;
++  cleaned_name text := nullif(trim(p_display_name), '');
++begin
++  if viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  select au.email
++    into viewer_email
++  from auth.users au
++  where au.id = viewer_id
++    and au.email_confirmed_at is not null;
++
++  if not public.is_circles_dev_test_email(viewer_email) then
++    raise exception 'Development test account required';
++  end if;
++
++  if cleaned_name is not null and length(cleaned_name) > 40 then
++    raise exception 'Display name must be 40 characters or fewer';
++  end if;
++
++  fallback_name := case
++    when split_part(split_part(viewer_email, '@', 1), '+', 2) <> '' then
++      initcap(replace(split_part(split_part(viewer_email, '@', 1), '+', 2), '.', ' '))
++    else 'Developer'
++  end;
++
++  insert into public.users as target (id, phone_hash, display_name)
++  values (
++    viewer_id,
++    encode(digest('circles-dev-test:' || viewer_id::text, 'sha256'), 'hex'),
++    coalesce(cleaned_name, fallback_name)
++  )
++  on conflict (id) do update
++    set display_name = coalesce(target.display_name, excluded.display_name);
++end;
++$$;
++
++revoke all on function public.dev_ensure_test_profile(text) from public;
++grant execute on function public.dev_ensure_test_profile(text) to authenticated;
++
++
++create or replace function public.dev_prepare_test_network()
++returns table (
++  id uuid,
++  email text,
++  display_name text,
++  is_current boolean
++)
++language plpgsql
++security definer
++set search_path = public, auth, extensions
++as $$
++declare
++  viewer_id uuid := auth.uid();
++  viewer_email text;
++begin
++  if viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  select au.email
++    into viewer_email
++  from auth.users au
++  where au.id = viewer_id
++    and au.email_confirmed_at is not null;
++
++  if not public.is_circles_dev_test_email(viewer_email) then
++    raise exception 'Development test account required';
++  end if;
++
++  insert into public.users as target (id, phone_hash, display_name)
++  select
++    au.id,
++    encode(digest('circles-dev-test:' || au.id::text, 'sha256'), 'hex'),
++    coalesce(
++      nullif(trim(au.raw_user_meta_data ->> 'display_name'), ''),
++      case
++        when split_part(split_part(au.email, '@', 1), '+', 2) <> '' then
++          initcap(replace(split_part(split_part(au.email, '@', 1), '+', 2), '.', ' '))
++        else 'Developer'
++      end
++    )
++  from auth.users au
++  where au.email_confirmed_at is not null
++    and public.is_circles_dev_test_email(au.email)
++  on conflict (id) do update
++    set display_name = coalesce(target.display_name, excluded.display_name);
++
++  insert into public.contact_edges (from_user, to_user)
++  select source_user.id, target_user.id
++  from auth.users source_user
++  cross join auth.users target_user
++  where source_user.id <> target_user.id
++    and source_user.email_confirmed_at is not null
++    and target_user.email_confirmed_at is not null
++    and public.is_circles_dev_test_email(source_user.email)
++    and public.is_circles_dev_test_email(target_user.email)
++  on conflict do nothing;
++
++  return query
++  select
++    au.id,
++    au.email::text,
++    u.display_name,
++    au.id = viewer_id
++  from auth.users au
++  join public.users u on u.id = au.id
++  where au.email_confirmed_at is not null
++    and public.is_circles_dev_test_email(au.email)
++  order by au.email;
++end;
++$$;
++
++revoke all on function public.dev_prepare_test_network() from public;
++grant execute on function public.dev_prepare_test_network() to authenticated;
++
++
++create or replace function public.dev_reset_test_relationships()
++returns jsonb
++language plpgsql
++security definer
++set search_path = public, auth
++as $$
++declare
++  viewer_id uuid := auth.uid();
++  viewer_email text;
++  request_count integer := 0;
++  connection_count integer := 0;
++begin
++  if viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  select au.email
++    into viewer_email
++  from auth.users au
++  where au.id = viewer_id
++    and au.email_confirmed_at is not null;
++
++  if not public.is_circles_dev_test_email(viewer_email) then
++    raise exception 'Development test account required';
++  end if;
++
++  delete from public.connection_requests r
++  where r.from_user in (
++      select au.id
++      from auth.users au
++      where au.email_confirmed_at is not null
++        and public.is_circles_dev_test_email(au.email)
++    )
++    and r.to_user in (
++      select au.id
++      from auth.users au
++      where au.email_confirmed_at is not null
++        and public.is_circles_dev_test_email(au.email)
++    );
++  get diagnostics request_count = row_count;
++
++  delete from public.connections c
++  where c.user_id in (
++      select au.id
++      from auth.users au
++      where au.email_confirmed_at is not null
++        and public.is_circles_dev_test_email(au.email)
++    )
++    and c.other_user_id in (
++      select au.id
++      from auth.users au
++      where au.email_confirmed_at is not null
++        and public.is_circles_dev_test_email(au.email)
++    );
++  get diagnostics connection_count = row_count;
++
++  -- Mutual-contact edges intentionally remain so the normal request flow can
++  -- be exercised again immediately after the reset.
++  return jsonb_build_object(
++    'requests_deleted', request_count,
++    'connections_deleted', connection_count
++  );
++end;
++$$;
++
++revoke all on function public.dev_reset_test_relationships() from public;
++grant execute on function public.dev_reset_test_relationships() to authenticated;

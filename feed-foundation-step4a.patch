@@ -1,0 +1,3363 @@
+diff --git a/App.js b/App.js
+index 2b3472e..8bfc20f 100644
+--- a/App.js
++++ b/App.js
+@@ -3,7 +3,7 @@ import 'react-native-reanimated';
+ import React, { useEffect, useMemo, useRef, useState } from 'react';
+ import {
+   ActivityIndicator, Alert, Dimensions, FlatList, Image, KeyboardAvoidingView,
+-  Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View
++  Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View
+ } from 'react-native';
+ import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+ import { NavigationContainer } from '@react-navigation/native';
+@@ -13,7 +13,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { MotiView } from 'moti';
+ import * as Haptics from 'expo-haptics';
+ import * as ImagePicker from 'expo-image-picker';
+-import { Video } from 'expo-av';
+ import {
+   useFonts,
+   Manrope_400Regular,
+@@ -29,25 +28,15 @@ import { Avatar } from './src/components/Avatar';
+ import { DevBanner } from './src/components/DevBanner';
+ import { MonoRingWithRipples } from './src/components/MonoRingWithRipples';
+ import { UnreadBadge } from './src/components/UnreadBadge';
+-import { PostCard } from './src/components/feed/PostCard';
+-import { StoriesRail } from './src/components/stories/StoriesRail';
+-import { StoryViewer } from './src/components/stories/StoryViewer';
+ import { AuthNavigator } from './src/navigation/AuthNavigator';
++import { FeedScreen } from './src/screens/feed/FeedScreen';
++import { CreatePostScreen } from './src/screens/posts/CreatePostScreen';
++import { PostDetailScreen } from './src/screens/posts/PostDetailScreen';
+ 
+ /* ---------------- Layout & helpers ---------------- */
+ const { width: W, height: H } = Dimensions.get('window');
+ const IS_SMALL = W < 360 || H < 720;
+ 
+-function timeAgo(iso) {
+-  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+-  if (s < 60) return `${s}s`;
+-  const m = Math.floor(s / 60);
+-  if (m < 60) return `${m}m`;
+-  const h = Math.floor(m / 60);
+-  if (h < 24) return `${h}h`;
+-  const d = Math.floor(h / 24);
+-  return `${d}d`;
+-}
+ function randomId() { return Math.random().toString(36).slice(2); }
+ 
+ /* ---------------- Demo data for Inbox ---------------- */
+@@ -368,262 +357,6 @@ function MutualsScreen() {
+   );
+ }
+ 
+-/* ---------------- Feed + Stories + Comments ---------------- */
+-function FeedScreen({ navigation }) {
+-  const [posts, setPosts] = useState([]);
+-  const [authed, setAuthed] = useState(false);
+-  const [loadingMore, setLoadingMore] = useState(false);
+-  const [cursor, setCursor] = useState(null);
+-  const [openPost, setOpenPost] = useState(null);
+-  const [activeComments, setActiveComments] = useState([]);
+-  const [commentText, setCommentText] = useState('');
+-  const [stories, setStories] = useState([]);
+-  const [storyOpen, setStoryOpen] = useState(null);
+-  const [storyIndex, setStoryIndex] = useState(0);
+-
+-  const loadStories = async () => {
+-    const { data: { session } } = await supabase.auth.getSession();
+-    if (!session) { setStories([]); return; }
+-    const { data } = await supabase.rpc('get_active_stories');
+-    const map = new Map();
+-    (data || []).forEach(r => {
+-      const k = r.user_id;
+-      if (!map.has(k)) map.set(k, { userId:k, userName:r.display_name||'Someone', avatar:r.avatar_url||null, items:[] });
+-      map.get(k).items.push({ id:r.id, url:r.url, media_type:r.media_type, created_at:r.created_at });
+-    });
+-    setStories(Array.from(map.values()));
+-  };
+-
+-  useEffect(() => {
+-    (async () => {
+-      const { data: { session } } = await supabase.auth.getSession();
+-      setAuthed(!!session);
+-      if (session) {
+-        await loadInitial();
+-        await loadStories();
+-        const ch = supabase
+-          .channel('feed_rt')
+-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, () => loadInitial())
+-          .subscribe();
+-        return () => { supabase.removeChannel(ch); };
+-      } else {
+-        setPosts([]);
+-      }
+-    })();
+-  }, []);
+-
+-  const mapRow = (r) => ({
+-    id: r.id,
+-    user: { name: r.author_name || 'Unknown', avatarUri: r.author_avatar || null },
+-    uri: r.image_url,
+-    liked: !!r.liked_by_me,
+-    likes: r.likes_count || 0,
+-    caption: r.caption || '',
+-    time: timeAgo(r.created_at),
+-    created_at: r.created_at,
+-  });
+-
+-  const loadInitial = async () => {
+-    try {
+-      const { data, error } = await supabase.rpc('get_feed', { limit_count: 10, before: new Date().toISOString() });
+-      if (error) throw error;
+-      const mapped = (data || []).map(mapRow);
+-      setPosts(mapped);
+-      setCursor(mapped.length ? mapped[mapped.length - 1].created_at : null);
+-    } catch (e) { alert(e.message || 'Failed to load feed'); }
+-  };
+-
+-  const loadMore = async () => {
+-    if (!authed || loadingMore || !cursor) return;
+-    setLoadingMore(true);
+-    try {
+-      const { data, error } = await supabase.rpc('get_feed', { limit_count: 10, before: cursor });
+-      if (error) throw error;
+-      const mapped = (data || []).map(mapRow);
+-      setPosts(prev => [...prev, ...mapped]);
+-      if (mapped.length) setCursor(mapped[mapped.length - 1].created_at);
+-      else setCursor(null);
+-    } catch {}
+-    finally { setLoadingMore(false); }
+-  };
+-
+-  const toggleLike = async (postId, localOnly = false) => {
+-    setPosts(prev => prev.map(p => p.id === postId ? { ...p, liked: !p.liked, likes: Math.max(0, p.likes + (p.liked ? -1 : 1)) } : p));
+-    if (localOnly) return;
+-    try {
+-      await ensureAuthed();
+-      const { error } = await supabase.rpc('toggle_like', { p_post_id: postId });
+-      if (error) Alert.alert('Error', error.message);
+-    } catch (e) {}
+-  };
+-
+-  const openComments = async (postId) => {
+-    setOpenPost(postId); setActiveComments([]);
+-    const { data: { session } } = await supabase.auth.getSession();
+-    if (!session) return;
+-    const { data: rows } = await supabase
+-      .from('post_comments')
+-      .select('id, body, created_at, user_id, post_id')
+-      .eq('post_id', postId)
+-      .order('created_at', { ascending: true });
+-    const ids = Array.from(new Set((rows || []).map(r => r.user_id)));
+-    let usersMap = new Map();
+-    if (ids.length) {
+-      const { data: us } = await supabase.from('users').select('id, display_name, avatar_url').in('id', ids);
+-      usersMap = new Map((us || []).map(u => [u.id, u]));
+-    }
+-    setActiveComments((rows || []).map(r => ({
+-      id: r.id,
+-      userName: usersMap.get(r.user_id)?.display_name || 'Someone',
+-      avatarUri: usersMap.get(r.user_id)?.avatar_url || null,
+-      text: r.body,
+-    })));
+-  };
+-
+-  const submitComment = async () => {
+-    if (!commentText.trim()) return;
+-    const text = commentText.trim();
+-    setCommentText('');
+-    setActiveComments(prev => [...prev, { id: randomId(), userName: 'You', avatarUri: null, text }]);
+-    try {
+-      await ensureAuthed();
+-      if (openPost) {
+-        const { error } = await supabase.rpc('add_comment', { p_post_id: openPost, p_body: text });
+-        if (error) Alert.alert('Error', error.message);
+-      }
+-    } catch (e) {}
+-  };
+-
+-  const renderItem = ({ item }) => (
+-    <PostCard
+-      post={item}
+-      onToggleLike={() => toggleLike(item.id)}
+-      onDoubleLike={() => toggleLike(item.id, true)}
+-      onOpenComments={() => openComments(item.id)}
+-    />
+-  );
+-
+-  return (
+-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
+-      <FlatList
+-        data={posts}
+-        keyExtractor={(x) => x.id}
+-        renderItem={renderItem}
+-        onEndReachedThreshold={0.2}
+-        onEndReached={loadMore}
+-        ListHeaderComponent={(
+-          <StoriesRail
+-            stories={stories}
+-            onAddYourStory={async () => {
+-              try {
+-                await ensureAuthed();
+-                const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+-                if (status !== 'granted') return alert('Permission needed');
+-                const pick = await ImagePicker.launchImageLibraryAsync({
+-                  mediaTypes: ImagePicker.MediaTypeOptions.All,
+-                  allowsMultipleSelection: false,
+-                  quality: 0.9,
+-                  videoQuality: ImagePicker.UIImagePickerControllerQualityType.High,
+-                });
+-                if (pick.canceled) return;
+-                const a = pick.assets[0];
+-                const url = await uploadToBucket(a.uri, 'stories', a.mimeType || (a.type === 'video' ? 'video/mp4' : 'image/jpeg'));
+-                const { user } = await ensureAuthed();
+-                await supabase.from('stories').insert({
+-                  user_id: user.id,
+-                  url,
+-                  media_type: (a.type === 'video' ? 'video' : 'image')
+-                });
+-                loadStories();
+-              } catch (e) { alert(e.message || 'Failed to add story'); }
+-            }}
+-            onOpen={(userIdx) => { setStoryOpen(userIdx); setStoryIndex(0); }}
+-          />
+-        )}
+-        ListFooterComponent={loadingMore ? <ActivityIndicator style={{ marginVertical: 12 }} /> : null}
+-        showsVerticalScrollIndicator={false}
+-        contentContainerStyle={{ paddingBottom: 40 }}
+-      />
+-
+-      {/* Comments Modal */}
+-      <Modal visible={!!openPost} animationType="slide" onRequestClose={() => setOpenPost(null)}>
+-        <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
+-          <View style={{ padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border, flexDirection: 'row', alignItems: 'center' }}>
+-            <Pressable onPress={() => setOpenPost(null)} hitSlop={10}><Ionicons name="chevron-back" size={22} color={COLORS.text} /></Pressable>
+-            <Text style={{ marginLeft: 8, fontFamily: 'Manrope_700Bold', fontSize: 16, color: COLORS.text }}>Comments</Text>
+-          </View>
+-          <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 80 }}>
+-            {activeComments.length ? activeComments.map(c => (
+-              <View key={c.id} style={{ flexDirection: 'row', marginBottom: 12 }}>
+-                <View style={{ marginRight: 10 }}><Avatar size={34} name={c.userName} uri={c.avatarUri} /></View>
+-                <View style={{ flex: 1 }}>
+-                  <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }}>{c.userName}</Text>
+-                  <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.text }}>{c.text}</Text>
+-                </View>
+-              </View>
+-            )) : (
+-              <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, textAlign: 'center', marginTop: 24 }}>
+-                No comments yet. Be the first to say something!
+-              </Text>
+-            )}
+-          </ScrollView>
+-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+-            <View style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border }}>
+-              <TextInput
+-                value={commentText}
+-                onChangeText={setCommentText}
+-                placeholder="Add a comment…"
+-                style={{ flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 12, fontFamily: 'Manrope_400Regular' }}
+-              />
+-              <Pressable onPress={submitComment} style={{ marginLeft: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: COLORS.primary, borderRadius: 10 }}>
+-                <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Post</Text>
+-              </Pressable>
+-            </View>
+-          </KeyboardAvoidingView>
+-        </SafeAreaView>
+-      </Modal>
+-
+-      {/* Floating create */}
+-      <Pressable
+-        onPress={() => navigation.navigate('CreatePost')}
+-        style={({pressed}) => ({
+-          position:'absolute', right:16, bottom:24,
+-          width:56, height:56, borderRadius:28,
+-          backgroundColor: COLORS.primary, alignItems:'center', justifyContent:'center',
+-          opacity: pressed?0.85:1, shadowColor:'#000', shadowOpacity:0.2, shadowRadius:6, shadowOffset:{width:0,height:3}, elevation:4
+-        })}
+-      >
+-        <Ionicons name="add" size={28} color="#fff" />
+-      </Pressable>
+-
+-      {/* Story viewer */}
+-      <Modal visible={storyOpen !== null} animationType="fade" onRequestClose={()=>setStoryOpen(null)}>
+-        <SafeAreaView edges={['top']} style={{ flex:1, backgroundColor:'#000' }}>
+-          {storyOpen !== null ? (
+-            <StoryViewer
+-              user={stories[storyOpen]}
+-              index={storyIndex}
+-              onClose={()=>setStoryOpen(null)}
+-              onNext={()=>{
+-                const user = stories[storyOpen];
+-                if (storyIndex + 1 < user.items.length) setStoryIndex(i=>i+1);
+-                else if (storyOpen + 1 < stories.length) { setStoryOpen(i=>i+1); setStoryIndex(0); }
+-                else setStoryOpen(null);
+-              }}
+-              onPrev={()=>{
+-                if (storyIndex > 0) setStoryIndex(i=>i-1);
+-                else if (storyOpen > 0) { const prevUser = stories[storyOpen-1]; setStoryOpen(i=>i-1); setStoryIndex(prevUser.items.length-1); }
+-                else setStoryOpen(null);
+-              }}
+-            />
+-          ): null}
+-        </SafeAreaView>
+-      </Modal>
+-    </SafeAreaView>
+-  );
+-}
+-
+-
+ /* ---------------- Inbox / Chat / GroupDetails ---------------- */
+ function InboxScreen({ navigation }) {
+   const [convos, setConvos] = useState(GROUPS);
+@@ -1073,172 +806,6 @@ function EditProfileScreen({ navigation }) {
+   );
+ }
+ 
+-function PostDetailScreen({ route }) {
+-  const { postId } = route.params || {};
+-  const [post, setPost] = useState(null);
+-  const [media, setMedia] = useState([]);
+-  const [loading, setLoading] = useState(true);
+-  const [liked, setLiked] = useState(false);
+-  const [likes, setLikes] = useState(0);
+-
+-  const load = async () => {
+-    setLoading(true);
+-    try {
+-      const { data: p } = await supabase.from('posts').select('id, user_id, caption, image_url, created_at').eq('id', postId).single();
+-      setPost(p);
+-      const [{ data: ms }, { count: likeCount }] = await Promise.all([
+-        supabase.from('post_media').select('id, url, media_type, created_at').eq('post_id', postId).order('created_at', { ascending: true }),
+-        supabase.from('post_likes').select('post_id', { count: 'exact', head: true }).eq('post_id', postId),
+-      ]);
+-      setMedia(ms || []); setLikes(likeCount ?? 0);
+-
+-      const { data: { session } } = await supabase.auth.getSession();
+-      if (session) {
+-        const { data: my } = await supabase.from('post_likes').select('post_id').eq('post_id', postId).eq('user_id', session.user.id).maybeSingle();
+-        setLiked(!!my);
+-      }
+-    } catch (e) { alert(e.message || 'Failed to load post'); }
+-    finally { setLoading(false); }
+-  };
+-
+-  useEffect(() => { load(); }, [postId]);
+-
+-  const toggleLike = async () => {
+-    setLiked(v => !v); setLikes(n => Math.max(0, n + (liked ? -1 : 1)));
+-    try { await ensureAuthed(); await supabase.rpc('toggle_like', { p_post_id: postId }); } catch (e) {}
+-  };
+-
+-  if (loading || !post) {
+-    return (<SafeAreaView edges={['top']} style={{ flex:1, alignItems:'center', justifyContent:'center' }}><ActivityIndicator /></SafeAreaView>);
+-  }
+-
+-  return (
+-    <SafeAreaView edges={['top']} style={{ flex:1, backgroundColor: COLORS.bg }}>
+-      <View style={{ paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border }}>
+-        <Text style={{ fontFamily:'Manrope_700Bold', fontSize: 18, color: COLORS.text }}>Post</Text>
+-      </View>
+-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+-        <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={{ width:'100%', backgroundColor:'#000' }}>
+-          {media.length ? media.map((m) => (
+-            <View key={m.id} style={{ width: W, aspectRatio: 1, backgroundColor:'#000' }}>
+-              {m.media_type === 'video'
+-                ? <Video source={{ uri: m.url }} style={{ width:'100%', height:'100%' }} resizeMode="contain" shouldPlay />
+-                : <Image source={{ uri: m.url }} style={{ width:'100%', height:'100%' }} resizeMode="contain" />
+-              }
+-            </View>
+-          )) : (
+-            <View style={{ width: W, aspectRatio: 1, backgroundColor:'#000' }}>
+-              <Image source={{ uri: post.image_url }} style={{ width:'100%', height:'100%' }} resizeMode="contain" />
+-            </View>
+-          )}
+-        </ScrollView>
+-
+-        <View style={{ flexDirection:'row', alignItems:'center', paddingHorizontal: 12, paddingTop: 10 }}>
+-          <Pressable onPress={toggleLike} hitSlop={10} style={{ marginRight: 16 }}>
+-            <Ionicons name={liked ? 'heart' : 'heart-outline'} size={28} color={liked ? '#e11d48' : COLORS.text} />
+-          </Pressable>
+-          <Text style={{ fontFamily:'Manrope_700Bold', color: COLORS.text }}>{likes} likes</Text>
+-        </View>
+-
+-        {!!post.caption && (
+-          <View style={{ paddingHorizontal: 12, paddingTop: 8 }}>
+-            <Text style={{ fontFamily:'Manrope_400Regular', color: COLORS.text }}>{post.caption}</Text>
+-          </View>
+-        )}
+-      </ScrollView>
+-    </SafeAreaView>
+-  );
+-}
+-
+-/* ---------------- Create Post ---------------- */
+-function CreatePostScreen({ navigation }) {
+-  const [assets, setAssets] = useState([]);
+-  const [caption, setCaption] = useState('');
+-  const [posting, setPosting] = useState(false);
+-
+-  const pickMedia = async () => {
+-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+-    if (status !== 'granted') return alert('Permission needed');
+-    const result = await ImagePicker.launchImageLibraryAsync({
+-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+-      allowsMultipleSelection: true,
+-      selectionLimit: 10,
+-      quality: 0.9,
+-      videoQuality: ImagePicker.UIImagePickerControllerQualityType.High,
+-    });
+-    if (result.canceled) return;
+-    setAssets(result.assets.map(a => ({ uri: a.uri, type: a.type, width: a.width, height: a.height, duration: a.duration, mimeType: a.mimeType || (a.type === 'video' ? 'video/mp4' : 'image/jpeg') })));
+-  };
+-
+-  const submit = async () => {
+-    if (!assets.length) return alert('Select at least one photo/video');
+-    setPosting(true);
+-    try {
+-      await ensureAuthed();
+-      const urls = [];
+-      const types = [];
+-      for (const a of assets) {
+-        const url = await uploadToBucket(a.uri, 'posts', a.mimeType);
+-        urls.push(url);
+-        types.push(a.type === 'video' ? 'video' : 'image');
+-      }
+-
+-      const { error } = await supabase.rpc('create_post_with_media', { p_urls: urls, p_types: types, p_caption: caption || null });
+-      if (error) throw error;
+-
+-      navigation.pop();
+-    } catch (e) {
+-      alert(e.message || 'Failed to create post');
+-    } finally { setPosting(false); }
+-  };
+-
+-  return (
+-    <SafeAreaView edges={['top']} style={{ flex:1, backgroundColor: COLORS.bg }}>
+-      <View style={{ paddingHorizontal:16, paddingTop:10, paddingBottom:6, flexDirection:'row', alignItems:'center', justifyContent:'space-between' }}>
+-        <Pressable onPress={()=>navigation.goBack()} hitSlop={10}><Ionicons name="chevron-back" size={22} color={COLORS.text} /></Pressable>
+-        <Text style={{ fontFamily:'Manrope_700Bold', fontSize:16, color:COLORS.text }}>New Post</Text>
+-        <View style={{ width:22 }} />
+-      </View>
+-
+-      <ScrollView contentContainerStyle={{ padding:16 }}>
+-        <Pressable
+-          onPress={pickMedia}
+-          style={({pressed})=>({
+-            borderWidth:1, borderColor:COLORS.border, borderRadius:12, padding:16, alignItems:'center',
+-            backgroundColor: pressed ? '#fafafa' : '#fff'
+-          })}
+-        >
+-          <Ionicons name="images-outline" size={28} color={COLORS.text} />
+-          <Text style={{ marginTop:8, fontFamily:'Manrope_600SemiBold', color:COLORS.text }}>Choose up to 10 photos/videos</Text>
+-        </Pressable>
+-
+-        {assets.length ? (
+-          <View style={{ flexDirection:'row', flexWrap:'wrap', marginTop:12, gap:6 }}>
+-            {assets.map((a, i) => (
+-              <Image key={i} source={{ uri: a.uri }} style={{ width: (W-16*2-6*3)/4, height: (W-16*2-6*3)/4, borderRadius:8 }} />
+-            ))}
+-          </View>
+-        ) : null}
+-
+-        <TextInput
+-          value={caption}
+-          onChangeText={setCaption}
+-          placeholder="Write a caption…"
+-          multiline
+-          style={{ marginTop:14, minHeight:90, borderWidth:1, borderColor:COLORS.border, borderRadius:12, padding:12, textAlignVertical:'top', fontFamily:'Manrope_400Regular' }}
+-        />
+-
+-        <Pressable onPress={submit} disabled={posting} style={({pressed})=>({
+-          marginTop:16, backgroundColor: COLORS.primary, paddingVertical:12, borderRadius:12, alignItems:'center',
+-          opacity: pressed||posting ? 0.7 : 1
+-        })}>
+-          {posting ? <ActivityIndicator color="#fff" /> : <Text style={{ color:'#fff', fontFamily:'Manrope_700Bold' }}>Post</Text>}
+-        </Pressable>
+-      </ScrollView>
+-    </SafeAreaView>
+-  );
+-}
+-
+ /* ---------------- Small UI components ---------------- */
+ 
+ 
+diff --git a/README_FEED_FOUNDATION_STEP_4A.md b/README_FEED_FOUNDATION_STEP_4A.md
+new file mode 100644
+index 0000000..2764fe5
+--- /dev/null
++++ b/README_FEED_FOUNDATION_STEP_4A.md
+@@ -0,0 +1,88 @@
++# Circles Feed Foundation — Step 4A
++
++This checkpoint starts the feature-polish phase while keeping the existing database schema and RPC contracts intact.
++
++## What moved out of App.js
++
++- `src/screens/feed/FeedScreen.js`
++- `src/screens/posts/CreatePostScreen.js`
++- `src/screens/posts/PostDetailScreen.js`
++
++`App.js` now imports those screens and remains the root/navigation assembly file.
++
++## New service layer
++
++- `src/services/feedService.js`
++  - feed pagination
++  - comments loading
++  - comment creation
++  - like toggling
++- `src/services/postService.js`
++  - post creation and upload progress
++  - post-detail loading
++- `src/services/storyService.js`
++  - active-story loading
++  - story upload and database insertion
++
++## Reliability fixes
++
++- Feed realtime cleanup is now returned directly from the React effect.
++- Feed supports initial loading, retry, empty, refresh, pagination, and non-blocking error states.
++- Feed refreshes when it regains focus, including after creating a post.
++- Optimistic likes roll back when the server request fails.
++- Double-tap likes now reach Supabase instead of changing only local state.
++- Optimistic comments are replaced with server data after success and rolled back after failure.
++- Story insertion errors are checked instead of silently ignored.
++- Story uploading displays a loading state.
++- Post Detail has loading, retry, author, media paging, and like rollback states.
++- Post creation displays item-by-item upload progress and prevents duplicate submissions.
++
++## Small interface improvements
++
++- Feed header and empty state
++- Single-tap a feed image to open Post Detail
++- Double-tap a feed image to like it
++- Remove selected media before posting
++- Selected-media order badges
++- Video placeholders in the post composer
++- Multi-media counter in Post Detail
++
++## Intentionally deferred to Step 4B
++
++The current `get_feed` RPC returns only the first media URL for each post. Feed cards therefore still display the first media item only. Step 4B will add a versioned feed RPC that returns the full media array and comment count so feed cards can become swipeable carousels without breaking the working backend function.
++
++## Test checklist
++
++### Web
++
++1. Sign in using development verification.
++2. Open Feed and confirm loading completes.
++3. Switch away from Feed and back; confirm it refreshes without duplicating posts.
++4. Create a photo post and confirm upload progress appears.
++5. Confirm returning from the composer refreshes Feed.
++6. Single-click the post image and confirm Post Detail opens.
++7. Like and unlike the post.
++8. Open comments and add a comment.
++9. Add a story and confirm the posting spinner clears.
++10. Open the story viewer and move forward/backward.
++
++### Phone
++
++Repeat the web tests, then also verify:
++
++- pull-to-refresh
++- double-tap heart animation and persisted like
++- multi-photo post creation
++- media paging in Post Detail
++- story photo/video upload
++- app remains stable after leaving and returning to Feed several times
++
++## Commit
++
++After web and phone tests pass:
++
++```powershell
++git add App.js src README_FEED_FOUNDATION_STEP_4A.md
++git commit -m "Build reliable feed and post foundation"
++git push
++```
+diff --git a/src/components/feed/CommentsModal.js b/src/components/feed/CommentsModal.js
+new file mode 100644
+index 0000000..2ff257e
+--- /dev/null
++++ b/src/components/feed/CommentsModal.js
+@@ -0,0 +1,261 @@
++import React from 'react';
++import {
++  ActivityIndicator,
++  KeyboardAvoidingView,
++  Modal,
++  Platform,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { COLORS } from '../../theme/colors';
++import { Avatar } from '../Avatar';
++
++export function CommentsModal({
++  visible,
++  comments,
++  loading,
++  error,
++  commentText,
++  sending,
++  onChangeText,
++  onSubmit,
++  onRetry,
++  onClose,
++}) {
++  const canSubmit = Boolean(commentText.trim()) && !sending;
++
++  return (
++    <Modal
++      visible={visible}
++      animationType="slide"
++      onRequestClose={onClose}
++    >
++      <SafeAreaView
++        edges={['top']}
++        style={styles.root}
++      >
++        <View style={styles.header}>
++          <Pressable onPress={onClose} hitSlop={10}>
++            <Ionicons
++              name="chevron-back"
++              size={22}
++              color={COLORS.text}
++            />
++          </Pressable>
++
++          <Text style={styles.title}>Comments</Text>
++        </View>
++
++        <ScrollView
++          contentContainerStyle={styles.content}
++          keyboardShouldPersistTaps="handled"
++        >
++          {loading ? (
++            <View style={styles.centerState}>
++              <ActivityIndicator />
++              <Text style={styles.stateText}>Loading comments…</Text>
++            </View>
++          ) : error ? (
++            <View style={styles.centerState}>
++              <Text style={styles.errorText}>{error}</Text>
++              <Pressable
++                onPress={onRetry}
++                style={styles.retryButton}
++              >
++                <Text style={styles.retryButtonText}>Try again</Text>
++              </Pressable>
++            </View>
++          ) : comments.length ? (
++            comments.map((comment) => (
++              <View
++                key={comment.id}
++                style={[
++                  styles.commentRow,
++                  comment.pending && styles.pendingComment,
++                ]}
++              >
++                <View style={styles.avatarWrap}>
++                  <Avatar
++                    size={34}
++                    name={comment.userName}
++                    uri={comment.avatarUri}
++                  />
++                </View>
++
++                <View style={{ flex: 1 }}>
++                  <Text style={styles.commentName}>
++                    {comment.userName}
++                  </Text>
++                  <Text style={styles.commentBody}>
++                    {comment.text}
++                  </Text>
++                  {comment.pending ? (
++                    <Text style={styles.pendingText}>Sending…</Text>
++                  ) : null}
++                </View>
++              </View>
++            ))
++          ) : (
++            <Text style={styles.emptyText}>
++              No comments yet. Be the first to say something!
++            </Text>
++          )}
++        </ScrollView>
++
++        <KeyboardAvoidingView
++          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
++        >
++          <View style={styles.composer}>
++            <TextInput
++              value={commentText}
++              onChangeText={onChangeText}
++              placeholder="Add a comment…"
++              editable={!sending}
++              style={styles.input}
++              returnKeyType="send"
++              onSubmitEditing={canSubmit ? onSubmit : undefined}
++            />
++
++            <Pressable
++              onPress={onSubmit}
++              disabled={!canSubmit}
++              style={({ pressed }) => [
++                styles.postButton,
++                (!canSubmit || pressed) && styles.postButtonDisabled,
++              ]}
++            >
++              {sending ? (
++                <ActivityIndicator color="#fff" size="small" />
++              ) : (
++                <Text style={styles.postButtonText}>Post</Text>
++              )}
++            </Pressable>
++          </View>
++        </KeyboardAvoidingView>
++      </SafeAreaView>
++    </Modal>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  header: {
++    padding: 12,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.border,
++    flexDirection: 'row',
++    alignItems: 'center',
++  },
++  title: {
++    marginLeft: 8,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 16,
++    color: COLORS.text,
++  },
++  content: {
++    flexGrow: 1,
++    padding: 12,
++    paddingBottom: 80,
++  },
++  centerState: {
++    flex: 1,
++    minHeight: 220,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  stateText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    textAlign: 'center',
++  },
++  retryButton: {
++    marginTop: 12,
++    paddingHorizontal: 16,
++    paddingVertical: 10,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  retryButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  commentRow: {
++    flexDirection: 'row',
++    marginBottom: 14,
++  },
++  pendingComment: {
++    opacity: 0.65,
++  },
++  avatarWrap: {
++    marginRight: 10,
++  },
++  commentName: {
++    fontFamily: 'Manrope_700Bold',
++    color: COLORS.text,
++  },
++  commentBody: {
++    marginTop: 1,
++    fontFamily: 'Manrope_400Regular',
++    color: COLORS.text,
++  },
++  pendingText: {
++    marginTop: 3,
++    fontSize: 11,
++    fontFamily: 'Manrope_400Regular',
++    color: COLORS.subtext,
++  },
++  emptyText: {
++    fontFamily: 'Manrope_400Regular',
++    color: COLORS.subtext,
++    textAlign: 'center',
++    marginTop: 24,
++  },
++  composer: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    padding: 10,
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderTopColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  input: {
++    flex: 1,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    borderRadius: 10,
++    paddingHorizontal: 12,
++    paddingVertical: 10,
++    fontFamily: 'Manrope_400Regular',
++    color: COLORS.text,
++  },
++  postButton: {
++    minWidth: 66,
++    marginLeft: 10,
++    paddingHorizontal: 12,
++    paddingVertical: 10,
++    alignItems: 'center',
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  postButtonDisabled: {
++    opacity: 0.5,
++  },
++  postButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++});
+diff --git a/src/components/feed/PostCard.js b/src/components/feed/PostCard.js
+index c511ca1..f8625a3 100644
+--- a/src/components/feed/PostCard.js
++++ b/src/components/feed/PostCard.js
+@@ -1,5 +1,11 @@
+-import React, { useRef, useState } from 'react';
+-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
++import React, { useEffect, useRef, useState } from 'react';
++import {
++  Image,
++  Pressable,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { MotiView } from 'moti';
+ import * as Haptics from 'expo-haptics';
+@@ -11,102 +17,108 @@ export function PostCard({
+   onToggleLike,
+   onDoubleLike,
+   onOpenComments,
++  onOpenPost,
++  onOpenProfile,
+ }) {
+   const [showBigHeart, setShowBigHeart] = useState(false);
+   const lastTapRef = useRef(0);
++  const singleTapTimerRef = useRef(null);
++  const heartTimerRef = useRef(null);
++
++  useEffect(
++    () => () => {
++      clearTimeout(singleTapTimerRef.current);
++      clearTimeout(heartTimerRef.current);
++    },
++    []
++  );
+ 
+   const onImagePress = () => {
+     const now = Date.now();
++    const isDoubleTap = now - lastTapRef.current < 300;
+ 
+-    if (now - lastTapRef.current < 300) {
++    if (isDoubleTap) {
++      clearTimeout(singleTapTimerRef.current);
+       setShowBigHeart(true);
++
+       if (!post.liked) onDoubleLike?.();
+-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+-      setTimeout(() => setShowBigHeart(false), 650);
++
++      Haptics.impactAsync(
++        Haptics.ImpactFeedbackStyle.Medium
++      ).catch(() => {});
++
++      clearTimeout(heartTimerRef.current);
++      heartTimerRef.current = setTimeout(
++        () => setShowBigHeart(false),
++        650
++      );
++
++      lastTapRef.current = 0;
++      return;
+     }
+ 
+     lastTapRef.current = now;
++    clearTimeout(singleTapTimerRef.current);
++    singleTapTimerRef.current = setTimeout(() => {
++      onOpenPost?.();
++      lastTapRef.current = 0;
++    }, 310);
+   };
+ 
+   return (
+-    <View
+-      style={{
+-        borderBottomWidth: StyleSheet.hairlineWidth,
+-        borderBottomColor: COLORS.divider,
+-      }}
+-    >
+-      <View
+-        style={{
+-          flexDirection: 'row',
+-          alignItems: 'center',
+-          padding: 12,
+-        }}
+-      >
+-        <Avatar
+-          size={36}
+-          name={post.user.name}
+-          uri={post.user.avatarUri}
+-        />
+-
+-        <View style={{ marginLeft: 10, flex: 1 }}>
+-          <Text
+-            style={{
+-              fontFamily: 'Manrope_700Bold',
+-              color: COLORS.text,
+-            }}
+-          >
+-            {post.user.name}
+-          </Text>
+-          <Text
+-            style={{
+-              fontFamily: 'Manrope_400Regular',
+-              color: '#888',
+-              fontSize: 12,
+-            }}
+-          >
+-            {post.time}
+-          </Text>
+-        </View>
++    <View style={styles.root}>
++      <View style={styles.header}>
++        <Pressable
++          onPress={onOpenProfile}
++          disabled={!onOpenProfile}
++          style={styles.authorButton}
++        >
++          <Avatar
++            size={36}
++            name={post.user.name}
++            uri={post.user.avatarUri}
++          />
+ 
+-        <Ionicons name="ellipsis-horizontal" size={18} color="#888" />
++          <View style={styles.authorText}>
++            <Text style={styles.authorName} numberOfLines={1}>
++              {post.user.name}
++            </Text>
++            <Text style={styles.time}>{post.time}</Text>
++          </View>
++        </Pressable>
++
++        <Pressable hitSlop={10}>
++          <Ionicons
++            name="ellipsis-horizontal"
++            size={18}
++            color="#888"
++          />
++        </Pressable>
+       </View>
+ 
+       <Pressable
+         onPress={onImagePress}
+-        style={{ backgroundColor: '#f2f2f2' }}
++        style={styles.mediaButton}
+       >
+-        <View style={{ width: '100%', aspectRatio: 1 }}>
++        <View style={styles.mediaWrap}>
+           <Image
+             source={{ uri: post.uri }}
+-            style={{ width: '100%', height: '100%' }}
++            style={styles.media}
+             resizeMode="cover"
+           />
+ 
+           {showBigHeart ? (
+-            <View
+-              style={[
+-                StyleSheet.absoluteFillObject,
+-                {
+-                  alignItems: 'center',
+-                  justifyContent: 'center',
+-                },
+-              ]}
+-            >
++            <View style={styles.heartOverlay}>
+               <MotiView
+                 from={{ scale: 0.3, opacity: 0 }}
+                 animate={{ scale: 1.1, opacity: 1 }}
+-                exit={{ scale: 0.3, opacity: 0 }}
+                 transition={{ type: 'timing', duration: 350 }}
+               >
+                 <Ionicons
+                   name="heart"
+                   size={96}
+                   color="#fff"
+-                  style={{
+-                    textShadowColor: 'rgba(0,0,0,0.35)',
+-                    textShadowOffset: { width: 0, height: 2 },
+-                    textShadowRadius: 8,
+-                  }}
++                  style={styles.largeHeart}
+                 />
+               </MotiView>
+             </View>
+@@ -114,18 +126,11 @@ export function PostCard({
+         </View>
+       </Pressable>
+ 
+-      <View
+-        style={{
+-          flexDirection: 'row',
+-          alignItems: 'center',
+-          paddingHorizontal: 12,
+-          paddingVertical: 8,
+-        }}
+-      >
++      <View style={styles.actions}>
+         <Pressable
+           onPress={onToggleLike}
+           hitSlop={10}
+-          style={{ marginRight: 16 }}
++          style={styles.actionButton}
+         >
+           <Ionicons
+             name={post.liked ? 'heart' : 'heart-outline'}
+@@ -137,7 +142,7 @@ export function PostCard({
+         <Pressable
+           onPress={onOpenComments}
+           hitSlop={10}
+-          style={{ marginRight: 16 }}
++          style={styles.actionButton}
+         >
+           <Ionicons
+             name="chatbubble-outline"
+@@ -146,7 +151,7 @@ export function PostCard({
+           />
+         </Pressable>
+ 
+-        <Pressable hitSlop={10}>
++        <Pressable hitSlop={10} style={styles.actionButton}>
+           <Ionicons
+             name="paper-plane-outline"
+             size={24}
+@@ -155,37 +160,107 @@ export function PostCard({
+         </Pressable>
+       </View>
+ 
+-      <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
+-        <Text
+-          style={{
+-            fontFamily: 'Manrope_700Bold',
+-            color: COLORS.text,
+-          }}
+-        >
+-          {post.likes} likes
+-        </Text>
+-
+-        <Text style={{ marginTop: 4, color: COLORS.text }}>
+-          <Text style={{ fontFamily: 'Manrope_700Bold' }}>
+-            {post.user.name}{' '}
+-          </Text>
+-          <Text style={{ fontFamily: 'Manrope_400Regular' }}>
+-            {post.caption}
+-          </Text>
+-        </Text>
++      <View style={styles.details}>
++        <Text style={styles.likes}>{post.likes} likes</Text>
++
++        {post.caption ? (
++          <Pressable onPress={onOpenPost}>
++            <Text style={styles.caption} numberOfLines={3}>
++              <Text style={styles.captionName}>
++                {post.user.name}{' '}
++              </Text>
++              <Text style={styles.captionBody}>{post.caption}</Text>
++            </Text>
++          </Pressable>
++        ) : null}
+ 
+         <Pressable onPress={onOpenComments}>
+-          <Text
+-            style={{
+-              color: '#6b6b6b',
+-              marginTop: 6,
+-              fontFamily: 'Manrope_400Regular',
+-            }}
+-          >
+-            View comments
+-          </Text>
++          <Text style={styles.commentsLink}>View comments</Text>
+         </Pressable>
+       </View>
+     </View>
+   );
+ }
++
++const styles = StyleSheet.create({
++  root: {
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.divider,
++  },
++  header: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    padding: 12,
++  },
++  authorButton: {
++    flex: 1,
++    flexDirection: 'row',
++    alignItems: 'center',
++  },
++  authorText: {
++    marginLeft: 10,
++    flex: 1,
++  },
++  authorName: {
++    fontFamily: 'Manrope_700Bold',
++    color: COLORS.text,
++  },
++  time: {
++    fontFamily: 'Manrope_400Regular',
++    color: '#888',
++    fontSize: 12,
++  },
++  mediaButton: {
++    backgroundColor: '#f2f2f2',
++  },
++  mediaWrap: {
++    width: '100%',
++    aspectRatio: 1,
++  },
++  media: {
++    width: '100%',
++    height: '100%',
++  },
++  heartOverlay: {
++    ...StyleSheet.absoluteFillObject,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  largeHeart: {
++    textShadowColor: 'rgba(0,0,0,0.35)',
++    textShadowOffset: { width: 0, height: 2 },
++    textShadowRadius: 8,
++  },
++  actions: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 12,
++    paddingVertical: 8,
++  },
++  actionButton: {
++    marginRight: 16,
++  },
++  details: {
++    paddingHorizontal: 12,
++    paddingBottom: 12,
++  },
++  likes: {
++    fontFamily: 'Manrope_700Bold',
++    color: COLORS.text,
++  },
++  caption: {
++    marginTop: 4,
++    color: COLORS.text,
++  },
++  captionName: {
++    fontFamily: 'Manrope_700Bold',
++  },
++  captionBody: {
++    fontFamily: 'Manrope_400Regular',
++  },
++  commentsLink: {
++    color: '#6b6b6b',
++    marginTop: 6,
++    fontFamily: 'Manrope_400Regular',
++  },
++});
+diff --git a/src/components/stories/StoriesRail.js b/src/components/stories/StoriesRail.js
+index 220ae54..9524ab5 100644
+--- a/src/components/stories/StoriesRail.js
++++ b/src/components/stories/StoriesRail.js
+@@ -1,10 +1,22 @@
+ import React from 'react';
+-import { Image, Pressable, ScrollView, Text, View } from 'react-native';
++import {
++  ActivityIndicator,
++  Image,
++  Pressable,
++  ScrollView,
++  Text,
++  View,
++} from 'react-native';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { COLORS } from '../../theme/colors';
+ import { getInitials } from '../../utils/getInitials';
+ 
+-export function StoriesRail({ stories, onAddYourStory, onOpen }) {
++export function StoriesRail({
++  stories,
++  isAdding = false,
++  onAddYourStory,
++  onOpen,
++}) {
+   return (
+     <View style={{ paddingVertical: 10 }}>
+       <ScrollView
+@@ -14,7 +26,12 @@ export function StoriesRail({ stories, onAddYourStory, onOpen }) {
+       >
+         <Pressable
+           onPress={onAddYourStory}
+-          style={{ alignItems: 'center', marginRight: 14 }}
++          disabled={isAdding}
++          style={({ pressed }) => ({
++            alignItems: 'center',
++            marginRight: 14,
++            opacity: pressed || isAdding ? 0.7 : 1,
++          })}
+         >
+           <View
+             style={{
+@@ -28,7 +45,15 @@ export function StoriesRail({ stories, onAddYourStory, onOpen }) {
+               backgroundColor: '#f6f6f6',
+             }}
+           >
+-            <Ionicons name="add" size={28} color={COLORS.primary} />
++            {isAdding ? (
++              <ActivityIndicator color={COLORS.primary} />
++            ) : (
++              <Ionicons
++                name="add"
++                size={28}
++                color={COLORS.primary}
++              />
++            )}
+           </View>
+ 
+           <Text
+@@ -39,7 +64,7 @@ export function StoriesRail({ stories, onAddYourStory, onOpen }) {
+               color: COLORS.text,
+             }}
+           >
+-            Your Story
++            {isAdding ? 'Posting…' : 'Your Story'}
+           </Text>
+         </Pressable>
+ 
+@@ -47,7 +72,11 @@ export function StoriesRail({ stories, onAddYourStory, onOpen }) {
+           <Pressable
+             key={story.userId}
+             onPress={() => onOpen(index)}
+-            style={{ alignItems: 'center', marginRight: 14 }}
++            style={({ pressed }) => ({
++              alignItems: 'center',
++              marginRight: 14,
++              opacity: pressed ? 0.75 : 1,
++            })}
+           >
+             <View
+               style={{
+@@ -70,6 +99,7 @@ export function StoriesRail({ stories, onAddYourStory, onOpen }) {
+                     flex: 1,
+                     alignItems: 'center',
+                     justifyContent: 'center',
++                    backgroundColor: '#f6f6f6',
+                   }}
+                 >
+                   <Text style={{ fontFamily: 'Manrope_700Bold' }}>
+diff --git a/src/screens/feed/FeedScreen.js b/src/screens/feed/FeedScreen.js
+new file mode 100644
+index 0000000..10be856
+--- /dev/null
++++ b/src/screens/feed/FeedScreen.js
+@@ -0,0 +1,784 @@
++import React, {
++  useCallback,
++  useEffect,
++  useRef,
++  useState,
++} from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  FlatList,
++  Modal,
++  Pressable,
++  RefreshControl,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import * as ImagePicker from 'expo-image-picker';
++import { COLORS } from '../../theme/colors';
++import { supabase } from '../../lib/supabase';
++import {
++  addPostComment,
++  fetchFeedPage,
++  fetchPostComments,
++  togglePostLike,
++} from '../../services/feedService';
++import {
++  createStoryFromAsset,
++  fetchActiveStories,
++} from '../../services/storyService';
++import { PostCard } from '../../components/feed/PostCard';
++import { CommentsModal } from '../../components/feed/CommentsModal';
++import { StoriesRail } from '../../components/stories/StoriesRail';
++import { StoryViewer } from '../../components/stories/StoryViewer';
++
++const PAGE_SIZE = 10;
++
++function errorMessage(error, fallback) {
++  return error?.message || fallback;
++}
++
++function localCommentId() {
++  return `local-${Date.now()}-${Math.random()
++    .toString(36)
++    .slice(2)}`;
++}
++
++export function FeedScreen({ navigation }) {
++  const [posts, setPosts] = useState([]);
++  const [stories, setStories] = useState([]);
++  const [authed, setAuthed] = useState(false);
++
++  const [initialLoading, setInitialLoading] = useState(true);
++  const [refreshing, setRefreshing] = useState(false);
++  const [loadingMore, setLoadingMore] = useState(false);
++  const [feedError, setFeedError] = useState(null);
++  const [storyError, setStoryError] = useState(null);
++  const [cursor, setCursor] = useState(null);
++  const [hasMore, setHasMore] = useState(true);
++
++  const [openPostId, setOpenPostId] = useState(null);
++  const [activeComments, setActiveComments] = useState([]);
++  const [commentsLoading, setCommentsLoading] = useState(false);
++  const [commentsError, setCommentsError] = useState(null);
++  const [commentText, setCommentText] = useState('');
++  const [commentSending, setCommentSending] = useState(false);
++
++  const [storyOpen, setStoryOpen] = useState(null);
++  const [storyIndex, setStoryIndex] = useState(0);
++  const [storyUploading, setStoryUploading] = useState(false);
++
++  const mountedRef = useRef(true);
++  const postsRef = useRef([]);
++  const initialLoadFinishedRef = useRef(false);
++  const likeRequestsRef = useRef(new Set());
++
++  useEffect(() => {
++    postsRef.current = posts;
++  }, [posts]);
++
++  const refreshFeed = useCallback(async (mode = 'silent') => {
++    if (mode === 'initial') setInitialLoading(true);
++    if (mode === 'refresh') setRefreshing(true);
++
++    setFeedError(null);
++
++    try {
++      const page = await fetchFeedPage({
++        limit: PAGE_SIZE,
++        before: new Date().toISOString(),
++      });
++
++      if (!mountedRef.current) return;
++
++      setPosts(page.posts);
++      setCursor(page.cursor);
++      setHasMore(page.posts.length === PAGE_SIZE);
++    } catch (error) {
++      if (!mountedRef.current) return;
++      setFeedError(
++        errorMessage(error, 'The feed could not be loaded.')
++      );
++    } finally {
++      if (!mountedRef.current) return;
++      if (mode === 'initial') setInitialLoading(false);
++      if (mode === 'refresh') setRefreshing(false);
++      initialLoadFinishedRef.current = true;
++    }
++  }, []);
++
++  const refreshStories = useCallback(async () => {
++    setStoryError(null);
++
++    try {
++      const activeStories = await fetchActiveStories();
++      if (mountedRef.current) setStories(activeStories);
++    } catch (error) {
++      if (!mountedRef.current) return;
++      setStoryError(
++        errorMessage(error, 'Stories could not be loaded.')
++      );
++    }
++  }, []);
++
++  useEffect(() => {
++    mountedRef.current = true;
++    let feedChannel = null;
++
++    const start = async () => {
++      try {
++        const {
++          data: { session },
++          error,
++        } = await supabase.auth.getSession();
++
++        if (error) throw error;
++        if (!mountedRef.current) return;
++
++        const isAuthed = Boolean(session);
++        setAuthed(isAuthed);
++
++        if (!isAuthed) {
++          setInitialLoading(false);
++          setFeedError('Sign in to view your feed.');
++          initialLoadFinishedRef.current = true;
++          return;
++        }
++
++        await Promise.all([
++          refreshFeed('initial'),
++          refreshStories(),
++        ]);
++
++        if (!mountedRef.current) return;
++
++        feedChannel = supabase
++          .channel('feed_rt')
++          .on(
++            'postgres_changes',
++            {
++              event: 'INSERT',
++              schema: 'public',
++              table: 'posts',
++            },
++            () => refreshFeed('silent')
++          )
++          .subscribe();
++      } catch (error) {
++        if (!mountedRef.current) return;
++        setInitialLoading(false);
++        setFeedError(
++          errorMessage(error, 'The feed could not be started.')
++        );
++        initialLoadFinishedRef.current = true;
++      }
++    };
++
++    start();
++
++    return () => {
++      mountedRef.current = false;
++      if (feedChannel) supabase.removeChannel(feedChannel);
++    };
++  }, [refreshFeed, refreshStories]);
++
++  useEffect(() => {
++    const unsubscribe = navigation.addListener('focus', () => {
++      if (!initialLoadFinishedRef.current || !authed) return;
++
++      refreshFeed('silent');
++      refreshStories();
++    });
++
++    return unsubscribe;
++  }, [authed, navigation, refreshFeed, refreshStories]);
++
++  const onRefresh = useCallback(async () => {
++    await Promise.all([
++      refreshFeed('refresh'),
++      refreshStories(),
++    ]);
++  }, [refreshFeed, refreshStories]);
++
++  const loadMore = useCallback(async () => {
++    if (
++      !authed ||
++      loadingMore ||
++      !hasMore ||
++      !cursor
++    ) {
++      return;
++    }
++
++    setLoadingMore(true);
++
++    try {
++      const page = await fetchFeedPage({
++        limit: PAGE_SIZE,
++        before: cursor,
++      });
++
++      if (!mountedRef.current) return;
++
++      setPosts((currentPosts) => {
++        const seen = new Set(
++          currentPosts.map((post) => post.id)
++        );
++        const newPosts = page.posts.filter(
++          (post) => !seen.has(post.id)
++        );
++        return [...currentPosts, ...newPosts];
++      });
++
++      setCursor(page.cursor);
++      setHasMore(page.posts.length === PAGE_SIZE);
++    } catch (error) {
++      if (!mountedRef.current) return;
++      setFeedError(
++        errorMessage(error, 'More posts could not be loaded.')
++      );
++    } finally {
++      if (mountedRef.current) setLoadingMore(false);
++    }
++  }, [authed, cursor, hasMore, loadingMore]);
++
++  const toggleLike = useCallback(async (postId) => {
++    if (likeRequestsRef.current.has(postId)) return;
++
++    const previousPost = postsRef.current.find(
++      (post) => post.id === postId
++    );
++
++    if (!previousPost) return;
++
++    likeRequestsRef.current.add(postId);
++
++    const nextLiked = !previousPost.liked;
++    const nextLikes = Math.max(
++      0,
++      previousPost.likes + (nextLiked ? 1 : -1)
++    );
++
++    setPosts((currentPosts) =>
++      currentPosts.map((post) =>
++        post.id === postId
++          ? {
++              ...post,
++              liked: nextLiked,
++              likes: nextLikes,
++            }
++          : post
++      )
++    );
++
++    try {
++      await togglePostLike(postId);
++    } catch (error) {
++      setPosts((currentPosts) =>
++        currentPosts.map((post) =>
++          post.id === postId ? previousPost : post
++        )
++      );
++
++      Alert.alert(
++        'Like not saved',
++        errorMessage(error, 'Please try again.')
++      );
++    } finally {
++      likeRequestsRef.current.delete(postId);
++    }
++  }, []);
++
++  const loadComments = useCallback(async (postId) => {
++    setCommentsLoading(true);
++    setCommentsError(null);
++
++    try {
++      const comments = await fetchPostComments(postId);
++      if (mountedRef.current) setActiveComments(comments);
++    } catch (error) {
++      if (!mountedRef.current) return;
++      setCommentsError(
++        errorMessage(error, 'Comments could not be loaded.')
++      );
++    } finally {
++      if (mountedRef.current) setCommentsLoading(false);
++    }
++  }, []);
++
++  const openComments = useCallback(
++    (postId) => {
++      setOpenPostId(postId);
++      setActiveComments([]);
++      setCommentText('');
++      loadComments(postId);
++    },
++    [loadComments]
++  );
++
++  const closeComments = useCallback(() => {
++    if (commentSending) return;
++    setOpenPostId(null);
++    setActiveComments([]);
++    setCommentsError(null);
++    setCommentText('');
++  }, [commentSending]);
++
++  const submitComment = useCallback(async () => {
++    const text = commentText.trim();
++    const postId = openPostId;
++
++    if (!text || !postId || commentSending) return;
++
++    const temporaryId = localCommentId();
++    const temporaryComment = {
++      id: temporaryId,
++      userName: 'You',
++      avatarUri: null,
++      text,
++      pending: true,
++    };
++
++    setCommentSending(true);
++    setCommentText('');
++    setActiveComments((comments) => [
++      ...comments,
++      temporaryComment,
++    ]);
++
++    try {
++      await addPostComment(postId, text);
++      const comments = await fetchPostComments(postId);
++
++      if (mountedRef.current && openPostId === postId) {
++        setActiveComments(comments);
++      }
++    } catch (error) {
++      if (mountedRef.current) {
++        setActiveComments((comments) =>
++          comments.filter(
++            (comment) => comment.id !== temporaryId
++          )
++        );
++        setCommentText(text);
++      }
++
++      Alert.alert(
++        'Comment not posted',
++        errorMessage(error, 'Please try again.')
++      );
++    } finally {
++      if (mountedRef.current) setCommentSending(false);
++    }
++  }, [commentSending, commentText, openPostId]);
++
++  const addStory = useCallback(async () => {
++    if (storyUploading) return;
++
++    setStoryUploading(true);
++
++    try {
++      const { status } =
++        await ImagePicker.requestMediaLibraryPermissionsAsync();
++
++      if (status !== 'granted') {
++        Alert.alert(
++          'Permission needed',
++          'Allow photo access to add a story.'
++        );
++        return;
++      }
++
++      const result = await ImagePicker.launchImageLibraryAsync({
++        mediaTypes: ImagePicker.MediaTypeOptions.All,
++        allowsMultipleSelection: false,
++        quality: 0.9,
++        videoQuality:
++          ImagePicker.UIImagePickerControllerQualityType.High,
++      });
++
++      if (result.canceled) return;
++
++      await createStoryFromAsset(result.assets[0]);
++      await refreshStories();
++    } catch (error) {
++      Alert.alert(
++        'Story not posted',
++        errorMessage(error, 'Please try again.')
++      );
++    } finally {
++      if (mountedRef.current) setStoryUploading(false);
++    }
++  }, [refreshStories, storyUploading]);
++
++  const retryFeed = useCallback(() => {
++    refreshFeed('initial');
++    refreshStories();
++  }, [refreshFeed, refreshStories]);
++
++  const openStory = useCallback((userIndex) => {
++    setStoryOpen(userIndex);
++    setStoryIndex(0);
++  }, []);
++
++  const nextStory = useCallback(() => {
++    setStoryOpen((currentUserIndex) => {
++      if (currentUserIndex === null) return null;
++
++      const currentUser = stories[currentUserIndex];
++      if (!currentUser) return null;
++
++      if (storyIndex + 1 < currentUser.items.length) {
++        setStoryIndex((index) => index + 1);
++        return currentUserIndex;
++      }
++
++      if (currentUserIndex + 1 < stories.length) {
++        setStoryIndex(0);
++        return currentUserIndex + 1;
++      }
++
++      return null;
++    });
++  }, [stories, storyIndex]);
++
++  const previousStory = useCallback(() => {
++    setStoryOpen((currentUserIndex) => {
++      if (currentUserIndex === null) return null;
++
++      if (storyIndex > 0) {
++        setStoryIndex((index) => index - 1);
++        return currentUserIndex;
++      }
++
++      if (currentUserIndex > 0) {
++        const previousUser = stories[currentUserIndex - 1];
++        setStoryIndex(
++          Math.max(0, previousUser.items.length - 1)
++        );
++        return currentUserIndex - 1;
++      }
++
++      return null;
++    });
++  }, [stories, storyIndex]);
++
++  if (initialLoading) {
++    return (
++      <SafeAreaView edges={['top']} style={styles.centerRoot}>
++        <ActivityIndicator />
++        <Text style={styles.loadingText}>Loading your feed…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  if (feedError && posts.length === 0) {
++    return (
++      <SafeAreaView edges={['top']} style={styles.centerRoot}>
++        <Ionicons
++          name="cloud-offline-outline"
++          size={34}
++          color={COLORS.subtext}
++        />
++        <Text style={styles.errorTitle}>Couldn’t load the feed</Text>
++        <Text style={styles.errorBody}>{feedError}</Text>
++        <Pressable onPress={retryFeed} style={styles.retryButton}>
++          <Text style={styles.retryButtonText}>Try again</Text>
++        </Pressable>
++      </SafeAreaView>
++    );
++  }
++
++  return (
++    <SafeAreaView edges={['top']} style={styles.root}>
++      <FlatList
++        data={posts}
++        keyExtractor={(post) => post.id}
++        renderItem={({ item }) => (
++          <PostCard
++            post={item}
++            onToggleLike={() => toggleLike(item.id)}
++            onDoubleLike={() => toggleLike(item.id)}
++            onOpenComments={() => openComments(item.id)}
++            onOpenPost={() =>
++              navigation.navigate('PostDetail', {
++                postId: item.id,
++              })
++            }
++          />
++        )}
++        onEndReachedThreshold={0.25}
++        onEndReached={loadMore}
++        refreshControl={
++          <RefreshControl
++            refreshing={refreshing}
++            onRefresh={onRefresh}
++          />
++        }
++        ListHeaderComponent={
++          <View>
++            <View style={styles.feedHeader}>
++              <Text style={styles.feedTitle}>Feed</Text>
++              <Pressable
++                onPress={() => navigation.navigate('CreatePost')}
++                hitSlop={10}
++              >
++                <Ionicons
++                  name="add-circle-outline"
++                  size={27}
++                  color={COLORS.text}
++                />
++              </Pressable>
++            </View>
++
++            <StoriesRail
++              stories={stories}
++              isAdding={storyUploading}
++              onAddYourStory={addStory}
++              onOpen={openStory}
++            />
++
++            {storyError ? (
++              <Text style={styles.inlineNotice}>{storyError}</Text>
++            ) : null}
++
++            {feedError ? (
++              <Pressable
++                onPress={() => refreshFeed('silent')}
++                style={styles.noticeBanner}
++              >
++                <Ionicons
++                  name="alert-circle-outline"
++                  size={18}
++                  color={COLORS.text}
++                />
++                <Text style={styles.noticeText} numberOfLines={2}>
++                  {feedError} Tap to retry.
++                </Text>
++              </Pressable>
++            ) : null}
++          </View>
++        }
++        ListEmptyComponent={
++          <View style={styles.emptyState}>
++            <Ionicons
++              name="images-outline"
++              size={38}
++              color={COLORS.subtext}
++            />
++            <Text style={styles.emptyTitle}>Your feed is ready</Text>
++            <Text style={styles.emptyBody}>
++              New posts from your circles will appear here.
++            </Text>
++            <Pressable
++              onPress={() => navigation.navigate('CreatePost')}
++              style={styles.emptyButton}
++            >
++              <Text style={styles.emptyButtonText}>
++                Create your first post
++              </Text>
++            </Pressable>
++          </View>
++        }
++        ListFooterComponent={
++          loadingMore ? (
++            <ActivityIndicator style={styles.footerSpinner} />
++          ) : !hasMore && posts.length ? (
++            <Text style={styles.endText}>You’re all caught up.</Text>
++          ) : null
++        }
++        showsVerticalScrollIndicator={false}
++        contentContainerStyle={styles.listContent}
++      />
++
++      <CommentsModal
++        visible={Boolean(openPostId)}
++        comments={activeComments}
++        loading={commentsLoading}
++        error={commentsError}
++        commentText={commentText}
++        sending={commentSending}
++        onChangeText={setCommentText}
++        onSubmit={submitComment}
++        onRetry={() => openPostId && loadComments(openPostId)}
++        onClose={closeComments}
++      />
++
++      <Modal
++        visible={storyOpen !== null}
++        animationType="fade"
++        onRequestClose={() => setStoryOpen(null)}
++      >
++        <SafeAreaView
++          edges={['top']}
++          style={styles.storyModal}
++        >
++          {storyOpen !== null && stories[storyOpen] ? (
++            <StoryViewer
++              user={stories[storyOpen]}
++              index={storyIndex}
++              onClose={() => setStoryOpen(null)}
++              onNext={nextStory}
++              onPrev={previousStory}
++            />
++          ) : null}
++        </SafeAreaView>
++      </Modal>
++
++      <Pressable
++        onPress={() => navigation.navigate('CreatePost')}
++        style={({ pressed }) => [
++          styles.floatingButton,
++          pressed && styles.floatingButtonPressed,
++        ]}
++      >
++        <Ionicons name="add" size={28} color="#fff" />
++      </Pressable>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  centerRoot: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    backgroundColor: COLORS.bg,
++  },
++  loadingText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorTitle: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 18,
++  },
++  errorBody: {
++    marginTop: 6,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    textAlign: 'center',
++  },
++  retryButton: {
++    marginTop: 16,
++    paddingHorizontal: 18,
++    paddingVertical: 11,
++    borderRadius: 11,
++    backgroundColor: COLORS.primary,
++  },
++  retryButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  feedHeader: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    paddingHorizontal: 14,
++    paddingTop: 8,
++  },
++  feedTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 24,
++  },
++  inlineNotice: {
++    paddingHorizontal: 14,
++    paddingBottom: 8,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++  },
++  noticeBanner: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    marginHorizontal: 12,
++    marginBottom: 8,
++    padding: 10,
++    borderRadius: 10,
++    backgroundColor: '#f4f4f4',
++  },
++  noticeText: {
++    flex: 1,
++    marginLeft: 8,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++  },
++  listContent: {
++    flexGrow: 1,
++    paddingBottom: 90,
++  },
++  emptyState: {
++    alignItems: 'center',
++    paddingHorizontal: 26,
++    paddingTop: 58,
++  },
++  emptyTitle: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 18,
++  },
++  emptyBody: {
++    marginTop: 6,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    textAlign: 'center',
++  },
++  emptyButton: {
++    marginTop: 16,
++    paddingHorizontal: 16,
++    paddingVertical: 10,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  emptyButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  footerSpinner: {
++    marginVertical: 16,
++  },
++  endText: {
++    marginVertical: 18,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    textAlign: 'center',
++  },
++  storyModal: {
++    flex: 1,
++    backgroundColor: '#000',
++  },
++  floatingButton: {
++    position: 'absolute',
++    right: 16,
++    bottom: 24,
++    width: 56,
++    height: 56,
++    borderRadius: 28,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: COLORS.primary,
++    shadowColor: '#000',
++    shadowOpacity: 0.2,
++    shadowRadius: 6,
++    shadowOffset: { width: 0, height: 3 },
++    elevation: 4,
++  },
++  floatingButtonPressed: {
++    opacity: 0.85,
++    transform: [{ scale: 0.97 }],
++  },
++});
+diff --git a/src/screens/posts/CreatePostScreen.js b/src/screens/posts/CreatePostScreen.js
+new file mode 100644
+index 0000000..e2d6f76
+--- /dev/null
++++ b/src/screens/posts/CreatePostScreen.js
+@@ -0,0 +1,473 @@
++import React, { useMemo, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Image,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++  useWindowDimensions,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import * as ImagePicker from 'expo-image-picker';
++import { COLORS } from '../../theme/colors';
++import { createPostWithMedia } from '../../services/postService';
++
++function normalizeAsset(asset) {
++  return {
++    id:
++      asset.assetId ||
++      `${asset.uri}-${Date.now()}-${Math.random()}`,
++    uri: asset.uri,
++    type: asset.type,
++    width: asset.width,
++    height: asset.height,
++    duration: asset.duration,
++    fileName: asset.fileName,
++    mimeType:
++      asset.mimeType ||
++      (asset.type === 'video'
++        ? 'video/mp4'
++        : 'image/jpeg'),
++  };
++}
++
++function progressLabel(progress) {
++  if (!progress) return 'Post';
++
++  if (progress.stage === 'saving') {
++    return 'Finishing post…';
++  }
++
++  return `Uploading ${progress.current} of ${progress.total}…`;
++}
++
++export function CreatePostScreen({ navigation }) {
++  const { width } = useWindowDimensions();
++  const [assets, setAssets] = useState([]);
++  const [caption, setCaption] = useState('');
++  const [posting, setPosting] = useState(false);
++  const [progress, setProgress] = useState(null);
++
++  const thumbnailSize = useMemo(
++    () =>
++      Math.max(
++        64,
++        (Math.min(width, 720) - 32 - 18) / 4
++      ),
++    [width]
++  );
++
++  const pickMedia = async () => {
++    try {
++      const { status } =
++        await ImagePicker.requestMediaLibraryPermissionsAsync();
++
++      if (status !== 'granted') {
++        Alert.alert(
++          'Permission needed',
++          'Allow photo access to choose media for your post.'
++        );
++        return;
++      }
++
++      const result = await ImagePicker.launchImageLibraryAsync({
++        mediaTypes: ImagePicker.MediaTypeOptions.All,
++        allowsMultipleSelection: true,
++        selectionLimit: 10,
++        quality: 0.9,
++        videoQuality:
++          ImagePicker.UIImagePickerControllerQualityType.High,
++      });
++
++      if (result.canceled) return;
++
++      setAssets(result.assets.map(normalizeAsset));
++    } catch (error) {
++      Alert.alert(
++        'Could not open your library',
++        error?.message || 'Please try again.'
++      );
++    }
++  };
++
++  const removeAsset = (assetId) => {
++    if (posting) return;
++    setAssets((current) =>
++      current.filter((asset) => asset.id !== assetId)
++    );
++  };
++
++  const submit = async () => {
++    if (!assets.length) {
++      Alert.alert(
++        'Add media',
++        'Select at least one photo or video.'
++      );
++      return;
++    }
++
++    if (posting) return;
++
++    setPosting(true);
++    setProgress({
++      stage: 'uploading',
++      current: 1,
++      total: assets.length,
++    });
++
++    try {
++      await createPostWithMedia({
++        assets,
++        caption,
++        onProgress: setProgress,
++      });
++
++      navigation.goBack();
++    } catch (error) {
++      Alert.alert(
++        'Post not created',
++        error?.message || 'Please try again.'
++      );
++    } finally {
++      setPosting(false);
++      setProgress(null);
++    }
++  };
++
++  return (
++    <SafeAreaView edges={['top']} style={styles.root}>
++      <View style={styles.header}>
++        <Pressable
++          onPress={() => navigation.goBack()}
++          disabled={posting}
++          hitSlop={10}
++        >
++          <Ionicons
++            name="chevron-back"
++            size={24}
++            color={COLORS.text}
++          />
++        </Pressable>
++
++        <Text style={styles.headerTitle}>New Post</Text>
++
++        <Pressable
++          onPress={submit}
++          disabled={posting || !assets.length}
++          hitSlop={10}
++        >
++          <Text
++            style={[
++              styles.headerAction,
++              (posting || !assets.length) &&
++                styles.headerActionDisabled,
++            ]}
++          >
++            Post
++          </Text>
++        </Pressable>
++      </View>
++
++      <ScrollView
++        contentContainerStyle={styles.content}
++        keyboardShouldPersistTaps="handled"
++      >
++        <Pressable
++          onPress={pickMedia}
++          disabled={posting}
++          style={({ pressed }) => [
++            styles.picker,
++            pressed && styles.pickerPressed,
++          ]}
++        >
++          <Ionicons
++            name="images-outline"
++            size={30}
++            color={COLORS.text}
++          />
++          <Text style={styles.pickerTitle}>
++            {assets.length
++              ? 'Choose different media'
++              : 'Choose photos or videos'}
++          </Text>
++          <Text style={styles.pickerCaption}>
++            Select up to 10 items
++          </Text>
++        </Pressable>
++
++        {assets.length ? (
++          <View style={styles.selectionSection}>
++            <View style={styles.selectionHeader}>
++              <Text style={styles.selectionTitle}>
++                Selected media
++              </Text>
++              <Text style={styles.selectionCount}>
++                {assets.length}/10
++              </Text>
++            </View>
++
++            <View style={styles.thumbnailGrid}>
++              {assets.map((asset, index) => (
++                <View
++                  key={asset.id}
++                  style={[
++                    styles.thumbnailWrap,
++                    {
++                      width: thumbnailSize,
++                      height: thumbnailSize,
++                    },
++                  ]}
++                >
++                  {asset.type === 'video' ? (
++                    <View style={styles.videoThumbnail}>
++                      <Ionicons
++                        name="play-circle"
++                        size={34}
++                        color="#fff"
++                      />
++                      <Text style={styles.videoLabel}>Video</Text>
++                    </View>
++                  ) : (
++                    <Image
++                      source={{ uri: asset.uri }}
++                      style={styles.thumbnail}
++                    />
++                  )}
++
++                  <View style={styles.orderBadge}>
++                    <Text style={styles.orderText}>{index + 1}</Text>
++                  </View>
++
++                  <Pressable
++                    onPress={() => removeAsset(asset.id)}
++                    disabled={posting}
++                    hitSlop={6}
++                    style={styles.removeButton}
++                  >
++                    <Ionicons name="close" size={15} color="#fff" />
++                  </Pressable>
++                </View>
++              ))}
++            </View>
++          </View>
++        ) : null}
++
++        <Text style={styles.fieldLabel}>Caption</Text>
++        <TextInput
++          value={caption}
++          onChangeText={setCaption}
++          editable={!posting}
++          placeholder="Write a caption…"
++          placeholderTextColor="#8d8d8d"
++          multiline
++          maxLength={2200}
++          style={styles.captionInput}
++        />
++        <Text style={styles.characterCount}>
++          {caption.length}/2200
++        </Text>
++
++        <Pressable
++          onPress={submit}
++          disabled={posting || !assets.length}
++          style={({ pressed }) => [
++            styles.postButton,
++            (pressed || posting || !assets.length) &&
++              styles.postButtonDisabled,
++          ]}
++        >
++          {posting ? (
++            <View style={styles.progressRow}>
++              <ActivityIndicator color="#fff" size="small" />
++              <Text style={styles.progressText}>
++                {progressLabel(progress)}
++              </Text>
++            </View>
++          ) : (
++            <Text style={styles.postButtonText}>Share post</Text>
++          )}
++        </Pressable>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  header: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    paddingHorizontal: 16,
++    paddingVertical: 11,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.border,
++  },
++  headerTitle: {
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 17,
++    color: COLORS.text,
++  },
++  headerAction: {
++    fontFamily: 'Manrope_700Bold',
++    color: COLORS.primary,
++  },
++  headerActionDisabled: {
++    opacity: 0.35,
++  },
++  content: {
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++    padding: 16,
++    paddingBottom: 50,
++  },
++  picker: {
++    alignItems: 'center',
++    padding: 24,
++    borderWidth: 1,
++    borderStyle: 'dashed',
++    borderColor: COLORS.border,
++    borderRadius: 14,
++    backgroundColor: '#fff',
++  },
++  pickerPressed: {
++    opacity: 0.72,
++  },
++  pickerTitle: {
++    marginTop: 9,
++    fontFamily: 'Manrope_700Bold',
++    color: COLORS.text,
++  },
++  pickerCaption: {
++    marginTop: 3,
++    fontFamily: 'Manrope_400Regular',
++    color: COLORS.subtext,
++    fontSize: 12,
++  },
++  selectionSection: {
++    marginTop: 18,
++  },
++  selectionHeader: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    marginBottom: 9,
++  },
++  selectionTitle: {
++    fontFamily: 'Manrope_700Bold',
++    color: COLORS.text,
++  },
++  selectionCount: {
++    fontFamily: 'Manrope_400Regular',
++    color: COLORS.subtext,
++  },
++  thumbnailGrid: {
++    flexDirection: 'row',
++    flexWrap: 'wrap',
++    gap: 6,
++  },
++  thumbnailWrap: {
++    overflow: 'hidden',
++    borderRadius: 10,
++    backgroundColor: '#e7e7e7',
++  },
++  thumbnail: {
++    width: '100%',
++    height: '100%',
++  },
++  videoThumbnail: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: '#242424',
++  },
++  videoLabel: {
++    marginTop: 3,
++    fontFamily: 'Manrope_600SemiBold',
++    color: '#fff',
++    fontSize: 11,
++  },
++  orderBadge: {
++    position: 'absolute',
++    left: 6,
++    bottom: 6,
++    width: 22,
++    height: 22,
++    borderRadius: 11,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: 'rgba(0,0,0,0.7)',
++  },
++  orderText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 11,
++  },
++  removeButton: {
++    position: 'absolute',
++    top: 6,
++    right: 6,
++    width: 24,
++    height: 24,
++    borderRadius: 12,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: 'rgba(0,0,0,0.72)',
++  },
++  fieldLabel: {
++    marginTop: 20,
++    marginBottom: 7,
++    fontFamily: 'Manrope_700Bold',
++    color: COLORS.text,
++  },
++  captionInput: {
++    minHeight: 120,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    borderRadius: 12,
++    padding: 12,
++    textAlignVertical: 'top',
++    fontFamily: 'Manrope_400Regular',
++    color: COLORS.text,
++  },
++  characterCount: {
++    marginTop: 5,
++    alignSelf: 'flex-end',
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++  },
++  postButton: {
++    marginTop: 18,
++    minHeight: 48,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 12,
++    backgroundColor: COLORS.primary,
++  },
++  postButtonDisabled: {
++    opacity: 0.55,
++  },
++  progressRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++  },
++  postButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  progressText: {
++    marginLeft: 8,
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++});
+diff --git a/src/screens/posts/PostDetailScreen.js b/src/screens/posts/PostDetailScreen.js
+new file mode 100644
+index 0000000..dac3554
+--- /dev/null
++++ b/src/screens/posts/PostDetailScreen.js
+@@ -0,0 +1,449 @@
++import React, { useEffect, useRef, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Image,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  View,
++  useWindowDimensions,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { Video } from 'expo-av';
++import { COLORS } from '../../theme/colors';
++import { Avatar } from '../../components/Avatar';
++import { togglePostLike } from '../../services/feedService';
++import { fetchPostDetail } from '../../services/postService';
++import { timeAgo } from '../../utils/timeAgo';
++
++export function PostDetailScreen({ route, navigation }) {
++  const { postId } = route.params || {};
++  const { width } = useWindowDimensions();
++  const [post, setPost] = useState(null);
++  const [author, setAuthor] = useState(null);
++  const [media, setMedia] = useState([]);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState(null);
++  const [liked, setLiked] = useState(false);
++  const [likes, setLikes] = useState(0);
++  const [liking, setLiking] = useState(false);
++  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
++  const mountedRef = useRef(true);
++
++  const mediaWidth = Math.min(width, 720);
++
++  const load = async () => {
++    setLoading(true);
++    setError(null);
++
++    try {
++      const detail = await fetchPostDetail(postId);
++
++      if (!mountedRef.current) return;
++
++      setPost(detail.post);
++      setAuthor(detail.author);
++      setMedia(detail.media);
++      setLikes(detail.likes);
++      setLiked(detail.likedByMe);
++      setActiveMediaIndex(0);
++    } catch (loadError) {
++      if (!mountedRef.current) return;
++      setError(
++        loadError?.message || 'The post could not be loaded.'
++      );
++    } finally {
++      if (mountedRef.current) setLoading(false);
++    }
++  };
++
++  useEffect(() => {
++    mountedRef.current = true;
++    load();
++
++    return () => {
++      mountedRef.current = false;
++    };
++  }, [postId]);
++
++  const onToggleLike = async () => {
++    if (liking) return;
++
++    const previousLiked = liked;
++    const previousLikes = likes;
++    const nextLiked = !previousLiked;
++
++    setLiking(true);
++    setLiked(nextLiked);
++    setLikes(
++      Math.max(0, previousLikes + (nextLiked ? 1 : -1))
++    );
++
++    try {
++      await togglePostLike(postId);
++    } catch (likeError) {
++      setLiked(previousLiked);
++      setLikes(previousLikes);
++      Alert.alert(
++        'Like not saved',
++        likeError?.message || 'Please try again.'
++      );
++    } finally {
++      if (mountedRef.current) setLiking(false);
++    }
++  };
++
++  const displayMedia = media.length
++    ? media
++    : post?.image_url
++      ? [
++          {
++            id: 'primary-image',
++            url: post.image_url,
++            media_type: 'image',
++          },
++        ]
++      : [];
++
++  if (loading) {
++    return (
++      <SafeAreaView edges={['top']} style={styles.centerRoot}>
++        <ActivityIndicator />
++        <Text style={styles.stateText}>Loading post…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  if (error || !post) {
++    return (
++      <SafeAreaView edges={['top']} style={styles.centerRoot}>
++        <Ionicons
++          name="alert-circle-outline"
++          size={34}
++          color={COLORS.subtext}
++        />
++        <Text style={styles.errorTitle}>Post unavailable</Text>
++        <Text style={styles.errorBody}>
++          {error || 'The post could not be found.'}
++        </Text>
++        <View style={styles.errorActions}>
++          <Pressable
++            onPress={() => navigation.goBack()}
++            style={styles.secondaryButton}
++          >
++            <Text style={styles.secondaryButtonText}>Go back</Text>
++          </Pressable>
++          <Pressable onPress={load} style={styles.primaryButton}>
++            <Text style={styles.primaryButtonText}>Try again</Text>
++          </Pressable>
++        </View>
++      </SafeAreaView>
++    );
++  }
++
++  return (
++    <SafeAreaView edges={['top']} style={styles.root}>
++      <View style={styles.header}>
++        <Pressable
++          onPress={() => navigation.goBack()}
++          hitSlop={10}
++        >
++          <Ionicons
++            name="chevron-back"
++            size={24}
++            color={COLORS.text}
++          />
++        </Pressable>
++        <Text style={styles.headerTitle}>Post</Text>
++        <Pressable hitSlop={10}>
++          <Ionicons
++            name="ellipsis-horizontal"
++            size={22}
++            color={COLORS.text}
++          />
++        </Pressable>
++      </View>
++
++      <ScrollView contentContainerStyle={styles.content}>
++        <View style={[styles.card, { maxWidth: mediaWidth }]}>
++          <Pressable
++            onPress={() =>
++              author?.id &&
++              navigation.navigate('Profile', {
++                userId: author.id,
++                name: author.display_name,
++              })
++            }
++            style={styles.authorRow}
++          >
++            <Avatar
++              size={40}
++              name={author?.display_name || 'Unknown'}
++              uri={author?.avatar_url}
++            />
++            <View style={styles.authorText}>
++              <Text style={styles.authorName} numberOfLines={1}>
++                {author?.display_name || 'Unknown'}
++              </Text>
++              <Text style={styles.timestamp}>
++                {timeAgo(post.created_at)}
++              </Text>
++            </View>
++          </Pressable>
++
++          <View style={styles.mediaSection}>
++            <ScrollView
++              horizontal
++              pagingEnabled
++              showsHorizontalScrollIndicator={false}
++              onMomentumScrollEnd={(event) => {
++                const offset =
++                  event.nativeEvent.contentOffset.x || 0;
++                setActiveMediaIndex(
++                  Math.round(offset / mediaWidth)
++                );
++              }}
++              style={{ width: mediaWidth }}
++            >
++              {displayMedia.map((item, index) => (
++                <View
++                  key={item.id}
++                  style={[
++                    styles.mediaSlide,
++                    { width: mediaWidth },
++                  ]}
++                >
++                  {item.media_type === 'video' ? (
++                    <Video
++                      source={{ uri: item.url }}
++                      style={styles.media}
++                      resizeMode="contain"
++                      shouldPlay={activeMediaIndex === index}
++                      isLooping
++                      useNativeControls
++                    />
++                  ) : (
++                    <Image
++                      source={{ uri: item.url }}
++                      style={styles.media}
++                      resizeMode="contain"
++                    />
++                  )}
++                </View>
++              ))}
++            </ScrollView>
++
++            {displayMedia.length > 1 ? (
++              <View style={styles.pageBadge}>
++                <Text style={styles.pageBadgeText}>
++                  {activeMediaIndex + 1}/{displayMedia.length}
++                </Text>
++              </View>
++            ) : null}
++          </View>
++
++          <View style={styles.actions}>
++            <Pressable
++              onPress={onToggleLike}
++              disabled={liking}
++              hitSlop={10}
++              style={styles.actionButton}
++            >
++              <Ionicons
++                name={liked ? 'heart' : 'heart-outline'}
++                size={28}
++                color={liked ? '#e11d48' : COLORS.text}
++              />
++            </Pressable>
++
++            <Pressable hitSlop={10} style={styles.actionButton}>
++              <Ionicons
++                name="chatbubble-outline"
++                size={26}
++                color={COLORS.text}
++              />
++            </Pressable>
++
++            <Pressable hitSlop={10} style={styles.actionButton}>
++              <Ionicons
++                name="paper-plane-outline"
++                size={26}
++                color={COLORS.text}
++              />
++            </Pressable>
++          </View>
++
++          <View style={styles.details}>
++            <Text style={styles.likes}>{likes} likes</Text>
++
++            {post.caption ? (
++              <Text style={styles.caption}>
++                <Text style={styles.captionName}>
++                  {author?.display_name || 'Unknown'}{' '}
++                </Text>
++                <Text style={styles.captionBody}>
++                  {post.caption}
++                </Text>
++              </Text>
++            ) : null}
++          </View>
++        </View>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  centerRoot: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 10,
++    fontFamily: 'Manrope_400Regular',
++    color: COLORS.subtext,
++  },
++  errorTitle: {
++    marginTop: 12,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 18,
++    color: COLORS.text,
++  },
++  errorBody: {
++    marginTop: 6,
++    fontFamily: 'Manrope_400Regular',
++    color: COLORS.subtext,
++    textAlign: 'center',
++  },
++  errorActions: {
++    flexDirection: 'row',
++    marginTop: 16,
++    gap: 10,
++  },
++  secondaryButton: {
++    paddingHorizontal: 16,
++    paddingVertical: 10,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    borderRadius: 10,
++  },
++  secondaryButtonText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  primaryButton: {
++    paddingHorizontal: 16,
++    paddingVertical: 10,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  primaryButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  header: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    paddingHorizontal: 14,
++    paddingVertical: 11,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.border,
++  },
++  headerTitle: {
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 17,
++    color: COLORS.text,
++  },
++  content: {
++    paddingBottom: 30,
++  },
++  card: {
++    width: '100%',
++    alignSelf: 'center',
++  },
++  authorRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    padding: 12,
++  },
++  authorText: {
++    marginLeft: 10,
++    flex: 1,
++  },
++  authorName: {
++    fontFamily: 'Manrope_700Bold',
++    color: COLORS.text,
++  },
++  timestamp: {
++    marginTop: 1,
++    fontFamily: 'Manrope_400Regular',
++    color: COLORS.subtext,
++    fontSize: 12,
++  },
++  mediaSection: {
++    position: 'relative',
++    alignItems: 'center',
++    backgroundColor: '#000',
++  },
++  mediaSlide: {
++    aspectRatio: 1,
++    backgroundColor: '#000',
++  },
++  media: {
++    width: '100%',
++    height: '100%',
++  },
++  pageBadge: {
++    position: 'absolute',
++    top: 12,
++    right: 12,
++    paddingHorizontal: 9,
++    paddingVertical: 5,
++    borderRadius: 12,
++    backgroundColor: 'rgba(0,0,0,0.58)',
++  },
++  pageBadgeText: {
++    color: '#fff',
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 12,
++  },
++  actions: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 12,
++    paddingTop: 10,
++  },
++  actionButton: {
++    marginRight: 17,
++  },
++  details: {
++    paddingHorizontal: 12,
++    paddingTop: 8,
++    paddingBottom: 16,
++  },
++  likes: {
++    fontFamily: 'Manrope_700Bold',
++    color: COLORS.text,
++  },
++  caption: {
++    marginTop: 6,
++    color: COLORS.text,
++  },
++  captionName: {
++    fontFamily: 'Manrope_700Bold',
++  },
++  captionBody: {
++    fontFamily: 'Manrope_400Regular',
++  },
++});
+diff --git a/src/services/feedService.js b/src/services/feedService.js
+new file mode 100644
+index 0000000..8d1db22
+--- /dev/null
++++ b/src/services/feedService.js
+@@ -0,0 +1,99 @@
++import { supabase } from '../lib/supabase';
++import { timeAgo } from '../utils/timeAgo';
++
++export function mapFeedRow(row) {
++  return {
++    id: row.id,
++    user: {
++      name: row.author_name || 'Unknown',
++      avatarUri: row.author_avatar || null,
++    },
++    uri: row.image_url,
++    liked: Boolean(row.liked_by_me),
++    likes: Number(row.likes_count || 0),
++    caption: row.caption || '',
++    time: timeAgo(row.created_at),
++    created_at: row.created_at,
++  };
++}
++
++export async function fetchFeedPage({
++  limit = 10,
++  before = new Date().toISOString(),
++} = {}) {
++  const { data, error } = await supabase.rpc('get_feed', {
++    limit_count: limit,
++    before,
++  });
++
++  if (error) throw error;
++
++  const posts = (data || []).map(mapFeedRow);
++
++  return {
++    posts,
++    cursor: posts.length
++      ? posts[posts.length - 1].created_at
++      : null,
++  };
++}
++
++export async function fetchPostComments(postId) {
++  const { data: rows, error: commentsError } = await supabase
++    .from('post_comments')
++    .select('id, body, created_at, user_id, post_id')
++    .eq('post_id', postId)
++    .order('created_at', { ascending: true });
++
++  if (commentsError) throw commentsError;
++
++  const userIds = Array.from(
++    new Set((rows || []).map((row) => row.user_id).filter(Boolean))
++  );
++
++  let usersById = new Map();
++
++  if (userIds.length) {
++    const { data: users, error: usersError } = await supabase
++      .from('users')
++      .select('id, display_name, avatar_url')
++      .in('id', userIds);
++
++    if (usersError) throw usersError;
++
++    usersById = new Map(
++      (users || []).map((user) => [user.id, user])
++    );
++  }
++
++  return (rows || []).map((row) => ({
++    id: row.id,
++    userId: row.user_id,
++    userName:
++      usersById.get(row.user_id)?.display_name || 'Someone',
++    avatarUri:
++      usersById.get(row.user_id)?.avatar_url || null,
++    text: row.body,
++    createdAt: row.created_at,
++    pending: false,
++  }));
++}
++
++export async function addPostComment(postId, body) {
++  const { data, error } = await supabase.rpc('add_comment', {
++    p_post_id: postId,
++    p_body: body,
++  });
++
++  if (error) throw error;
++  return data;
++}
++
++export async function togglePostLike(postId) {
++  const { data, error } = await supabase.rpc('toggle_like', {
++    p_post_id: postId,
++  });
++
++  if (error) throw error;
++  return data;
++}
+diff --git a/src/services/postService.js b/src/services/postService.js
+new file mode 100644
+index 0000000..46cc4f4
+--- /dev/null
++++ b/src/services/postService.js
+@@ -0,0 +1,121 @@
++import { supabase } from '../lib/supabase';
++import { ensureAuthed } from './authService';
++import { uploadToBucket } from './uploadService';
++
++export async function createPostWithMedia({
++  assets,
++  caption,
++  onProgress,
++}) {
++  await ensureAuthed();
++
++  if (!assets?.length) {
++    throw new Error('Select at least one photo or video.');
++  }
++
++  const urls = [];
++  const types = [];
++
++  for (let index = 0; index < assets.length; index += 1) {
++    const asset = assets[index];
++
++    onProgress?.({
++      stage: 'uploading',
++      current: index + 1,
++      total: assets.length,
++    });
++
++    const mediaType = asset.type === 'video' ? 'video' : 'image';
++    const mimeType =
++      asset.mimeType ||
++      (mediaType === 'video' ? 'video/mp4' : 'image/jpeg');
++
++    const url = await uploadToBucket(
++      asset.uri,
++      'posts',
++      mimeType
++    );
++
++    urls.push(url);
++    types.push(mediaType);
++  }
++
++  onProgress?.({
++    stage: 'saving',
++    current: assets.length,
++    total: assets.length,
++  });
++
++  const { data, error } = await supabase.rpc(
++    'create_post_with_media',
++    {
++      p_urls: urls,
++      p_types: types,
++      p_caption: caption?.trim() || null,
++    }
++  );
++
++  if (error) throw error;
++  return data;
++}
++
++export async function fetchPostDetail(postId) {
++  const { data: post, error: postError } = await supabase
++    .from('posts')
++    .select('id, user_id, caption, image_url, created_at')
++    .eq('id', postId)
++    .single();
++
++  if (postError) throw postError;
++
++  const [mediaResult, likesResult, authorResult, sessionResult] =
++    await Promise.all([
++      supabase
++        .from('post_media')
++        .select('id, url, media_type, created_at')
++        .eq('post_id', postId)
++        .order('created_at', { ascending: true }),
++      supabase
++        .from('post_likes')
++        .select('post_id', { count: 'exact', head: true })
++        .eq('post_id', postId),
++      supabase
++        .from('users')
++        .select('id, display_name, avatar_url')
++        .eq('id', post.user_id)
++        .maybeSingle(),
++      supabase.auth.getSession(),
++    ]);
++
++  if (mediaResult.error) throw mediaResult.error;
++  if (likesResult.error) throw likesResult.error;
++  if (authorResult.error) throw authorResult.error;
++  if (sessionResult.error) throw sessionResult.error;
++
++  let likedByMe = false;
++  const session = sessionResult.data.session;
++
++  if (session) {
++    const { data: ownLike, error: ownLikeError } = await supabase
++      .from('post_likes')
++      .select('post_id')
++      .eq('post_id', postId)
++      .eq('user_id', session.user.id)
++      .maybeSingle();
++
++    if (ownLikeError) throw ownLikeError;
++    likedByMe = Boolean(ownLike);
++  }
++
++  return {
++    post,
++    author: authorResult.data || {
++      id: post.user_id,
++      display_name: 'Unknown',
++      avatar_url: null,
++    },
++    media: mediaResult.data || [],
++    likes: likesResult.count ?? 0,
++    likedByMe,
++  };
++}
+diff --git a/src/services/storyService.js b/src/services/storyService.js
+new file mode 100644
+index 0000000..7cce243
+--- /dev/null
++++ b/src/services/storyService.js
+@@ -0,0 +1,74 @@
++import { supabase } from '../lib/supabase';
++import { ensureAuthed } from './authService';
++import { uploadToBucket } from './uploadService';
++
++export async function fetchActiveStories() {
++  const {
++    data: { session },
++    error: sessionError,
++  } = await supabase.auth.getSession();
++
++  if (sessionError) throw sessionError;
++  if (!session) return [];
++
++  const { data, error } = await supabase.rpc('get_active_stories');
++  if (error) throw error;
++
++  const storiesByUser = new Map();
++
++  (data || []).forEach((row) => {
++    if (!storiesByUser.has(row.user_id)) {
++      storiesByUser.set(row.user_id, {
++        userId: row.user_id,
++        userName: row.display_name || 'Someone',
++        avatar: row.avatar_url || null,
++        items: [],
++      });
++    }
++
++    storiesByUser.get(row.user_id).items.push({
++      id: row.id,
++      url: row.url,
++      media_type: row.media_type,
++      created_at: row.created_at,
++    });
++  });
++
++  const groups = Array.from(storiesByUser.values());
++  const currentUserId = session.user.id;
++
++  groups.sort((left, right) => {
++    if (left.userId === currentUserId) return -1;
++    if (right.userId === currentUserId) return 1;
++    return 0;
++  });
++
++  return groups;
++}
++
++export async function createStoryFromAsset(asset) {
++  const { user } = await ensureAuthed();
++  const mediaType = asset.type === 'video' ? 'video' : 'image';
++  const mimeType =
++    asset.mimeType ||
++    (mediaType === 'video' ? 'video/mp4' : 'image/jpeg');
++
++  const url = await uploadToBucket(
++    asset.uri,
++    'stories',
++    mimeType
++  );
++
++  const { data, error } = await supabase
++    .from('stories')
++    .insert({
++      user_id: user.id,
++      url,
++      media_type: mediaType,
++    })
++    .select('id, user_id, url, media_type, created_at')
++    .single();
++
++  if (error) throw error;
++  return data;
++}
+diff --git a/src/utils/timeAgo.js b/src/utils/timeAgo.js
+new file mode 100644
+index 0000000..8f31b96
+--- /dev/null
++++ b/src/utils/timeAgo.js
+@@ -0,0 +1,23 @@
++export function timeAgo(iso) {
++  const timestamp = new Date(iso).getTime();
++
++  if (!Number.isFinite(timestamp)) return '';
++
++  const seconds = Math.max(
++    1,
++    Math.floor((Date.now() - timestamp) / 1000)
++  );
++
++  if (seconds < 60) return `${seconds}s`;
++
++  const minutes = Math.floor(seconds / 60);
++  if (minutes < 60) return `${minutes}m`;
++
++  const hours = Math.floor(minutes / 60);
++  if (hours < 24) return `${hours}h`;
++
++  const days = Math.floor(hours / 24);
++  if (days < 7) return `${days}d`;
++
++  return new Date(timestamp).toLocaleDateString();
++}

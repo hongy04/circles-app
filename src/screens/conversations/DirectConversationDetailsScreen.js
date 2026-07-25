@@ -132,20 +132,36 @@ export function DirectConversationDetailsScreen({ route, navigation }) {
           <Text style={styles.privacyText}>Private direct conversation</Text>
         </View>
 
-        {otherUserId ? (
+        <View style={styles.profileActions}>
+          {otherUserId ? (
+            <Pressable
+              onPress={() => navigation.navigate('Profile', {
+                userId: otherUserId,
+              })}
+              style={({ pressed }) => [
+                styles.profileButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons name="person-outline" size={17} color={COLORS.text} />
+              <Text style={styles.profileButtonText}>View Profile</Text>
+            </Pressable>
+          ) : null}
+
           <Pressable
-            onPress={() => navigation.navigate('Profile', {
-              userId: otherUserId,
-            })}
+            onPress={() => navigation.navigate(
+              'ConversationNotificationSettings',
+              { conversationId }
+            )}
             style={({ pressed }) => [
               styles.profileButton,
               pressed && styles.pressed,
             ]}
           >
-            <Ionicons name="person-outline" size={17} color={COLORS.text} />
-            <Text style={styles.profileButtonText}>View Profile</Text>
+            <Ionicons name="notifications-outline" size={17} color={COLORS.text} />
+            <Text style={styles.profileButtonText}>Notifications</Text>
           </Pressable>
-        ) : null}
+        </View>
       </View>
 
       <View style={styles.sectionHeader}>
@@ -265,13 +281,19 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,
   },
+  profileActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 9,
+    marginTop: 18,
+  },
   profileButton: {
     minHeight: 40,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
-    marginTop: 18,
     paddingHorizontal: 18,
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,

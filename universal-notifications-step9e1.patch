@@ -1,0 +1,666 @@
+diff -ruN /mnt/data/step9e1_patch_base/docs/UNIVERSAL_NOTIFICATIONS_ARCHITECTURE.md /mnt/data/step9e1_patch_new/docs/UNIVERSAL_NOTIFICATIONS_ARCHITECTURE.md
+--- /mnt/data/step9e1_patch_base/docs/UNIVERSAL_NOTIFICATIONS_ARCHITECTURE.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/step9e1_patch_new/docs/UNIVERSAL_NOTIFICATIONS_ARCHITECTURE.md	2026-07-23 02:18:25.271004895 +0000
+@@ -0,0 +1,75 @@
++# Universal Notifications Architecture — Step 9E.1
++
++## Product rule
++
++Circles has one private activity center. It does not matter whether the activity
++originated from a personal profile post or a private Circle post.
++
++The notification center now includes:
++
++- Personal post likes
++- Personal post comments
++- Circle post likes
++- Circle post comments
++- New Circle posts
++- Circle invitations
++
++Direct-message content is still not copied into the activity stream. Messages
++remain in the private inbox and use their own unread state.
++
++## Authenticity behavior
++
++Notifications represent current social reality rather than an immutable event
++log:
++
++- Users never receive notifications for liking or commenting on their own post.
++- Removing a personal or Circle like removes the corresponding like
++  notification.
++- Deleting a comment removes its notification through the foreign-key cascade.
++- Deleting a post removes all notifications targeting that post.
++- A notification is visible only to its recipient through RLS.
++
++## Database compatibility
++
++The existing `circle_notifications` table is retained to avoid destroying Step
++9E notification history or breaking older app clients. Step 9E.1 extends it into
++the universal activity table with:
++
++- `personal_post_id`
++- `personal_comment_id`
++- `personal_like`
++- `personal_comment`
++
++New generic RPCs are used by the current client:
++
++- `get_my_notifications`
++- `get_my_notification_unread_count`
++- `mark_notification_read`
++- `mark_all_notifications_read`
++
++The old Circle-named RPCs remain available for compatibility.
++
++## Badge behavior
++
++The existing `get_my_notification_badge_count()` already counts all unread rows
++in the activity table. Therefore personal post likes and comments immediately
++contribute to the same live notification badge as Circle activity.
++
++Conversation mute settings continue to suppress only activity belonging to that
++specific conversation. Personal profile activity has no conversation ID and is
++not accidentally silenced by a Circle mute.
++
++## Navigation
++
++- Personal like notification → personal `PostDetail`
++- Personal comment notification → personal `PostDetail`
++- Circle like/comment/post notification → `CirclePostDetail`
++- Circle invitation → Inbox invitation area
++
++## Intentionally not included yet
++
++- Device push notifications while the app is closed
++- Notification grouping such as “Alex and 3 others liked your post”
++- Likes on comments
++- Replies, mentions, or comment-thread notifications
++- Account-wide switches for personal like/comment alerts
+diff -ruN /mnt/data/step9e1_patch_base/src/screens/conversations/NotificationsScreen.js /mnt/data/step9e1_patch_new/src/screens/conversations/NotificationsScreen.js
+--- /mnt/data/step9e1_patch_base/src/screens/conversations/NotificationsScreen.js	2026-07-23 02:18:25.271004895 +0000
++++ /mnt/data/step9e1_patch_new/src/screens/conversations/NotificationsScreen.js	2026-07-23 02:18:25.271004895 +0000
+@@ -16,38 +16,48 @@
+ import { COLORS } from '../../theme/colors';
+ import { timeAgo } from '../../utils/timeAgo';
+ import {
+-  listCircleNotifications,
+-  markAllCircleNotificationsRead,
+-  markCircleNotificationRead,
++  listNotifications,
++  markAllNotificationsRead,
++  markNotificationRead,
+   subscribeToNotificationChanges,
+ } from '../../services/notificationService';
+ 
+ function notificationCopy(notification) {
+   switch (notification.type) {
++    case 'personal_like':
++      return {
++        icon: 'heart-outline',
++        text: `${notification.actorName} liked your post.`,
++      };
++    case 'personal_comment':
++      return {
++        icon: 'chatbubble-outline',
++        text: `${notification.actorName} commented on your post.`,
++      };
+     case 'circle_post':
+       return {
+         icon: 'albums-outline',
+-        text: `${notification.actorName} shared a new post in ${notification.conversationTitle}.`,
++        text: `${notification.actorName} shared a new post in ${notification.conversationTitle || 'your Circle'}.`,
+       };
+     case 'circle_comment':
+       return {
+         icon: 'chatbubble-outline',
+-        text: `${notification.actorName} commented on your post in ${notification.conversationTitle}.`,
++        text: `${notification.actorName} commented on your post in ${notification.conversationTitle || 'your Circle'}.`,
+       };
+     case 'circle_like':
+       return {
+         icon: 'heart-outline',
+-        text: `${notification.actorName} liked your post in ${notification.conversationTitle}.`,
++        text: `${notification.actorName} liked your post in ${notification.conversationTitle || 'your Circle'}.`,
+       };
+     case 'conversation_invitation':
+       return {
+         icon: 'person-add-outline',
+-        text: `${notification.actorName} invited you to ${notification.conversationTitle}.`,
++        text: `${notification.actorName} invited you to ${notification.conversationTitle || 'a private Circle'}.`,
+       };
+     default:
+       return {
+         icon: 'notifications-outline',
+-        text: `New private activity in ${notification.conversationTitle}.`,
++        text: 'You have new private activity.',
+       };
+   }
+ }
+@@ -102,7 +112,7 @@
+     setError('');
+ 
+     try {
+-      setNotifications(await listCircleNotifications());
++      setNotifications(await listNotifications());
+     } catch (loadError) {
+       setError(loadError?.message || 'Could not load notifications.');
+     } finally {
+@@ -124,7 +134,7 @@
+         <Pressable
+           onPress={async () => {
+             try {
+-              await markAllCircleNotificationsRead();
++              await markAllNotificationsRead();
+               setNotifications((current) => current.map((item) => ({
+                 ...item,
+                 isRead: true,
+@@ -145,24 +155,41 @@
+     });
+   }, [navigation, unreadCount]);
+ 
+-  const openNotification = async (notification) => {
+-    if (!notification.isRead) {
+-      setNotifications((current) => current.map((item) => (
+-        item.id === notification.id
+-          ? { ...item, isRead: true, readAt: new Date().toISOString() }
+-          : item
+-      )));
+-      markCircleNotificationRead(notification.id).catch(() => {});
+-    }
++  const markReadLocally = (notification) => {
++    if (notification.isRead) return;
++
++    setNotifications((current) => current.map((item) => (
++      item.id === notification.id
++        ? { ...item, isRead: true, readAt: new Date().toISOString() }
++        : item
++    )));
++    markNotificationRead(notification.id).catch(() => {});
++  };
++
++  const openNotification = (notification) => {
++    markReadLocally(notification);
+ 
+     if (notification.type === 'conversation_invitation') {
+       navigation.navigate('Inbox');
+       return;
+     }
+ 
+-    if (notification.postId && notification.conversationId) {
++    if (notification.personalPostId) {
++      // PostDetail belongs to the root stack. Explicitly reach the root so the
++      // same activity screen can open personal posts from the Circles stack.
++      const rootNavigation = navigation.getParent()?.getParent();
++      const targetNavigation = rootNavigation || navigation;
++      targetNavigation.navigate('PostDetail', {
++        postId: notification.personalPostId,
++        openComments: notification.type === 'personal_comment',
++        source: 'notification',
++      });
++      return;
++    }
++
++    if (notification.circlePostId && notification.conversationId) {
+       navigation.navigate('CirclePostDetail', {
+-        postId: notification.postId,
++        postId: notification.circlePostId,
+         conversationId: notification.conversationId,
+       });
+       return;
+@@ -179,7 +206,7 @@
+     return (
+       <SafeAreaView edges={['bottom']} style={styles.centerState}>
+         <ActivityIndicator />
+-        <Text style={styles.stateText}>Loading private activity…</Text>
++        <Text style={styles.stateText}>Loading activity…</Text>
+       </SafeAreaView>
+     );
+   }
+@@ -219,8 +246,8 @@
+             />
+             <Text style={styles.emptyTitle}>No notifications yet</Text>
+             <Text style={styles.emptyBody}>
+-              Private Circle invitations, posts, comments, and likes will appear
+-              here. Direct messages stay organized in your inbox.
++              Likes and comments on personal posts, private Circle activity,
++              and Circle invitations will all appear here.
+             </Text>
+           </View>
+         )}
+diff -ruN /mnt/data/step9e1_patch_base/src/services/notificationService.js /mnt/data/step9e1_patch_new/src/services/notificationService.js
+--- /mnt/data/step9e1_patch_base/src/services/notificationService.js	2026-07-23 02:18:25.271004895 +0000
++++ /mnt/data/step9e1_patch_new/src/services/notificationService.js	2026-07-23 02:18:25.271004895 +0000
+@@ -9,16 +9,25 @@
+ }
+ 
+ function mapNotification(row) {
++  const circlePostId = row.circle_post_id || row.post_id || null;
++  const circleCommentId = row.circle_comment_id || row.comment_id || null;
++  const personalPostId = row.personal_post_id || null;
++  const personalCommentId = row.personal_comment_id || null;
++
+   return {
+     id: row.notification_id,
+     type: row.notification_type,
+     conversationId: row.conversation_id || null,
+-    conversationTitle: row.conversation_title || 'Private Circle',
++    conversationTitle: row.conversation_title || null,
+     actorId: row.actor_id || null,
+-    actorName: row.actor_name || 'A Circle member',
++    actorName: row.actor_name || 'Someone',
+     actorAvatar: row.actor_avatar || null,
+-    postId: row.post_id || null,
+-    commentId: row.comment_id || null,
++    circlePostId,
++    circleCommentId,
++    personalPostId,
++    personalCommentId,
++    postId: personalPostId || circlePostId,
++    commentId: personalCommentId || circleCommentId,
+     invitationId: row.invitation_id || null,
+     createdAt: row.created_at,
+     readAt: row.read_at || null,
+@@ -41,9 +50,9 @@
+   };
+ }
+ 
+-export async function listCircleNotifications() {
++export async function listNotifications() {
+   await ensureAuthed();
+-  const { data, error } = await supabase.rpc('get_my_circle_notifications', {
++  const { data, error } = await supabase.rpc('get_my_notifications', {
+     p_limit_count: 150,
+     p_before: new Date().toISOString(),
+   });
+@@ -51,6 +60,9 @@
+   return (data || []).map(mapNotification);
+ }
+ 
++// Compatibility alias for any older screen that still imports the Step 9E name.
++export const listCircleNotifications = listNotifications;
++
+ export async function getNotificationBadgeCount() {
+   await ensureAuthed();
+   const { data, error } = await supabase.rpc(
+@@ -63,26 +75,30 @@
+ export async function getNotificationCenterUnreadCount() {
+   await ensureAuthed();
+   const { data, error } = await supabase.rpc(
+-    'get_my_circle_notification_unread_count'
++    'get_my_notification_unread_count'
+   );
+   if (error) throw error;
+   return Number(data || 0);
+ }
+ 
+-export async function markCircleNotificationRead(notificationId) {
++export async function markNotificationRead(notificationId) {
+   await ensureAuthed();
+-  const { error } = await supabase.rpc('mark_circle_notification_read', {
++  const { error } = await supabase.rpc('mark_notification_read', {
+     p_notification_id: notificationId,
+   });
+   if (error) throw error;
+ }
+ 
+-export async function markAllCircleNotificationsRead() {
++export const markCircleNotificationRead = markNotificationRead;
++
++export async function markAllNotificationsRead() {
+   await ensureAuthed();
+-  const { error } = await supabase.rpc('mark_all_circle_notifications_read');
++  const { error } = await supabase.rpc('mark_all_notifications_read');
+   if (error) throw error;
+ }
+ 
++export const markAllCircleNotificationsRead = markAllNotificationsRead;
++
+ export async function getConversationNotificationSettings(conversationId) {
+   await ensureAuthed();
+   const { data, error } = await supabase.rpc(
+@@ -126,6 +142,8 @@
+ export function subscribeToNotificationChanges(onChange) {
+   if (!onChange) return () => {};
+ 
++  // Personal-post triggers and Circle triggers both write into the same private
++  // activity table. Listening here gives the app one universal live stream.
+   const channel = supabase
+     .channel(nextChannelName())
+     .on(
+diff -ruN /mnt/data/step9e1_patch_base/supabase/migrations/20260723_017_universal_activity_notifications.sql /mnt/data/step9e1_patch_new/supabase/migrations/20260723_017_universal_activity_notifications.sql
+--- /mnt/data/step9e1_patch_base/supabase/migrations/20260723_017_universal_activity_notifications.sql	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/step9e1_patch_new/supabase/migrations/20260723_017_universal_activity_notifications.sql	2026-07-23 02:18:25.271004895 +0000
+@@ -0,0 +1,332 @@
++-- Circles Step 9E.1
++-- Universal in-app activity notifications for both personal posts and
++-- private Circle posts.
++--
++-- This migration intentionally keeps the existing circle_notifications table
++-- name so Step 9E clients and existing notification history remain intact.
++-- The table becomes the app's universal private activity stream.
++
++begin;
++
++-- ---------------------------------------------------------------------------
++-- Extend the existing private notification record for personal-post targets.
++-- ---------------------------------------------------------------------------
++
++alter table public.circle_notifications
++  add column if not exists personal_post_id uuid
++    references public.posts(id) on delete cascade;
++
++alter table public.circle_notifications
++  add column if not exists personal_comment_id uuid
++    references public.post_comments(id) on delete cascade;
++
++-- The original Step 9E check accepted only Circle activity. Drop whichever
++-- notification_type check is currently installed, then recreate one that also
++-- accepts personal post likes and comments.
++do $$
++declare
++  constraint_row record;
++begin
++  for constraint_row in
++    select constraint_info.conname
++    from pg_constraint constraint_info
++    where constraint_info.conrelid = 'public.circle_notifications'::regclass
++      and constraint_info.contype = 'c'
++      and pg_get_constraintdef(constraint_info.oid) ilike '%notification_type%'
++  loop
++    execute format(
++      'alter table public.circle_notifications drop constraint %I',
++      constraint_row.conname
++    );
++  end loop;
++end;
++$$;
++
++alter table public.circle_notifications
++  add constraint circle_notifications_notification_type_check
++  check (
++    notification_type in (
++      'conversation_invitation',
++      'circle_post',
++      'circle_comment',
++      'circle_like',
++      'personal_comment',
++      'personal_like'
++    )
++  );
++
++create index if not exists circle_notifications_personal_post_index
++  on public.circle_notifications (personal_post_id, created_at desc)
++  where personal_post_id is not null;
++
++create unique index if not exists circle_notifications_personal_comment_unique
++  on public.circle_notifications (
++    user_id,
++    notification_type,
++    personal_comment_id
++  )
++  where notification_type = 'personal_comment';
++
++create unique index if not exists circle_notifications_personal_like_unique
++  on public.circle_notifications (
++    user_id,
++    notification_type,
++    personal_post_id,
++    actor_id
++  )
++  where notification_type = 'personal_like';
++
++-- ---------------------------------------------------------------------------
++-- Personal post interaction triggers.
++-- ---------------------------------------------------------------------------
++
++create or replace function public.notify_personal_comment_created()
++returns trigger
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  post_owner_id uuid;
++begin
++  select post_row.user_id
++  into post_owner_id
++  from public.posts post_row
++  where post_row.id = new.post_id;
++
++  -- The author's own comment is part of the post, not an alert to themselves.
++  if post_owner_id is null or post_owner_id = new.user_id then
++    return new;
++  end if;
++
++  insert into public.circle_notifications (
++    user_id,
++    actor_id,
++    notification_type,
++    personal_post_id,
++    personal_comment_id,
++    created_at
++  )
++  values (
++    post_owner_id,
++    new.user_id,
++    'personal_comment',
++    new.post_id,
++    new.id,
++    coalesce(new.created_at, now())
++  )
++  on conflict do nothing;
++
++  return new;
++end;
++$$;
++
++create or replace function public.notify_personal_like_changed()
++returns trigger
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  like_row public.post_likes%rowtype;
++  post_owner_id uuid;
++begin
++  if tg_op = 'DELETE' then
++    like_row := old;
++  else
++    like_row := new;
++  end if;
++
++  select post_row.user_id
++  into post_owner_id
++  from public.posts post_row
++  where post_row.id = like_row.post_id;
++
++  if post_owner_id is null or post_owner_id = like_row.user_id then
++    if tg_op = 'DELETE' then
++      return old;
++    end if;
++    return new;
++  end if;
++
++  -- Authentic state: an unlike removes the corresponding unread/read activity
++  -- record rather than preserving an event that is no longer true.
++  if tg_op = 'DELETE' then
++    delete from public.circle_notifications notification_row
++    where notification_row.user_id = post_owner_id
++      and notification_row.notification_type = 'personal_like'
++      and notification_row.personal_post_id = like_row.post_id
++      and notification_row.actor_id = like_row.user_id;
++
++    return old;
++  end if;
++
++  insert into public.circle_notifications (
++    user_id,
++    actor_id,
++    notification_type,
++    personal_post_id,
++    created_at
++  )
++  values (
++    post_owner_id,
++    like_row.user_id,
++    'personal_like',
++    like_row.post_id,
++    now()
++  )
++  on conflict do nothing;
++
++  return new;
++end;
++$$;
++
++drop trigger if exists personal_comments_create_notification
++  on public.post_comments;
++create trigger personal_comments_create_notification
++after insert on public.post_comments
++for each row
++execute function public.notify_personal_comment_created();
++
++drop trigger if exists personal_likes_create_notification
++  on public.post_likes;
++create trigger personal_likes_create_notification
++after insert or delete on public.post_likes
++for each row
++execute function public.notify_personal_like_changed();
++
++-- ---------------------------------------------------------------------------
++-- Generic notification-center RPCs.
++-- Existing Step 9E Circle-named RPCs remain available for older clients.
++-- ---------------------------------------------------------------------------
++
++create or replace function public.get_my_notifications(
++  p_limit_count integer default 100,
++  p_before timestamptz default now()
++)
++returns table (
++  notification_id uuid,
++  notification_type text,
++  conversation_id uuid,
++  conversation_title text,
++  actor_id uuid,
++  actor_name text,
++  actor_avatar text,
++  circle_post_id uuid,
++  circle_comment_id uuid,
++  personal_post_id uuid,
++  personal_comment_id uuid,
++  invitation_id uuid,
++  created_at timestamptz,
++  read_at timestamptz,
++  is_read boolean
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select
++    notification.id as notification_id,
++    notification.notification_type,
++    notification.conversation_id,
++    case
++      when notification.conversation_id is null then null
++      else coalesce(
++        nullif(trim(conversation.title), ''),
++        case
++          when conversation.kind = 'direct' then 'Private conversation'
++          else 'Private Circle'
++        end
++      )
++    end as conversation_title,
++    notification.actor_id,
++    coalesce(actor.display_name, 'Someone') as actor_name,
++    actor.avatar_url as actor_avatar,
++    notification.post_id as circle_post_id,
++    notification.comment_id as circle_comment_id,
++    notification.personal_post_id,
++    notification.personal_comment_id,
++    notification.invitation_id,
++    notification.created_at,
++    notification.read_at,
++    notification.read_at is not null as is_read
++  from public.circle_notifications notification
++  left join public.conversations conversation
++    on conversation.id = notification.conversation_id
++  left join public.users actor
++    on actor.id = notification.actor_id
++  where notification.user_id = auth.uid()
++    and notification.created_at < coalesce(p_before, now())
++  order by notification.created_at desc
++  limit greatest(1, least(coalesce(p_limit_count, 100), 300));
++$$;
++
++revoke all on function public.get_my_notifications(integer, timestamptz)
++  from public;
++grant execute on function public.get_my_notifications(integer, timestamptz)
++  to authenticated;
++
++create or replace function public.get_my_notification_unread_count()
++returns bigint
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select count(*)
++  from public.circle_notifications notification_row
++  where notification_row.user_id = auth.uid()
++    and notification_row.read_at is null;
++$$;
++
++revoke all on function public.get_my_notification_unread_count()
++  from public;
++grant execute on function public.get_my_notification_unread_count()
++  to authenticated;
++
++create or replace function public.mark_notification_read(
++  p_notification_id uuid
++)
++returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++begin
++  update public.circle_notifications notification_row
++  set read_at = coalesce(notification_row.read_at, now())
++  where notification_row.id = p_notification_id
++    and notification_row.user_id = auth.uid();
++
++  if not found then
++    raise exception 'Notification not found';
++  end if;
++end;
++$$;
++
++revoke all on function public.mark_notification_read(uuid) from public;
++grant execute on function public.mark_notification_read(uuid)
++  to authenticated;
++
++create or replace function public.mark_all_notifications_read()
++returns void
++language sql
++security definer
++set search_path = public
++as $$
++  update public.circle_notifications notification_row
++  set read_at = now()
++  where notification_row.user_id = auth.uid()
++    and notification_row.read_at is null;
++$$;
++
++revoke all on function public.mark_all_notifications_read() from public;
++grant execute on function public.mark_all_notifications_read()
++  to authenticated;
++
++-- get_my_notification_badge_count() from Step 9E already counts every unread
++-- activity row. Personal notifications have no conversation_id, so they are
++-- included without being affected by a Circle-specific mute setting.
++
++commit;

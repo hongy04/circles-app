@@ -1,0 +1,2221 @@
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/App.js /mnt/data/circles_step7_work/circles-app/App.js
+--- /mnt/data/circles_step7_baseline/circles-app/App.js	2026-07-20 21:11:33.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/App.js	2026-07-21 01:01:38.036393814 +0000
+@@ -30,6 +30,7 @@
+ import { FeedScreen } from './src/screens/feed/FeedScreen';
+ import { CreatePostScreen } from './src/screens/posts/CreatePostScreen';
+ import { PostDetailScreen } from './src/screens/posts/PostDetailScreen';
++import { EditPostScreen } from './src/screens/posts/EditPostScreen';
+ import { StoryComposerScreen } from './src/screens/stories/StoryComposerScreen';
+ import { MeScreen } from './src/screens/profile/MeScreen';
+ import { ProfileScreen } from './src/screens/profile/ProfileScreen';
+@@ -80,6 +81,7 @@
+           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
+           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
+           <RootStack.Screen name="PostDetail" component={PostDetailScreen} />
++          <RootStack.Screen name="EditPost" component={EditPostScreen} />
+         </RootStack.Navigator>
+       </NavigationContainer>
+     </SafeAreaProvider>
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/README_POST_OWNERSHIP_STEP_7.md /mnt/data/circles_step7_work/circles-app/README_POST_OWNERSHIP_STEP_7.md
+--- /mnt/data/circles_step7_baseline/circles-app/README_POST_OWNERSHIP_STEP_7.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/README_POST_OWNERSHIP_STEP_7.md	2026-07-21 01:11:58.226914436 +0000
+@@ -0,0 +1,126 @@
++# Circles Step 7 — Post Ownership and Management
++
++This checkpoint adds owner-only caption editing and post deletion across Feed, Post Detail, and the current user's profile.
++
++## What changed
++
++### Owner menu
++
++Your own posts now show a three-dot management button in:
++
++- Feed
++- Post Detail
++- Your profile grid
++
++The shared owner menu provides:
++
++- **Edit caption**
++- **Delete post**
++- A destructive-action confirmation before deletion
++- A visible deletion state that prevents duplicate actions
++
++Other users do not receive management controls for posts they do not own.
++
++### Caption editing
++
++The new `EditPost` screen:
++
++- loads only a post owned by the signed-in user;
++- edits the caption without replacing the photos or videos;
++- preserves likes and comments;
++- enforces the existing 2,200-character limit;
++- refreshes Feed, Profile, and Post Detail after returning.
++
++### Post deletion
++
++Deleting a post now:
++
++1. verifies that the signed-in user owns it;
++2. removes its uploaded files from the `posts` Storage bucket;
++3. deletes the post through an owner-only RPC;
++4. lets foreign-key cascades remove the related media rows, likes, and comments;
++5. removes the post immediately from the visible Feed or profile grid.
++
++Both legacy root-level uploads and new user-folder uploads are covered by the Storage owner policy.
++
++### New post storage paths
++
++New post media now uploads to:
++
++`posts/<user-id>/<filename>`
++
++If post creation fails after one or more uploads, the app attempts to remove those partial uploads so they do not remain as orphaned Storage files.
++
++### Post Detail comments
++
++The comment button and comment count now work in Post Detail using the same safe-area comments sheet and optimistic comment flow as Feed.
++
++### Privacy cleanup
++
++The migration removes restored permissive development policies for:
++
++- posts;
++- post media;
++- comments;
++- likes.
++
++It preserves relationship-aware reading and restricts post updates/deletes to the post owner.
++
++## Apply the package
++
++Copy the package contents into the Circles project root and allow Windows to replace or merge the files:
++
++`C:\Users\honge\Dev\circles-app`
++
++## Required migration
++
++Before testing post management, run this file in Supabase SQL Editor:
++
++`supabase/migrations/20260720_006_post_ownership.sql`
++
++The app management actions depend on the two new RPCs and the post Storage deletion policy.
++
++## Test on iPhone 14
++
++```powershell
++cd C:\Users\honge\Dev\circles-app
++npx expo start --tunnel --clear
++```
++
++Test this sequence:
++
++1. Create a new photo post.
++2. Confirm the new post appears in Feed and on your profile.
++3. In Feed, tap the three-dot button on your post.
++4. Choose **Edit caption**, change it, save, and confirm Feed updates.
++5. Open the same post from your profile and confirm the edited caption appears in Post Detail.
++6. Open comments from Post Detail, add a comment, close the sheet, and reopen it.
++7. Return to your profile and open the post's grid management button.
++8. Choose **Delete post**, cancel once, then repeat and confirm deletion.
++9. Confirm the post disappears from your profile and Feed.
++10. Refresh both screens and confirm it remains deleted.
++11. In Supabase Storage, confirm that the deleted post's media object is gone.
++12. Create another post and verify its Storage path begins with your user ID.
++
++## Test on web
++
++```powershell
++npx expo start --web --clear
++```
++
++Confirm that the owner menu, caption editing, deletion confirmation, Post Detail comments, Feed refresh, and profile refresh all work with mouse input.
++
++## Validation performed
++
++- All 44 application JavaScript files passed Expo Babel transformation.
++- The full Expo web export was started twice but did not finish within the container bundling timeout, so local web and physical-device testing remain required.
++- Live Supabase migration behavior and Storage deletion must be confirmed in your project.
++
++## Commit after testing
++
++```powershell
++git status
++git add App.js src supabase/migrations README_POST_OWNERSHIP_STEP_7.md
++git commit -m "Add post ownership and management"
++git push
++```
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/src/components/feed/PostCard.js /mnt/data/circles_step7_work/circles-app/src/components/feed/PostCard.js
+--- /mnt/data/circles_step7_baseline/circles-app/src/components/feed/PostCard.js	2026-07-20 19:42:47.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/src/components/feed/PostCard.js	2026-07-21 01:01:53.464060951 +0000
+@@ -29,6 +29,7 @@
+   onOpenComments,
+   onOpenPost,
+   onOpenProfile,
++  onOpenMenu,
+ }) {
+   const [captionExpanded, setCaptionExpanded] = useState(false);
+ 
+@@ -66,13 +67,23 @@
+           </View>
+         </Pressable>
+ 
+-        <Pressable hitSlop={10} disabled>
+-          <Ionicons
+-            name="ellipsis-horizontal"
+-            size={19}
+-            color="#888"
+-          />
+-        </Pressable>
++        {onOpenMenu ? (
++          <Pressable
++            onPress={onOpenMenu}
++            hitSlop={10}
++            accessibilityRole="button"
++            accessibilityLabel="Manage post"
++            style={styles.menuButton}
++          >
++            <Ionicons
++              name="ellipsis-horizontal"
++              size={20}
++              color={COLORS.text}
++            />
++          </Pressable>
++        ) : (
++          <View style={styles.menuButton} />
++        )}
+       </View>
+ 
+       <PostMediaCarousel
+@@ -164,6 +175,12 @@
+     flexDirection: 'row',
+     alignItems: 'center',
+   },
++  menuButton: {
++    width: 40,
++    height: 40,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
+   authorText: {
+     marginLeft: 10,
+     flex: 1,
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/src/components/posts/PostOwnerMenu.js /mnt/data/circles_step7_work/circles-app/src/components/posts/PostOwnerMenu.js
+--- /mnt/data/circles_step7_baseline/circles-app/src/components/posts/PostOwnerMenu.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/src/components/posts/PostOwnerMenu.js	2026-07-21 01:01:24.650457725 +0000
+@@ -0,0 +1,222 @@
++import React from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Modal,
++  Platform,
++  Pressable,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
++import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { COLORS } from '../../theme/colors';
++
++export function PostOwnerMenu({
++  visible,
++  busy = false,
++  onClose,
++  onEdit,
++  onDelete,
++}) {
++  const confirmDelete = () => {
++    if (busy) return;
++
++    Alert.alert(
++      'Delete this post?',
++      'The post, its comments, likes, and uploaded media will be removed permanently.',
++      [
++        { text: 'Cancel', style: 'cancel' },
++        {
++          text: 'Delete',
++          style: 'destructive',
++          onPress: onDelete,
++        },
++      ]
++    );
++  };
++
++  return (
++    <Modal
++      visible={visible}
++      transparent
++      animationType="fade"
++      presentationStyle="overFullScreen"
++      onRequestClose={busy ? undefined : onClose}
++    >
++      <SafeAreaProvider>
++        <View style={styles.root}>
++          <Pressable
++            style={StyleSheet.absoluteFillObject}
++            onPress={busy ? undefined : onClose}
++            accessibilityRole="button"
++            accessibilityLabel="Close post options"
++          />
++
++          <SafeAreaView
++            edges={['bottom']}
++            style={styles.sheetWrap}
++          >
++            <View style={styles.sheet}>
++              <View style={styles.handle} />
++              <Text style={styles.title}>Manage post</Text>
++
++              <Pressable
++                onPress={onEdit}
++                disabled={busy}
++                style={({ pressed }) => [
++                  styles.action,
++                  pressed && styles.pressed,
++                ]}
++              >
++                <View style={styles.iconCircle}>
++                  <Ionicons name="create-outline" size={21} color={COLORS.text} />
++                </View>
++                <View style={styles.actionTextWrap}>
++                  <Text style={styles.actionTitle}>Edit caption</Text>
++                  <Text style={styles.actionSubtitle}>
++                    Change the text without replacing the media.
++                  </Text>
++                </View>
++                <Ionicons name="chevron-forward" size={19} color={COLORS.subtext} />
++              </Pressable>
++
++              <Pressable
++                onPress={confirmDelete}
++                disabled={busy}
++                style={({ pressed }) => [
++                  styles.action,
++                  pressed && styles.pressed,
++                ]}
++              >
++                <View style={[styles.iconCircle, styles.dangerCircle]}>
++                  {busy ? (
++                    <ActivityIndicator size="small" color="#c62828" />
++                  ) : (
++                    <Ionicons name="trash-outline" size={21} color="#c62828" />
++                  )}
++                </View>
++                <View style={styles.actionTextWrap}>
++                  <Text style={styles.dangerTitle}>
++                    {busy ? 'Deleting post…' : 'Delete post'}
++                  </Text>
++                  <Text style={styles.actionSubtitle}>
++                    This cannot be undone.
++                  </Text>
++                </View>
++              </Pressable>
++
++              <Pressable
++                onPress={onClose}
++                disabled={busy}
++                style={({ pressed }) => [
++                  styles.cancelButton,
++                  pressed && styles.pressed,
++                  busy && styles.disabled,
++                ]}
++              >
++                <Text style={styles.cancelText}>Cancel</Text>
++              </Pressable>
++            </View>
++          </SafeAreaView>
++        </View>
++      </SafeAreaProvider>
++    </Modal>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    flex: 1,
++    justifyContent: Platform.OS === 'web' ? 'center' : 'flex-end',
++    alignItems: Platform.OS === 'web' ? 'center' : 'stretch',
++    paddingHorizontal: Platform.OS === 'web' ? 16 : 0,
++    backgroundColor: 'rgba(0,0,0,0.38)',
++  },
++  sheetWrap: {
++    width: '100%',
++    maxWidth: Platform.OS === 'web' ? 480 : undefined,
++  },
++  sheet: {
++    paddingHorizontal: 16,
++    paddingTop: 10,
++    paddingBottom: 14,
++    borderTopLeftRadius: 22,
++    borderTopRightRadius: 22,
++    borderBottomLeftRadius: Platform.OS === 'web' ? 22 : 0,
++    borderBottomRightRadius: Platform.OS === 'web' ? 22 : 0,
++    backgroundColor: COLORS.bg,
++  },
++  handle: {
++    width: 38,
++    height: 4,
++    alignSelf: 'center',
++    borderRadius: 2,
++    backgroundColor: COLORS.border,
++  },
++  title: {
++    marginTop: 12,
++    marginBottom: 8,
++    textAlign: 'center',
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 17,
++  },
++  action: {
++    minHeight: 72,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 10,
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderTopColor: COLORS.border,
++  },
++  iconCircle: {
++    width: 40,
++    height: 40,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 20,
++    backgroundColor: '#f1f1f1',
++  },
++  dangerCircle: {
++    backgroundColor: '#fff1f1',
++  },
++  actionTextWrap: {
++    flex: 1,
++    marginLeft: 12,
++    marginRight: 8,
++  },
++  actionTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  dangerTitle: {
++    color: '#c62828',
++    fontFamily: 'Manrope_700Bold',
++  },
++  actionSubtitle: {
++    marginTop: 2,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++  },
++  cancelButton: {
++    marginTop: 10,
++    minHeight: 48,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 12,
++    backgroundColor: '#f2f2f2',
++  },
++  cancelText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  pressed: {
++    opacity: 0.65,
++  },
++  disabled: {
++    opacity: 0.45,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/src/components/profile/ProfilePostGridItem.js /mnt/data/circles_step7_work/circles-app/src/components/profile/ProfilePostGridItem.js
+--- /mnt/data/circles_step7_baseline/circles-app/src/components/profile/ProfilePostGridItem.js	2026-07-20 20:56:19.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/src/components/profile/ProfilePostGridItem.js	2026-07-21 01:02:43.267434811 +0000
+@@ -3,7 +3,7 @@
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { COLORS } from '../../theme/colors';
+ 
+-export function ProfilePostGridItem({ post, onPress, size }) {
++export function ProfilePostGridItem({ post, onPress, onMenuPress, size }) {
+   const [imageFailed, setImageFailed] = useState(false);
+   const isVideo = post.mediaType === 'video';
+   const canShowImage = Boolean(post.previewUrl) && !isVideo && !imageFailed;
+@@ -45,6 +45,24 @@
+         </View>
+       ) : null}
+ 
++      {onMenuPress ? (
++        <Pressable
++          onPress={(event) => {
++            event.stopPropagation?.();
++            onMenuPress();
++          }}
++          hitSlop={6}
++          accessibilityRole="button"
++          accessibilityLabel="Manage post"
++          style={({ pressed }) => [
++            styles.menuBadge,
++            pressed && styles.pressed,
++          ]}
++        >
++          <Ionicons name="ellipsis-horizontal" size={16} color="#fff" />
++        </Pressable>
++      ) : null}
++
+       {post.mediaCount > 1 ? (
+         <View style={styles.mediaCountBadge}>
+           <Ionicons name="copy-outline" size={14} color="#fff" />
+@@ -86,7 +104,7 @@
+   videoBadge: {
+     position: 'absolute',
+     top: 7,
+-    right: 7,
++    left: 7,
+     width: 25,
+     height: 25,
+     borderRadius: 13,
+@@ -94,6 +112,17 @@
+     alignItems: 'center',
+     justifyContent: 'center',
+   },
++  menuBadge: {
++    position: 'absolute',
++    top: 7,
++    right: 7,
++    width: 28,
++    height: 28,
++    borderRadius: 14,
++    backgroundColor: 'rgba(0,0,0,0.66)',
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
+   mediaCountBadge: {
+     position: 'absolute',
+     left: 7,
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/src/screens/feed/FeedScreen.js /mnt/data/circles_step7_work/circles-app/src/screens/feed/FeedScreen.js
+--- /mnt/data/circles_step7_baseline/circles-app/src/screens/feed/FeedScreen.js	2026-07-20 21:11:33.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/src/screens/feed/FeedScreen.js	2026-07-21 01:02:26.425547551 +0000
+@@ -29,10 +29,12 @@
+   deleteOwnStory,
+   fetchActiveStories,
+ } from '../../services/storyService';
++import { deleteOwnPost } from '../../services/postService';
+ import { PostCard } from '../../components/feed/PostCard';
+ import { CommentsModal } from '../../components/feed/CommentsModal';
+ import { StoriesRail } from '../../components/stories/StoriesRail';
+ import { StoryViewer } from '../../components/stories/StoryViewer';
++import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
+ 
+ const PAGE_SIZE = 10;
+ 
+@@ -50,6 +52,7 @@
+   const [posts, setPosts] = useState([]);
+   const [stories, setStories] = useState([]);
+   const [authed, setAuthed] = useState(false);
++  const [currentUserId, setCurrentUserId] = useState(null);
+ 
+   const [initialLoading, setInitialLoading] = useState(true);
+   const [refreshing, setRefreshing] = useState(false);
+@@ -65,6 +68,8 @@
+   const [commentsError, setCommentsError] = useState(null);
+   const [commentText, setCommentText] = useState('');
+   const [commentSending, setCommentSending] = useState(false);
++  const [managedPost, setManagedPost] = useState(null);
++  const [deletingPostId, setDeletingPostId] = useState(null);
+ 
+   const [storyOpen, setStoryOpen] = useState(null);
+   const [storyIndex, setStoryIndex] = useState(0);
+@@ -156,6 +161,7 @@
+ 
+         const isAuthed = Boolean(session);
+         setAuthed(isAuthed);
++        setCurrentUserId(session?.user?.id || null);
+ 
+         if (!isAuthed) {
+           setInitialLoading(false);
+@@ -176,7 +182,7 @@
+           .on(
+             'postgres_changes',
+             {
+-              event: 'INSERT',
++              event: '*',
+               schema: 'public',
+               table: 'posts',
+             },
+@@ -459,6 +465,41 @@
+     refreshStories();
+   }, [refreshFeed, refreshStories]);
+ 
++  const editManagedPost = useCallback(() => {
++    if (!managedPost?.id) return;
++
++    const postId = managedPost.id;
++    setManagedPost(null);
++    navigation.navigate('EditPost', { postId });
++  }, [managedPost, navigation]);
++
++  const removeManagedPost = useCallback(async () => {
++    if (!managedPost?.id || deletingPostId) return;
++
++    const postId = managedPost.id;
++    setDeletingPostId(postId);
++
++    try {
++      await deleteOwnPost(postId);
++
++      if (!mountedRef.current) return;
++
++      setPosts((currentPosts) =>
++        currentPosts.filter((post) => post.id !== postId)
++      );
++
++      if (openPostId === postId) closeComments();
++      setManagedPost(null);
++    } catch (error) {
++      Alert.alert(
++        'Post not deleted',
++        errorMessage(error, 'Please try again.')
++      );
++    } finally {
++      if (mountedRef.current) setDeletingPostId(null);
++    }
++  }, [closeComments, deletingPostId, managedPost, openPostId]);
++
+   const openStory = useCallback((userIndex) => {
+     setStoryOpen(userIndex);
+     setStoryIndex(0);
+@@ -585,6 +626,11 @@
+                     })
+                 : undefined
+             }
++            onOpenMenu={
++              item.user.id === currentUserId
++                ? () => setManagedPost(item)
++                : undefined
++            }
+           />
+         )}
+         viewabilityConfig={viewabilityConfigRef.current}
+@@ -705,6 +751,14 @@
+         onClose={closeComments}
+       />
+ 
++      <PostOwnerMenu
++        visible={Boolean(managedPost)}
++        busy={Boolean(deletingPostId)}
++        onClose={() => !deletingPostId && setManagedPost(null)}
++        onEdit={editManagedPost}
++        onDelete={removeManagedPost}
++      />
++
+       <Modal
+         visible={storyOpen !== null}
+         animationType="fade"
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/src/screens/posts/EditPostScreen.js /mnt/data/circles_step7_work/circles-app/src/screens/posts/EditPostScreen.js
+--- /mnt/data/circles_step7_baseline/circles-app/src/screens/posts/EditPostScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/src/screens/posts/EditPostScreen.js	2026-07-21 01:01:24.661927064 +0000
+@@ -0,0 +1,274 @@
++import React, { useEffect, useRef, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Pressable,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { COLORS } from '../../theme/colors';
++import {
++  fetchOwnPostForEditing,
++  updateOwnPostCaption,
++} from '../../services/postService';
++
++const CAPTION_LIMIT = 2200;
++
++export function EditPostScreen({ route, navigation }) {
++  const { postId } = route.params || {};
++  const [caption, setCaption] = useState('');
++  const [originalCaption, setOriginalCaption] = useState('');
++  const [loading, setLoading] = useState(true);
++  const [saving, setSaving] = useState(false);
++  const [error, setError] = useState('');
++  const mountedRef = useRef(true);
++
++  const load = async () => {
++    setLoading(true);
++    setError('');
++
++    try {
++      const post = await fetchOwnPostForEditing(postId);
++      if (!mountedRef.current) return;
++
++      const nextCaption = post.caption || '';
++      setCaption(nextCaption);
++      setOriginalCaption(nextCaption);
++    } catch (loadError) {
++      if (!mountedRef.current) return;
++      setError(loadError?.message || 'The post could not be loaded.');
++    } finally {
++      if (mountedRef.current) setLoading(false);
++    }
++  };
++
++  useEffect(() => {
++    mountedRef.current = true;
++    load();
++
++    return () => {
++      mountedRef.current = false;
++    };
++  }, [postId]);
++
++  const hasChanges = caption.trim() !== originalCaption.trim();
++
++  const save = async () => {
++    if (saving || !hasChanges) return;
++
++    setSaving(true);
++    try {
++      await updateOwnPostCaption(postId, caption);
++      navigation.goBack();
++    } catch (saveError) {
++      Alert.alert(
++        'Caption not saved',
++        saveError?.message || 'Please try again.'
++      );
++    } finally {
++      if (mountedRef.current) setSaving(false);
++    }
++  };
++
++  if (loading) {
++    return (
++      <SafeAreaView edges={['top']} style={styles.centerRoot}>
++        <ActivityIndicator />
++        <Text style={styles.stateText}>Loading post…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  if (error) {
++    return (
++      <SafeAreaView edges={['top']} style={styles.centerRoot}>
++        <Ionicons name="alert-circle-outline" size={36} color={COLORS.subtext} />
++        <Text style={styles.errorTitle}>Post unavailable</Text>
++        <Text style={styles.errorBody}>{error}</Text>
++        <View style={styles.errorActions}>
++          <Pressable onPress={() => navigation.goBack()} style={styles.secondaryButton}>
++            <Text style={styles.secondaryButtonText}>Go back</Text>
++          </Pressable>
++          <Pressable onPress={load} style={styles.primaryButton}>
++            <Text style={styles.primaryButtonText}>Try again</Text>
++          </Pressable>
++        </View>
++      </SafeAreaView>
++    );
++  }
++
++  return (
++    <SafeAreaView edges={['top']} style={styles.root}>
++      <View style={styles.header}>
++        <Pressable
++          onPress={() => navigation.goBack()}
++          disabled={saving}
++          hitSlop={10}
++          style={styles.headerButton}
++        >
++          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
++        </Pressable>
++
++        <Text style={styles.headerTitle}>Edit caption</Text>
++
++        <Pressable
++          onPress={save}
++          disabled={saving || !hasChanges}
++          hitSlop={10}
++          style={styles.headerButton}
++        >
++          {saving ? (
++            <ActivityIndicator size="small" color={COLORS.primary} />
++          ) : (
++            <Text style={[styles.saveText, !hasChanges && styles.disabledText]}>
++              Save
++            </Text>
++          )}
++        </Pressable>
++      </View>
++
++      <View style={styles.content}>
++        <Text style={styles.label}>Caption</Text>
++        <TextInput
++          value={caption}
++          onChangeText={setCaption}
++          editable={!saving}
++          multiline
++          autoFocus
++          maxLength={CAPTION_LIMIT}
++          placeholder="Write a caption…"
++          placeholderTextColor={COLORS.subtext}
++          style={styles.input}
++        />
++        <Text style={styles.counter}>{caption.length}/{CAPTION_LIMIT}</Text>
++        <Text style={styles.helper}>
++          Editing the caption keeps the original photos, videos, likes, and comments.
++        </Text>
++      </View>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  centerRoot: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorTitle: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 18,
++  },
++  errorBody: {
++    marginTop: 6,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    textAlign: 'center',
++  },
++  errorActions: {
++    flexDirection: 'row',
++    gap: 10,
++    marginTop: 16,
++  },
++  secondaryButton: {
++    paddingHorizontal: 16,
++    paddingVertical: 10,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    borderRadius: 10,
++  },
++  secondaryButtonText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  primaryButton: {
++    paddingHorizontal: 16,
++    paddingVertical: 10,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  primaryButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  header: {
++    minHeight: 54,
++    flexDirection: 'row',
++    alignItems: 'center',
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.border,
++  },
++  headerButton: {
++    width: 64,
++    minHeight: 48,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  headerTitle: {
++    flex: 1,
++    textAlign: 'center',
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 17,
++  },
++  saveText: {
++    color: COLORS.primary,
++    fontFamily: 'Manrope_700Bold',
++  },
++  disabledText: {
++    opacity: 0.35,
++  },
++  content: {
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++    padding: 16,
++  },
++  label: {
++    marginBottom: 7,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  input: {
++    minHeight: 180,
++    padding: 14,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    borderRadius: 14,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    textAlignVertical: 'top',
++    backgroundColor: COLORS.bg,
++  },
++  counter: {
++    marginTop: 7,
++    textAlign: 'right',
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++  },
++  helper: {
++    marginTop: 12,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 13,
++    lineHeight: 19,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/src/screens/posts/PostDetailScreen.js /mnt/data/circles_step7_work/circles-app/src/screens/posts/PostDetailScreen.js
+--- /mnt/data/circles_step7_baseline/circles-app/src/screens/posts/PostDetailScreen.js	2026-07-19 19:01:01.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/src/screens/posts/PostDetailScreen.js	2026-07-21 01:07:50.410760865 +0000
+@@ -1,4 +1,4 @@
+-import React, { useEffect, useRef, useState } from 'react';
++import React, { useCallback, useEffect, useRef, useState } from 'react';
+ import {
+   ActivityIndicator,
+   Alert,
+@@ -15,10 +15,23 @@
+ import { Video } from 'expo-av';
+ import { COLORS } from '../../theme/colors';
+ import { Avatar } from '../../components/Avatar';
+-import { togglePostLike } from '../../services/feedService';
+-import { fetchPostDetail } from '../../services/postService';
++import { CommentsModal } from '../../components/feed/CommentsModal';
++import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
++import {
++  addPostComment,
++  fetchPostComments,
++  togglePostLike,
++} from '../../services/feedService';
++import {
++  deleteOwnPost,
++  fetchPostDetail,
++} from '../../services/postService';
+ import { timeAgo } from '../../utils/timeAgo';
+ 
++function localCommentId() {
++  return `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
++}
++
+ export function PostDetailScreen({ route, navigation }) {
+   const { postId } = route.params || {};
+   const { width } = useWindowDimensions();
+@@ -30,13 +43,24 @@
+   const [liked, setLiked] = useState(false);
+   const [likes, setLikes] = useState(0);
+   const [liking, setLiking] = useState(false);
++  const [commentCount, setCommentCount] = useState(0);
+   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+-  const mountedRef = useRef(true);
++  const [isOwner, setIsOwner] = useState(false);
++  const [ownerMenuVisible, setOwnerMenuVisible] = useState(false);
++  const [deleting, setDeleting] = useState(false);
++
++  const [commentsVisible, setCommentsVisible] = useState(false);
++  const [comments, setComments] = useState([]);
++  const [commentsLoading, setCommentsLoading] = useState(false);
++  const [commentsError, setCommentsError] = useState(null);
++  const [commentText, setCommentText] = useState('');
++  const [commentSending, setCommentSending] = useState(false);
+ 
++  const mountedRef = useRef(true);
+   const mediaWidth = Math.min(width, 720);
+ 
+-  const load = async () => {
+-    setLoading(true);
++  const load = useCallback(async ({ silent = false } = {}) => {
++    if (!silent) setLoading(true);
+     setError(null);
+ 
+     try {
+@@ -48,26 +72,36 @@
+       setAuthor(detail.author);
+       setMedia(detail.media);
+       setLikes(detail.likes);
++      setCommentCount(detail.commentCount);
+       setLiked(detail.likedByMe);
+-      setActiveMediaIndex(0);
++      setIsOwner(detail.isOwner);
++      if (!silent) setActiveMediaIndex(0);
+     } catch (loadError) {
+       if (!mountedRef.current) return;
+-      setError(
+-        loadError?.message || 'The post could not be loaded.'
+-      );
++
++      if (silent) {
++        console.warn('Post refresh failed.', loadError);
++      } else {
++        setError(loadError?.message || 'The post could not be loaded.');
++      }
+     } finally {
+-      if (mountedRef.current) setLoading(false);
++      if (mountedRef.current && !silent) setLoading(false);
+     }
+-  };
++  }, [postId]);
+ 
+   useEffect(() => {
+     mountedRef.current = true;
+     load();
+ 
++    const unsubscribe = navigation.addListener('focus', () => {
++      if (mountedRef.current && post) load({ silent: true });
++    });
++
+     return () => {
+       mountedRef.current = false;
++      unsubscribe();
+     };
+-  }, [postId]);
++  }, [load, navigation, post?.id]);
+ 
+   const onToggleLike = async () => {
+     if (liking) return;
+@@ -78,9 +112,7 @@
+ 
+     setLiking(true);
+     setLiked(nextLiked);
+-    setLikes(
+-      Math.max(0, previousLikes + (nextLiked ? 1 : -1))
+-    );
++    setLikes(Math.max(0, previousLikes + (nextLiked ? 1 : -1)));
+ 
+     try {
+       await togglePostLike(postId);
+@@ -96,6 +128,103 @@
+     }
+   };
+ 
++  const loadComments = useCallback(async () => {
++    setCommentsLoading(true);
++    setCommentsError(null);
++
++    try {
++      const rows = await fetchPostComments(postId);
++      if (!mountedRef.current) return;
++      setComments(rows);
++      setCommentCount(rows.length);
++    } catch (commentsLoadError) {
++      if (!mountedRef.current) return;
++      setCommentsError(
++        commentsLoadError?.message || 'Comments could not be loaded.'
++      );
++    } finally {
++      if (mountedRef.current) setCommentsLoading(false);
++    }
++  }, [postId]);
++
++  const openComments = () => {
++    setCommentsVisible(true);
++    setCommentText('');
++    setComments([]);
++    loadComments();
++  };
++
++  const closeComments = () => {
++    setCommentsVisible(false);
++    setCommentsError(null);
++    setCommentText('');
++  };
++
++  const submitComment = async () => {
++    const text = commentText.trim();
++    if (!text || commentSending) return;
++
++    const temporaryId = localCommentId();
++    setCommentSending(true);
++    setCommentText('');
++    setComments((current) => [
++      ...current,
++      {
++        id: temporaryId,
++        userName: 'You',
++        avatarUri: null,
++        text,
++        pending: true,
++      },
++    ]);
++
++    try {
++      await addPostComment(postId, text);
++      const rows = await fetchPostComments(postId);
++
++      if (!mountedRef.current) return;
++      setComments(rows);
++      setCommentCount(rows.length);
++    } catch (commentError) {
++      if (mountedRef.current) {
++        setComments((current) =>
++          current.filter((comment) => comment.id !== temporaryId)
++        );
++        setCommentText(text);
++      }
++
++      Alert.alert(
++        'Comment not posted',
++        commentError?.message || 'Please try again.'
++      );
++    } finally {
++      if (mountedRef.current) setCommentSending(false);
++    }
++  };
++
++  const editPost = () => {
++    setOwnerMenuVisible(false);
++    navigation.navigate('EditPost', { postId });
++  };
++
++  const removePost = async () => {
++    if (deleting) return;
++
++    setDeleting(true);
++    try {
++      await deleteOwnPost(postId);
++      setOwnerMenuVisible(false);
++      navigation.goBack();
++    } catch (deleteError) {
++      Alert.alert(
++        'Post not deleted',
++        deleteError?.message || 'Please try again.'
++      );
++    } finally {
++      if (mountedRef.current) setDeleting(false);
++    }
++  };
++
+   const displayMedia = media.length
+     ? media
+     : post?.image_url
+@@ -103,7 +232,9 @@
+           {
+             id: 'primary-image',
+             url: post.image_url,
+-            media_type: 'image',
++            media_type: /\.(mp4|mov|m4v)(?:$|\?)/i.test(post.image_url)
++              ? 'video'
++              : 'image',
+           },
+         ]
+       : [];
+@@ -120,23 +251,16 @@
+   if (error || !post) {
+     return (
+       <SafeAreaView edges={['top']} style={styles.centerRoot}>
+-        <Ionicons
+-          name="alert-circle-outline"
+-          size={34}
+-          color={COLORS.subtext}
+-        />
++        <Ionicons name="alert-circle-outline" size={34} color={COLORS.subtext} />
+         <Text style={styles.errorTitle}>Post unavailable</Text>
+         <Text style={styles.errorBody}>
+           {error || 'The post could not be found.'}
+         </Text>
+         <View style={styles.errorActions}>
+-          <Pressable
+-            onPress={() => navigation.goBack()}
+-            style={styles.secondaryButton}
+-          >
++          <Pressable onPress={() => navigation.goBack()} style={styles.secondaryButton}>
+             <Text style={styles.secondaryButtonText}>Go back</Text>
+           </Pressable>
+-          <Pressable onPress={load} style={styles.primaryButton}>
++          <Pressable onPress={() => load()} style={styles.primaryButton}>
+             <Text style={styles.primaryButtonText}>Try again</Text>
+           </Pressable>
+         </View>
+@@ -147,24 +271,23 @@
+   return (
+     <SafeAreaView edges={['top']} style={styles.root}>
+       <View style={styles.header}>
+-        <Pressable
+-          onPress={() => navigation.goBack()}
+-          hitSlop={10}
+-        >
+-          <Ionicons
+-            name="chevron-back"
+-            size={24}
+-            color={COLORS.text}
+-          />
++        <Pressable onPress={() => navigation.goBack()} hitSlop={10} style={styles.headerButton}>
++          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
+         </Pressable>
+         <Text style={styles.headerTitle}>Post</Text>
+-        <Pressable hitSlop={10}>
+-          <Ionicons
+-            name="ellipsis-horizontal"
+-            size={22}
+-            color={COLORS.text}
+-          />
+-        </Pressable>
++        {isOwner ? (
++          <Pressable
++            onPress={() => setOwnerMenuVisible(true)}
++            hitSlop={10}
++            accessibilityRole="button"
++            accessibilityLabel="Manage post"
++            style={styles.headerButton}
++          >
++            <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.text} />
++          </Pressable>
++        ) : (
++          <View style={styles.headerButton} />
++        )}
+       </View>
+ 
+       <ScrollView contentContainerStyle={styles.content}>
+@@ -188,9 +311,7 @@
+               <Text style={styles.authorName} numberOfLines={1}>
+                 {author?.display_name || 'Unknown'}
+               </Text>
+-              <Text style={styles.timestamp}>
+-                {timeAgo(post.created_at)}
+-              </Text>
++              <Text style={styles.timestamp}>{timeAgo(post.created_at)}</Text>
+             </View>
+           </Pressable>
+ 
+@@ -200,37 +321,28 @@
+               pagingEnabled
+               showsHorizontalScrollIndicator={false}
+               onMomentumScrollEnd={(event) => {
+-                const offset =
+-                  event.nativeEvent.contentOffset.x || 0;
+-                setActiveMediaIndex(
+-                  Math.round(offset / mediaWidth)
+-                );
++                const offset = event.nativeEvent.contentOffset.x || 0;
++                setActiveMediaIndex(Math.round(offset / mediaWidth));
+               }}
+               style={{ width: mediaWidth }}
+             >
+               {displayMedia.map((item, index) => (
+-                <View
+-                  key={item.id}
+-                  style={[
+-                    styles.mediaSlide,
+-                    { width: mediaWidth },
+-                  ]}
+-                >
++                <View key={item.id} style={[styles.mediaSlide, { width: mediaWidth }]}>
+                   {item.media_type === 'video' ? (
+                     <Video
+                       source={{ uri: item.url }}
+                       style={styles.media}
+                       resizeMode="contain"
+-                      shouldPlay={activeMediaIndex === index}
++                      shouldPlay={
++                        activeMediaIndex === index &&
++                        !commentsVisible &&
++                        !ownerMenuVisible
++                      }
+                       isLooping
+                       useNativeControls
+                     />
+                   ) : (
+-                    <Image
+-                      source={{ uri: item.url }}
+-                      style={styles.media}
+-                      resizeMode="contain"
+-                    />
++                    <Image source={{ uri: item.url }} style={styles.media} resizeMode="contain" />
+                   )}
+                 </View>
+               ))}
+@@ -259,39 +371,54 @@
+               />
+             </Pressable>
+ 
+-            <Pressable hitSlop={10} style={styles.actionButton}>
+-              <Ionicons
+-                name="chatbubble-outline"
+-                size={26}
+-                color={COLORS.text}
+-              />
+-            </Pressable>
+-
+-            <Pressable hitSlop={10} style={styles.actionButton}>
+-              <Ionicons
+-                name="paper-plane-outline"
+-                size={26}
+-                color={COLORS.text}
+-              />
++            <Pressable onPress={openComments} hitSlop={10} style={styles.actionButton}>
++              <Ionicons name="chatbubble-outline" size={26} color={COLORS.text} />
+             </Pressable>
+           </View>
+ 
+           <View style={styles.details}>
+-            <Text style={styles.likes}>{likes} likes</Text>
++            <Text style={styles.likes}>{likes} {likes === 1 ? 'like' : 'likes'}</Text>
+ 
+             {post.caption ? (
+               <Text style={styles.caption}>
+                 <Text style={styles.captionName}>
+                   {author?.display_name || 'Unknown'}{' '}
+                 </Text>
+-                <Text style={styles.captionBody}>
+-                  {post.caption}
+-                </Text>
++                <Text style={styles.captionBody}>{post.caption}</Text>
+               </Text>
+             ) : null}
++
++            <Pressable onPress={openComments}>
++              <Text style={styles.commentsLink}>
++                {commentCount
++                  ? `View all ${commentCount} ${commentCount === 1 ? 'comment' : 'comments'}`
++                  : 'Add a comment'}
++              </Text>
++            </Pressable>
+           </View>
+         </View>
+       </ScrollView>
++
++      <CommentsModal
++        visible={commentsVisible}
++        comments={comments}
++        loading={commentsLoading}
++        error={commentsError}
++        commentText={commentText}
++        sending={commentSending}
++        onChangeText={setCommentText}
++        onSubmit={submitComment}
++        onRetry={loadComments}
++        onClose={closeComments}
++      />
++
++      <PostOwnerMenu
++        visible={ownerMenuVisible}
++        busy={deleting}
++        onClose={() => !deleting && setOwnerMenuVisible(false)}
++        onEdit={editPost}
++        onDelete={removePost}
++      />
+     </SafeAreaView>
+   );
+ }
+@@ -352,17 +479,22 @@
+     fontFamily: 'Manrope_700Bold',
+   },
+   header: {
++    minHeight: 54,
+     flexDirection: 'row',
+     alignItems: 'center',
+     justifyContent: 'space-between',
+-    paddingHorizontal: 14,
+-    paddingVertical: 11,
+     borderBottomWidth: StyleSheet.hairlineWidth,
+     borderBottomColor: COLORS.border,
+   },
++  headerButton: {
++    width: 54,
++    minHeight: 48,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
+   headerTitle: {
+     fontFamily: 'Manrope_700Bold',
+-    fontSize: 17,
++    fontSize: 18,
+     color: COLORS.text,
+   },
+   content: {
+@@ -446,4 +578,9 @@
+   captionBody: {
+     fontFamily: 'Manrope_400Regular',
+   },
++  commentsLink: {
++    marginTop: 8,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
+ });
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/src/screens/profile/ProfileViewScreen.js /mnt/data/circles_step7_work/circles-app/src/screens/profile/ProfileViewScreen.js
+--- /mnt/data/circles_step7_baseline/circles-app/src/screens/profile/ProfileViewScreen.js	2026-07-20 20:56:19.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/src/screens/profile/ProfileViewScreen.js	2026-07-21 01:03:06.302452352 +0000
+@@ -15,6 +15,8 @@
+ import { COLORS } from '../../theme/colors';
+ import { ProfileHeader } from '../../components/profile/ProfileHeader';
+ import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
++import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
++import { deleteOwnPost } from '../../services/postService';
+ import {
+   fetchProfilePage,
+   respondToProfileRequest,
+@@ -115,6 +117,8 @@
+   const [error, setError] = useState('');
+   const [actionBusy, setActionBusy] = useState(false);
+   const [gridWidth, setGridWidth] = useState(0);
++  const [managedPost, setManagedPost] = useState(null);
++  const [deletingPostId, setDeletingPostId] = useState(null);
+ 
+   const load = useCallback(async ({ refresh = false } = {}) => {
+     if (refresh) setRefreshing(true);
+@@ -148,6 +152,47 @@
+ 
+   const resolvedIsSelf = isSelf || profile?.relationship_status === 'self';
+ 
++  const editManagedPost = () => {
++    if (!managedPost?.id) return;
++
++    const postId = managedPost.id;
++    setManagedPost(null);
++    navigation.navigate('EditPost', { postId });
++  };
++
++  const removeManagedPost = async () => {
++    if (!managedPost?.id || deletingPostId) return;
++
++    const postId = managedPost.id;
++    setDeletingPostId(postId);
++
++    try {
++      await deleteOwnPost(postId);
++      setPosts((currentPosts) =>
++        currentPosts.filter((post) => post.id !== postId)
++      );
++      setProfile((currentProfile) =>
++        currentProfile
++          ? {
++              ...currentProfile,
++              post_count: Math.max(
++                0,
++                Number(currentProfile.post_count || 0) - 1
++              ),
++            }
++          : currentProfile
++      );
++      setManagedPost(null);
++    } catch (deleteError) {
++      Alert.alert(
++        'Post not deleted',
++        deleteError?.message || 'Please try again.'
++      );
++    } finally {
++      setDeletingPostId(null);
++    }
++  };
++
+   const handleConnect = async () => {
+     if (!profile?.id || actionBusy) return;
+ 
+@@ -262,6 +307,9 @@
+               post={item}
+               size={gridWidth > 0 ? Math.floor(gridWidth / 3) : undefined}
+               onPress={() => navigation.navigate('PostDetail', { postId: item.id })}
++              onMenuPress={
++                resolvedIsSelf ? () => setManagedPost(item) : undefined
++              }
+             />
+           )}
+           ListEmptyComponent={(
+@@ -282,6 +330,14 @@
+           columnWrapperStyle={styles.gridRow}
+           showsVerticalScrollIndicator={false}
+         />
++
++        <PostOwnerMenu
++          visible={Boolean(managedPost)}
++          busy={Boolean(deletingPostId)}
++          onClose={() => !deletingPostId && setManagedPost(null)}
++          onEdit={editManagedPost}
++          onDelete={removeManagedPost}
++        />
+       </View>
+     </SafeAreaView>
+   );
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/src/services/postService.js /mnt/data/circles_step7_work/circles-app/src/services/postService.js
+--- /mnt/data/circles_step7_baseline/circles-app/src/services/postService.js	2026-07-20 19:42:47.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/src/services/postService.js	2026-07-21 01:00:21.324441703 +0000
+@@ -1,8 +1,23 @@
+ import { supabase } from '../lib/supabase';
+ import { ensureAuthed } from './authService';
+-import { uploadToBucket } from './uploadService';
++import {
++  removeStorageUrls,
++  uploadToBucket,
++} from './uploadService';
+ import { validatePostAssets } from '../utils/mediaValidation';
+ 
++const CAPTION_LIMIT = 2200;
++
++function cleanCaption(value = '') {
++  const caption = String(value).trim();
++
++  if (caption.length > CAPTION_LIMIT) {
++    throw new Error(`Caption must be ${CAPTION_LIMIT} characters or fewer.`);
++  }
++
++  return caption;
++}
++
+ export async function createPostWithMedia({
+   assets,
+   caption,
+@@ -11,55 +26,72 @@
+   const validationError = validatePostAssets(assets);
+   if (validationError) throw new Error(validationError);
+ 
+-  await ensureAuthed();
+-
+-  const urls = [];
++  const session = await ensureAuthed();
++  const uploadedUrls = [];
+   const types = [];
+ 
+-  for (let index = 0; index < assets.length; index += 1) {
+-    const asset = assets[index];
++  try {
++    for (let index = 0; index < assets.length; index += 1) {
++      const asset = assets[index];
++
++      onProgress?.({
++        stage: 'uploading',
++        current: index + 1,
++        total: assets.length,
++      });
++
++      const mediaType = asset.type === 'video' ? 'video' : 'image';
++      const mimeType =
++        asset.mimeType ||
++        (mediaType === 'video' ? 'video/mp4' : 'image/jpeg');
++
++      const url = await uploadToBucket(
++        asset.uri,
++        'posts',
++        mimeType,
++        { folder: session.user.id }
++      );
++
++      uploadedUrls.push(url);
++      types.push(mediaType);
++    }
+ 
+     onProgress?.({
+-      stage: 'uploading',
+-      current: index + 1,
++      stage: 'saving',
++      current: assets.length,
+       total: assets.length,
+     });
+ 
+-    const mediaType = asset.type === 'video' ? 'video' : 'image';
+-    const mimeType =
+-      asset.mimeType ||
+-      (mediaType === 'video' ? 'video/mp4' : 'image/jpeg');
+-
+-    const url = await uploadToBucket(
+-      asset.uri,
+-      'posts',
+-      mimeType
++    const { data, error } = await supabase.rpc(
++      'create_post_with_media',
++      {
++        p_urls: uploadedUrls,
++        p_types: types,
++        p_caption: cleanCaption(caption) || null,
++      }
+     );
+ 
+-    urls.push(url);
+-    types.push(mediaType);
+-  }
+-
+-  onProgress?.({
+-    stage: 'saving',
+-    current: assets.length,
+-    total: assets.length,
+-  });
+-
+-  const { data, error } = await supabase.rpc(
+-    'create_post_with_media',
+-    {
+-      p_urls: urls,
+-      p_types: types,
+-      p_caption: caption?.trim() || null,
++    if (error) throw error;
++    return data;
++  } catch (error) {
++    if (uploadedUrls.length) {
++      try {
++        await removeStorageUrls('posts', uploadedUrls);
++      } catch (cleanupError) {
++        console.warn(
++          'Post creation failed and uploaded media cleanup also failed.',
++          cleanupError
++        );
++      }
+     }
+-  );
+ 
+-  if (error) throw error;
+-  return data;
++    throw error;
++  }
+ }
+ 
+ export async function fetchPostDetail(postId) {
++  const session = await ensureAuthed();
++
+   const { data: post, error: postError } = await supabase
+     .from('posts')
+     .select('id, user_id, caption, image_url, created_at')
+@@ -68,44 +100,48 @@
+ 
+   if (postError) throw postError;
+ 
+-  const [mediaResult, likesResult, authorResult, sessionResult] =
+-    await Promise.all([
+-      supabase
+-        .from('post_media')
+-        .select('id, url, media_type, created_at')
+-        .eq('post_id', postId)
+-        .order('created_at', { ascending: true }),
+-      supabase
+-        .from('post_likes')
+-        .select('post_id', { count: 'exact', head: true })
+-        .eq('post_id', postId),
+-      supabase
+-        .from('users')
+-        .select('id, display_name, avatar_url')
+-        .eq('id', post.user_id)
+-        .maybeSingle(),
+-      supabase.auth.getSession(),
+-    ]);
++  const [
++    mediaResult,
++    likesResult,
++    commentsResult,
++    authorResult,
++  ] = await Promise.all([
++    supabase
++      .from('post_media')
++      .select('id, post_id, url, media_type, created_at')
++      .eq('post_id', postId)
++      .order('created_at', { ascending: true }),
++    supabase
++      .from('post_likes')
++      .select('post_id', { count: 'exact', head: true })
++      .eq('post_id', postId),
++    supabase
++      .from('post_comments')
++      .select('post_id', { count: 'exact', head: true })
++      .eq('post_id', postId),
++    supabase
++      .from('users')
++      .select('id, display_name, avatar_url')
++      .eq('id', post.user_id)
++      .maybeSingle(),
++  ]);
+ 
+   if (mediaResult.error) throw mediaResult.error;
+   if (likesResult.error) throw likesResult.error;
++  if (commentsResult.error) throw commentsResult.error;
+   if (authorResult.error) throw authorResult.error;
+-  if (sessionResult.error) throw sessionResult.error;
+ 
+   let likedByMe = false;
+-  const session = sessionResult.data.session;
+ 
+-  if (session) {
+-    const { data: ownLike, error: ownLikeError } = await supabase
+-      .from('post_likes')
+-      .select('post_id')
+-      .eq('post_id', postId)
+-      .eq('user_id', session.user.id)
+-      .maybeSingle();
++  const { data: ownLike, error: ownLikeError } = await supabase
++    .from('post_likes')
++    .select('post_id')
++    .eq('post_id', postId)
++    .eq('user_id', session.user.id)
++    .maybeSingle();
+ 
+-    if (ownLikeError) throw ownLikeError;
+-    likedByMe = Boolean(ownLike);
+-  }
++  if (ownLikeError) throw ownLikeError;
++  likedByMe = Boolean(ownLike);
+ 
+   return {
+     post,
+@@ -116,6 +152,91 @@
+     },
+     media: mediaResult.data || [],
+     likes: likesResult.count ?? 0,
++    commentCount: commentsResult.count ?? 0,
+     likedByMe,
++    isOwner: post.user_id === session.user.id,
+   };
+ }
++
++export async function fetchOwnPostForEditing(postId) {
++  const session = await ensureAuthed();
++
++  const { data, error } = await supabase
++    .from('posts')
++    .select('id, user_id, caption, image_url, created_at')
++    .eq('id', postId)
++    .eq('user_id', session.user.id)
++    .maybeSingle();
++
++  if (error) throw error;
++  if (!data) {
++    throw new Error('This post is unavailable or you do not own it.');
++  }
++
++  return data;
++}
++
++export async function updateOwnPostCaption(postId, caption) {
++  await ensureAuthed();
++  const clean = cleanCaption(caption);
++
++  const { data, error } = await supabase
++    .rpc('update_own_post_caption', {
++      p_post_id: postId,
++      p_caption: clean || null,
++    })
++    .single();
++
++  if (error) throw error;
++  return data;
++}
++
++async function fetchOwnPostMediaUrls(postId) {
++  const session = await ensureAuthed();
++
++  const { data: post, error: postError } = await supabase
++    .from('posts')
++    .select('id, user_id, image_url')
++    .eq('id', postId)
++    .eq('user_id', session.user.id)
++    .maybeSingle();
++
++  if (postError) throw postError;
++  if (!post) {
++    throw new Error('This post is unavailable or you do not own it.');
++  }
++
++  const { data: media, error: mediaError } = await supabase
++    .from('post_media')
++    .select('url')
++    .eq('post_id', postId);
++
++  if (mediaError) throw mediaError;
++
++  return Array.from(
++    new Set([
++      post.image_url,
++      ...(media || []).map((item) => item.url),
++    ].filter(Boolean))
++  );
++}
++
++export async function deleteOwnPost(postId) {
++  const urls = await fetchOwnPostMediaUrls(postId);
++
++  if (urls.length) {
++    await removeStorageUrls('posts', urls);
++  }
++
++  const { data, error } = await supabase.rpc('delete_own_post', {
++    p_post_id: postId,
++  });
++
++  if (error) {
++    throw new Error(
++      `${error.message || 'The post could not be deleted.'} The media was already removed; refresh before trying again.`
++    );
++  }
++
++  return data;
++}
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/src/services/uploadService.js /mnt/data/circles_step7_work/circles-app/src/services/uploadService.js
+--- /mnt/data/circles_step7_baseline/circles-app/src/services/uploadService.js	2026-07-20 20:09:07.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/src/services/uploadService.js	2026-07-21 01:00:23.037631346 +0000
+@@ -39,6 +39,44 @@
+     .replace(/[^a-zA-Z0-9/_-]/g, '');
+ }
+ 
++
++export function storagePathFromPublicUrl(url, bucket) {
++  if (!url || !bucket) return null;
++
++  const marker = `/storage/v1/object/public/${bucket}/`;
++  const markerIndex = url.indexOf(marker);
++  if (markerIndex < 0) return null;
++
++  const encodedPath = url
++    .slice(markerIndex + marker.length)
++    .split('?')[0];
++
++  try {
++    return decodeURIComponent(encodedPath);
++  } catch {
++    return encodedPath;
++  }
++}
++
++export async function removeStorageUrls(bucket, urls = []) {
++  const paths = Array.from(
++    new Set(
++      urls
++        .map((url) => storagePathFromPublicUrl(url, bucket))
++        .filter(Boolean)
++    )
++  );
++
++  if (!paths.length) return [];
++
++  const { data, error } = await supabase.storage
++    .from(bucket)
++    .remove(paths);
++
++  if (error) throw error;
++  return data || [];
++}
++
+ export async function uploadToBucket(
+   uri,
+   bucket,
+diff -ruN '--exclude=node_modules' '--exclude=post-ownership-step7.patch' /mnt/data/circles_step7_baseline/circles-app/supabase/migrations/20260720_006_post_ownership.sql /mnt/data/circles_step7_work/circles-app/supabase/migrations/20260720_006_post_ownership.sql
+--- /mnt/data/circles_step7_baseline/circles-app/supabase/migrations/20260720_006_post_ownership.sql	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step7_work/circles-app/supabase/migrations/20260720_006_post_ownership.sql	2026-07-21 01:14:23.856413430 +0000
+@@ -0,0 +1,410 @@
++-- Circles Step 7 — Post ownership, caption editing, and deletion
++-- Removes permissive restored development policies and adds owner-only
++-- management functions plus Storage cleanup permissions.
++
++alter table public.posts enable row level security;
++alter table public.post_media enable row level security;
++alter table public.post_comments enable row level security;
++alter table public.post_likes enable row level security;
++
++-- Keep captions within the same limit enforced by the client.
++alter table public.posts
++  drop constraint if exists posts_caption_length_check;
++
++alter table public.posts
++  add constraint posts_caption_length_check
++  check (caption is null or char_length(caption) <= 2200);
++
++-- Remove permissive development policies restored from the old project.
++drop policy if exists dev_posts_all_delete on public.posts;
++drop policy if exists dev_posts_all_insert on public.posts;
++drop policy if exists dev_posts_all_select on public.posts;
++drop policy if exists dev_posts_all_update on public.posts;
++
++drop policy if exists dev_post_media_all_delete on public.post_media;
++drop policy if exists dev_post_media_all_insert on public.post_media;
++drop policy if exists dev_post_media_all_select on public.post_media;
++drop policy if exists dev_post_media_all_update on public.post_media;
++
++-- Likes and comments already have relationship-aware policies in the schema;
++-- remove only the old permissive development overrides.
++drop policy if exists dev_comments_all_delete on public.post_comments;
++drop policy if exists dev_comments_all_insert on public.post_comments;
++drop policy if exists dev_comments_all_select on public.post_comments;
++drop policy if exists dev_comments_all_update on public.post_comments;
++
++drop policy if exists dev_likes_all_delete on public.post_likes;
++drop policy if exists dev_likes_all_insert on public.post_likes;
++drop policy if exists dev_likes_all_select on public.post_likes;
++drop policy if exists dev_likes_all_update on public.post_likes;
++
++-- Recreate comments and likes policies explicitly so removing the development
++-- overrides cannot leave those features inaccessible.
++drop policy if exists comments_delete on public.post_comments;
++drop policy if exists comments_insert on public.post_comments;
++drop policy if exists comments_select on public.post_comments;
++drop policy if exists "Circles delete own comments" on public.post_comments;
++drop policy if exists "Circles add comments to visible posts" on public.post_comments;
++drop policy if exists "Circles view comments on visible posts" on public.post_comments;
++
++create policy "Circles delete own comments"
++on public.post_comments
++for delete
++to authenticated
++using (user_id = auth.uid());
++
++create policy "Circles add comments to visible posts"
++on public.post_comments
++for insert
++to authenticated
++with check (
++  user_id = auth.uid()
++  and exists (
++    select 1
++    from public.posts p
++    where p.id = post_comments.post_id
++      and (
++        p.user_id = auth.uid()
++        or public.is_connected(auth.uid(), p.user_id)
++      )
++  )
++);
++
++create policy "Circles view comments on visible posts"
++on public.post_comments
++for select
++to authenticated
++using (
++  exists (
++    select 1
++    from public.posts p
++    where p.id = post_comments.post_id
++      and (
++        p.user_id = auth.uid()
++        or public.is_connected(auth.uid(), p.user_id)
++      )
++  )
++);
++
++drop policy if exists likes_delete on public.post_likes;
++drop policy if exists likes_insert on public.post_likes;
++drop policy if exists likes_select on public.post_likes;
++drop policy if exists "Circles delete own likes" on public.post_likes;
++drop policy if exists "Circles like visible posts" on public.post_likes;
++drop policy if exists "Circles view likes on visible posts" on public.post_likes;
++
++create policy "Circles delete own likes"
++on public.post_likes
++for delete
++to authenticated
++using (user_id = auth.uid());
++
++create policy "Circles like visible posts"
++on public.post_likes
++for insert
++to authenticated
++with check (
++  user_id = auth.uid()
++  and exists (
++    select 1
++    from public.posts p
++    where p.id = post_likes.post_id
++      and (
++        p.user_id = auth.uid()
++        or public.is_connected(auth.uid(), p.user_id)
++      )
++  )
++);
++
++create policy "Circles view likes on visible posts"
++on public.post_likes
++for select
++to authenticated
++using (
++  exists (
++    select 1
++    from public.posts p
++    where p.id = post_likes.post_id
++      and (
++        p.user_id = auth.uid()
++        or public.is_connected(auth.uid(), p.user_id)
++      )
++  )
++);
++
++-- Replace older post policies with explicit Circles ownership/privacy rules.
++drop policy if exists posts_insert on public.posts;
++drop policy if exists posts_select on public.posts;
++drop policy if exists posts_update on public.posts;
++drop policy if exists posts_delete on public.posts;
++drop policy if exists "Circles insert own posts" on public.posts;
++drop policy if exists "Circles view connected posts" on public.posts;
++drop policy if exists "Circles update own posts" on public.posts;
++drop policy if exists "Circles delete own posts" on public.posts;
++
++create policy "Circles insert own posts"
++on public.posts
++for insert
++to authenticated
++with check (user_id = auth.uid());
++
++create policy "Circles view connected posts"
++on public.posts
++for select
++to authenticated
++using (
++  user_id = auth.uid()
++  or public.is_connected(auth.uid(), user_id)
++);
++
++create policy "Circles update own posts"
++on public.posts
++for update
++to authenticated
++using (user_id = auth.uid())
++with check (user_id = auth.uid());
++
++create policy "Circles delete own posts"
++on public.posts
++for delete
++to authenticated
++using (user_id = auth.uid());
++
++-- Media inherits access from its parent post.
++drop policy if exists post_media_insert_author on public.post_media;
++drop policy if exists post_media_select_all on public.post_media;
++drop policy if exists "Circles insert own post media" on public.post_media;
++drop policy if exists "Circles view connected post media" on public.post_media;
++drop policy if exists "Circles delete own post media" on public.post_media;
++
++create policy "Circles insert own post media"
++on public.post_media
++for insert
++to authenticated
++with check (
++  exists (
++    select 1
++    from public.posts p
++    where p.id = post_media.post_id
++      and p.user_id = auth.uid()
++  )
++);
++
++create policy "Circles view connected post media"
++on public.post_media
++for select
++to authenticated
++using (
++  exists (
++    select 1
++    from public.posts p
++    where p.id = post_media.post_id
++      and (
++        p.user_id = auth.uid()
++        or public.is_connected(auth.uid(), p.user_id)
++      )
++  )
++);
++
++create policy "Circles delete own post media"
++on public.post_media
++for delete
++to authenticated
++using (
++  exists (
++    select 1
++    from public.posts p
++    where p.id = post_media.post_id
++      and p.user_id = auth.uid()
++  )
++);
++
++-- The restored helper RPCs are security-definer functions, so enforce the
++-- same post-visibility rule inside them instead of relying on table RLS.
++create or replace function public.add_comment(
++  p_post_id uuid,
++  p_body text
++)
++returns uuid
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  viewer_id uuid := auth.uid();
++  clean_body text := btrim(coalesce(p_body, ''));
++  comment_id uuid;
++begin
++  if viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if clean_body = '' then
++    raise exception 'Comment cannot be empty';
++  end if;
++
++  if char_length(clean_body) > 1000 then
++    raise exception 'Comment must be 1000 characters or fewer';
++  end if;
++
++  if not exists (
++    select 1
++    from public.posts p
++    where p.id = p_post_id
++      and (
++        p.user_id = viewer_id
++        or public.is_connected(viewer_id, p.user_id)
++      )
++  ) then
++    raise exception 'Post not found or unavailable';
++  end if;
++
++  insert into public.post_comments (post_id, user_id, body)
++  values (p_post_id, viewer_id, clean_body)
++  returning id into comment_id;
++
++  return comment_id;
++end;
++$$;
++
++create or replace function public.toggle_like(p_post_id uuid)
++returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  viewer_id uuid := auth.uid();
++begin
++  if viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if not exists (
++    select 1
++    from public.posts p
++    where p.id = p_post_id
++      and (
++        p.user_id = viewer_id
++        or public.is_connected(viewer_id, p.user_id)
++      )
++  ) then
++    raise exception 'Post not found or unavailable';
++  end if;
++
++  if exists (
++    select 1
++    from public.post_likes l
++    where l.post_id = p_post_id
++      and l.user_id = viewer_id
++  ) then
++    delete from public.post_likes l
++    where l.post_id = p_post_id
++      and l.user_id = viewer_id;
++  else
++    insert into public.post_likes (post_id, user_id)
++    values (p_post_id, viewer_id);
++  end if;
++end;
++$$;
++
++revoke all on function public.add_comment(uuid, text) from public;
++grant execute on function public.add_comment(uuid, text) to authenticated;
++
++revoke all on function public.toggle_like(uuid) from public;
++grant execute on function public.toggle_like(uuid) to authenticated;
++
++-- Caption editing is exposed through a narrow owner-only RPC.
++create or replace function public.update_own_post_caption(
++  p_post_id uuid,
++  p_caption text
++)
++returns table (
++  id uuid,
++  caption text,
++  updated boolean
++)
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  viewer_id uuid := auth.uid();
++  clean_caption text := nullif(btrim(coalesce(p_caption, '')), '');
++begin
++  if viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if p_post_id is null then
++    raise exception 'Post is required';
++  end if;
++
++  if clean_caption is not null and char_length(clean_caption) > 2200 then
++    raise exception 'Caption must be 2200 characters or fewer';
++  end if;
++
++  return query
++  update public.posts p
++  set caption = clean_caption
++  where p.id = p_post_id
++    and p.user_id = viewer_id
++  returning p.id, p.caption, true;
++
++  if not found then
++    raise exception 'Post not found or you do not own it';
++  end if;
++end;
++$$;
++
++-- The app removes Storage objects first, then calls this RPC. Foreign keys
++-- cascade the delete to post_media, likes, and comments.
++create or replace function public.delete_own_post(p_post_id uuid)
++returns uuid
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  viewer_id uuid := auth.uid();
++  deleted_id uuid;
++begin
++  if viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  delete from public.posts p
++  where p.id = p_post_id
++    and p.user_id = viewer_id
++  returning p.id into deleted_id;
++
++  if deleted_id is null then
++    raise exception 'Post not found or you do not own it';
++  end if;
++
++  return deleted_id;
++end;
++$$;
++
++revoke all on function public.update_own_post_caption(uuid, text) from public;
++grant execute on function public.update_own_post_caption(uuid, text) to authenticated;
++
++revoke all on function public.delete_own_post(uuid) from public;
++grant execute on function public.delete_own_post(uuid) to authenticated;
++
++-- Supabase Storage tracks the authenticated uploader as the object owner.
++-- This covers both legacy root-level files and new user-folder files.
++drop policy if exists "Circles delete own post uploads"
++on storage.objects;
++
++create policy "Circles delete own post uploads"
++on storage.objects
++for delete
++to authenticated
++using (
++  bucket_id = 'posts'
++  and (
++    owner_id = auth.uid()::text
++    or owner = auth.uid()
++  )
++);

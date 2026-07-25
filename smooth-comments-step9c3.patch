@@ -1,0 +1,810 @@
+diff -ruN '--exclude=README_PROFILE_SCROLLING_STEP_9C_2.md' '--exclude=profile-scrolling-step9c2.patch' '--exclude=README_SMOOTH_COMMENTS_STEP_9C_3.md' '--exclude=smooth-comments-step9c3.patch' step9c3_baseline/src/components/comments/InstagramCommentsSheet.js step9c3_work/src/components/comments/InstagramCommentsSheet.js
+--- step9c3_baseline/src/components/comments/InstagramCommentsSheet.js	1970-01-01 00:00:00.000000000 +0000
++++ step9c3_work/src/components/comments/InstagramCommentsSheet.js	2026-07-22 19:41:42.191053291 +0000
+@@ -0,0 +1,327 @@
++import React, { useEffect, useMemo, useRef, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Animated,
++  FlatList,
++  KeyboardAvoidingView,
++  Modal,
++  Platform,
++  Pressable,
++  StyleSheet,
++  Text,
++  View,
++  useWindowDimensions,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { COLORS } from '../../theme/colors';
++import {
++  InstagramCommentComposer,
++  InstagramCommentRow,
++  InstagramCommentsEmpty,
++  InstagramCommentsError,
++} from './InstagramComments';
++
++export function InstagramCommentsSheet({
++  visible,
++  title = 'Comments',
++  subtitle,
++  comments = [],
++  loading = false,
++  error = '',
++  onClose,
++  onRetry,
++  onSubmit,
++  onOpenProfile,
++  onDeleteComment,
++  emptyTitle = 'No comments yet.',
++  emptyBody = 'Start the conversation.',
++  placeholder = 'Add a comment…',
++}) {
++  const { height } = useWindowDimensions();
++  const [mounted, setMounted] = useState(visible);
++  const mountedRef = useRef(visible);
++  const [text, setText] = useState('');
++  const [sending, setSending] = useState(false);
++  const backdropOpacity = useRef(new Animated.Value(0)).current;
++  const translateY = useRef(new Animated.Value(height)).current;
++  const listRef = useRef(null);
++
++  useEffect(() => {
++    mountedRef.current = mounted;
++  }, [mounted]);
++
++  useEffect(() => {
++    if (visible) {
++      setMounted(true);
++      setText('');
++      translateY.setValue(height);
++      backdropOpacity.setValue(0);
++      const frame = requestAnimationFrame(() => {
++        Animated.parallel([
++          Animated.timing(backdropOpacity, {
++            toValue: 1,
++            duration: 180,
++            useNativeDriver: true,
++          }),
++          Animated.spring(translateY, {
++            toValue: 0,
++            damping: 24,
++            stiffness: 230,
++            mass: 0.9,
++            useNativeDriver: true,
++          }),
++        ]).start();
++      });
++      return () => cancelAnimationFrame(frame);
++    }
++
++    if (!mountedRef.current) return undefined;
++    Animated.parallel([
++      Animated.timing(backdropOpacity, {
++        toValue: 0,
++        duration: 150,
++        useNativeDriver: true,
++      }),
++      Animated.timing(translateY, {
++        toValue: height,
++        duration: 190,
++        useNativeDriver: true,
++      }),
++    ]).start(({ finished }) => {
++      if (finished) setMounted(false);
++    });
++    return undefined;
++  }, [backdropOpacity, height, translateY, visible]);
++
++  const normalizedComments = useMemo(() => comments.filter(Boolean), [comments]);
++
++  const submit = async () => {
++    const body = text.trim();
++    if (!body || sending || !onSubmit) return;
++
++    setSending(true);
++    try {
++      await onSubmit(body);
++      setText('');
++      requestAnimationFrame(() => {
++        listRef.current?.scrollToEnd?.({ animated: true });
++      });
++    } catch (submitError) {
++      Alert.alert(
++        'Comment not posted',
++        submitError?.message || 'Please try again.'
++      );
++    } finally {
++      setSending(false);
++    }
++  };
++
++  const deleteComment = (comment) => {
++    if (!comment?.canDelete || !onDeleteComment) return;
++    onDeleteComment(comment);
++  };
++
++  if (!mounted) return null;
++
++  return (
++    <Modal
++      visible
++      transparent
++      animationType="none"
++      presentationStyle="overFullScreen"
++      statusBarTranslucent
++      onRequestClose={onClose}
++    >
++      <KeyboardAvoidingView
++        style={styles.modalRoot}
++        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
++        keyboardVerticalOffset={0}
++      >
++        <Animated.View
++          pointerEvents="none"
++          style={[styles.backdrop, { opacity: backdropOpacity }]}
++        />
++        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
++
++        <Animated.View
++          style={[
++            styles.sheet,
++            {
++              height: Math.min(Math.max(430, height * 0.82), 760),
++              transform: [{ translateY }],
++            },
++          ]}
++        >
++          <SafeAreaView edges={['bottom']} style={styles.safeSheet}>
++            <View style={styles.handle} />
++            <View style={styles.header}>
++              <View style={styles.headerSide} />
++              <View style={styles.headerTitleWrap}>
++                <Text style={styles.headerTitle}>{title}</Text>
++                {subtitle ? (
++                  <Text style={styles.headerSubtitle} numberOfLines={1}>
++                    {subtitle}
++                  </Text>
++                ) : null}
++              </View>
++              <Pressable
++                onPress={onClose}
++                hitSlop={10}
++                style={({ pressed }) => [
++                  styles.closeButton,
++                  pressed && styles.pressed,
++                ]}
++              >
++                <Ionicons name="close" size={22} color={COLORS.text} />
++              </Pressable>
++            </View>
++
++            {loading ? (
++              <View style={styles.centerState}>
++                <ActivityIndicator />
++                <Text style={styles.stateText}>Loading comments…</Text>
++              </View>
++            ) : error ? (
++              <InstagramCommentsError message={error} onRetry={onRetry} />
++            ) : (
++              <FlatList
++                ref={listRef}
++                data={normalizedComments}
++                keyExtractor={(item) => item.id}
++                renderItem={({ item }) => (
++                  <InstagramCommentRow
++                    comment={item}
++                    onOpenProfile={
++                      item.userId && onOpenProfile
++                        ? () => onOpenProfile(item.userId)
++                        : undefined
++                    }
++                    onLongPress={
++                      item.canDelete && onDeleteComment
++                        ? () => deleteComment(item)
++                        : undefined
++                    }
++                  />
++                )}
++                ListEmptyComponent={(
++                  <InstagramCommentsEmpty
++                    title={emptyTitle}
++                    body={emptyBody}
++                  />
++                )}
++                style={styles.commentsList}
++                contentContainerStyle={styles.commentsContent}
++                keyboardShouldPersistTaps="handled"
++                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
++                showsVerticalScrollIndicator={false}
++              />
++            )}
++
++            <InstagramCommentComposer
++              value={text}
++              onChangeText={setText}
++              onSubmit={submit}
++              sending={sending}
++              placeholder={placeholder}
++              bottomInset={8}
++            />
++          </SafeAreaView>
++        </Animated.View>
++      </KeyboardAvoidingView>
++    </Modal>
++  );
++}
++
++const styles = StyleSheet.create({
++  modalRoot: {
++    flex: 1,
++    justifyContent: 'flex-end',
++  },
++  backdrop: {
++    ...StyleSheet.absoluteFillObject,
++    backgroundColor: 'rgba(0,0,0,0.36)',
++  },
++  sheet: {
++    width: '100%',
++    minHeight: 430,
++    backgroundColor: COLORS.bg,
++    borderTopLeftRadius: 22,
++    borderTopRightRadius: 22,
++    overflow: 'hidden',
++    shadowColor: '#000',
++    shadowOpacity: 0.2,
++    shadowRadius: 16,
++    shadowOffset: { width: 0, height: -5 },
++    elevation: 18,
++  },
++  safeSheet: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  handle: {
++    alignSelf: 'center',
++    width: 38,
++    height: 4,
++    borderRadius: 2,
++    backgroundColor: '#c7c7cc',
++    marginTop: 8,
++    marginBottom: 4,
++  },
++  header: {
++    minHeight: 48,
++    flexDirection: 'row',
++    alignItems: 'center',
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.border,
++    paddingHorizontal: 8,
++  },
++  headerSide: {
++    width: 42,
++    height: 42,
++  },
++  headerTitleWrap: {
++    flex: 1,
++    alignItems: 'center',
++  },
++  headerTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 15,
++  },
++  headerSubtitle: {
++    marginTop: 1,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 10,
++  },
++  closeButton: {
++    width: 42,
++    height: 42,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  commentsList: {
++    flex: 1,
++  },
++  commentsContent: {
++    flexGrow: 1,
++    paddingVertical: 4,
++  },
++  centerState: {
++    flex: 1,
++    minHeight: 180,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  stateText: {
++    marginTop: 8,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++  },
++  pressed: {
++    opacity: 0.55,
++  },
++});
+diff -ruN '--exclude=README_PROFILE_SCROLLING_STEP_9C_2.md' '--exclude=profile-scrolling-step9c2.patch' '--exclude=README_SMOOTH_COMMENTS_STEP_9C_3.md' '--exclude=smooth-comments-step9c3.patch' step9c3_baseline/src/screens/conversations/CirclePostsFeedScreen.js step9c3_work/src/screens/conversations/CirclePostsFeedScreen.js
+--- step9c3_baseline/src/screens/conversations/CirclePostsFeedScreen.js	2026-07-22 19:37:21.639043870 +0000
++++ step9c3_work/src/screens/conversations/CirclePostsFeedScreen.js	2026-07-22 19:39:39.075048839 +0000
+@@ -1,6 +1,7 @@
+ import React, { useCallback, useMemo, useState } from 'react';
+ import {
+   ActivityIndicator,
++  Alert,
+   FlatList,
+   Image,
+   Pressable,
+@@ -14,19 +15,36 @@
+ import { useFocusEffect } from '@react-navigation/native';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { Avatar } from '../../components/Avatar';
++import { InstagramCommentsSheet } from '../../components/comments/InstagramCommentsSheet';
+ import { COLORS } from '../../theme/colors';
+ import { timeAgo } from '../../utils/timeAgo';
+ import {
++  addCirclePostComment,
++  deleteOwnCirclePostComment,
++  listCirclePostComments,
+   listCirclePosts,
+   subscribeToCirclePostChanges,
+ } from '../../services/circlePostService';
+ 
++function mapCircleComment(comment) {
++  return {
++    id: comment.id,
++    userId: comment.userId || null,
++    name: comment.displayName || 'Circle member',
++    avatarUri: comment.avatarUri || null,
++    body: comment.body || '',
++    timeLabel: timeAgo(comment.createdAt),
++    canDelete: Boolean(comment.canDelete),
++  };
++}
++
+ function CirclePostFeedCard({
+   post,
+   width,
+   height,
+   navigation,
+   conversationId,
++  onOpenComments,
+ }) {
+   const viewerItems = useMemo(() => (
+     (post.media || []).map((item) => ({
+@@ -44,7 +62,7 @@
+   });
+ 
+   return (
+-    <View style={[styles.card, { height }]}>
++    <View style={[styles.card, { height }]}> 
+       <View style={styles.authorRow}>
+         <Pressable
+           onPress={() => navigation.navigate('Profile', { userId: post.authorId })}
+@@ -91,7 +109,7 @@
+       />
+ 
+       <View style={styles.actionRow}>
+-        <Pressable onPress={openDetail} hitSlop={10} style={styles.actionButton}>
++        <Pressable onPress={onOpenComments} hitSlop={10} style={styles.actionButton}>
+           <Ionicons name="chatbubble-outline" size={25} color={COLORS.text} />
+         </Pressable>
+         <Text style={styles.commentCount}>
+@@ -109,7 +127,7 @@
+             {post.caption}
+           </Text>
+         ) : null}
+-        <Pressable onPress={openDetail}>
++        <Pressable onPress={onOpenComments} style={styles.commentsButton}>
+           <Text style={styles.commentsLink}>
+             {post.commentCount
+               ? `View all ${post.commentCount} ${post.commentCount === 1 ? 'comment' : 'comments'}`
+@@ -125,19 +143,30 @@
+   const { conversationId, initialPostId, circleName } = route.params || {};
+   const { width } = useWindowDimensions();
+   const stageWidth = Math.min(width, 720);
+-  const cardHeight = stageWidth + 168;
++  const cardHeight = stageWidth + 210;
+   const [posts, setPosts] = useState([]);
+   const [loading, setLoading] = useState(true);
+   const [refreshing, setRefreshing] = useState(false);
+   const [error, setError] = useState('');
+ 
++  const [commentsVisible, setCommentsVisible] = useState(false);
++  const [commentsPost, setCommentsPost] = useState(null);
++  const [comments, setComments] = useState([]);
++  const [commentsLoading, setCommentsLoading] = useState(false);
++  const [commentsError, setCommentsError] = useState('');
++
+   const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
+     if (refresh) setRefreshing(true);
+     else if (!quiet) setLoading(true);
+     setError('');
+ 
+     try {
+-      setPosts(await listCirclePosts(conversationId));
++      const rows = await listCirclePosts(conversationId);
++      setPosts(rows);
++      setCommentsPost((current) => {
++        if (!current) return current;
++        return rows.find((post) => post.id === current.id) || current;
++      });
+     } catch (loadError) {
+       setError(loadError?.message || 'Could not load Circle posts.');
+     } finally {
+@@ -146,14 +175,40 @@
+     }
+   }, [conversationId]);
+ 
++  const loadComments = useCallback(async (postId, { quiet = false } = {}) => {
++    if (!postId) return;
++    if (!quiet) setCommentsLoading(true);
++    setCommentsError('');
++
++    try {
++      const rows = await listCirclePostComments(postId);
++      setComments(rows.map(mapCircleComment));
++      setPosts((current) => current.map((post) => (
++        post.id === postId ? { ...post, commentCount: rows.length } : post
++      )));
++      setCommentsPost((current) => (
++        current?.id === postId ? { ...current, commentCount: rows.length } : current
++      ));
++    } catch (loadError) {
++      setCommentsError(loadError?.message || 'Private comments could not be loaded.');
++    } finally {
++      setCommentsLoading(false);
++    }
++  }, []);
++
+   useFocusEffect(
+     useCallback(() => {
+       load();
+       return subscribeToCirclePostChanges({
+         conversationId,
+-        onChange: () => load({ quiet: true }),
++        onChange: () => {
++          load({ quiet: true });
++          if (commentsPost?.id) {
++            loadComments(commentsPost.id, { quiet: true });
++          }
++        },
+       });
+-    }, [conversationId, load])
++    }, [commentsPost?.id, conversationId, load, loadComments])
+   );
+ 
+   const initialIndex = useMemo(() => {
+@@ -161,6 +216,70 @@
+     return index >= 0 ? index : 0;
+   }, [initialPostId, posts]);
+ 
++  const openComments = (post) => {
++    setCommentsPost(post);
++    setComments([]);
++    setCommentsError('');
++    setCommentsVisible(true);
++    loadComments(post.id);
++  };
++
++  const submitComment = async (body) => {
++    if (!commentsPost?.id) return;
++    const newComment = await addCirclePostComment(commentsPost.id, body);
++    setComments((current) => [...current, mapCircleComment(newComment)]);
++    setPosts((current) => current.map((post) => (
++      post.id === commentsPost.id
++        ? { ...post, commentCount: Number(post.commentCount || 0) + 1 }
++        : post
++    )));
++    setCommentsPost((current) => current
++      ? { ...current, commentCount: Number(current.commentCount || 0) + 1 }
++      : current);
++  };
++
++  const deleteComment = (comment) => {
++    if (!comment?.canDelete) return;
++
++    Alert.alert(
++      'Delete comment?',
++      'This removes your comment from the private Circle post.',
++      [
++        { text: 'Cancel', style: 'cancel' },
++        {
++          text: 'Delete',
++          style: 'destructive',
++          onPress: async () => {
++            try {
++              await deleteOwnCirclePostComment(comment.id);
++              setComments((current) => current.filter((item) => item.id !== comment.id));
++              setPosts((current) => current.map((post) => (
++                post.id === commentsPost?.id
++                  ? { ...post, commentCount: Math.max(0, Number(post.commentCount || 0) - 1) }
++                  : post
++              )));
++              setCommentsPost((current) => current
++                ? { ...current, commentCount: Math.max(0, Number(current.commentCount || 0) - 1) }
++                : current);
++            } catch (deleteError) {
++              Alert.alert(
++                'Comment not deleted',
++                deleteError?.message || 'Please try again.'
++              );
++            }
++          },
++        },
++      ]
++    );
++  };
++
++  const openCommentAuthor = (commentUserId) => {
++    setCommentsVisible(false);
++    setTimeout(() => {
++      navigation.navigate('Profile', { userId: commentUserId });
++    }, 180);
++  };
++
+   if (loading) {
+     return (
+       <SafeAreaView edges={['bottom']} style={styles.centerState}>
+@@ -207,6 +326,7 @@
+               height={cardHeight}
+               navigation={navigation}
+               conversationId={conversationId}
++              onOpenComments={() => openComments(item)}
+             />
+           )}
+           refreshControl={(
+@@ -226,6 +346,22 @@
+           contentContainerStyle={styles.listContent}
+         />
+       )}
++
++      <InstagramCommentsSheet
++        visible={commentsVisible}
++        title="Comments"
++        subtitle={circleName ? `${circleName} · private` : 'Private Circle post'}
++        comments={comments}
++        loading={commentsLoading}
++        error={commentsError}
++        onClose={() => setCommentsVisible(false)}
++        onRetry={() => loadComments(commentsPost?.id)}
++        onSubmit={submitComment}
++        onOpenProfile={openCommentAuthor}
++        onDeleteComment={deleteComment}
++        emptyBody="Be the first to leave a private comment."
++        placeholder="Add a private comment…"
++      />
+     </SafeAreaView>
+   );
+ }
+@@ -251,7 +387,6 @@
+     backgroundColor: COLORS.bg,
+     borderBottomWidth: StyleSheet.hairlineWidth,
+     borderBottomColor: COLORS.border,
+-    overflow: 'hidden',
+   },
+   authorRow: { height: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
+   authorIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+@@ -267,10 +402,11 @@
+   actionButton: { marginRight: 7 },
+   commentCount: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+   mediaCount: { marginLeft: 'auto', color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
+-  details: { flex: 1, paddingHorizontal: 12 },
++  details: { paddingHorizontal: 12, paddingBottom: 16 },
+   caption: { color: COLORS.text, fontFamily: 'Manrope_400Regular', lineHeight: 19 },
+   captionAuthor: { fontFamily: 'Manrope_700Bold' },
+-  commentsLink: { marginTop: 6, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13 },
++  commentsButton: { alignSelf: 'flex-start', paddingTop: 6, paddingBottom: 8, paddingRight: 18 },
++  commentsLink: { color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13 },
+   centerState: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: COLORS.bg },
+   stateText: { marginTop: 10, color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
+   errorText: { marginTop: 12, color: COLORS.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
+diff -ruN '--exclude=README_PROFILE_SCROLLING_STEP_9C_2.md' '--exclude=profile-scrolling-step9c2.patch' '--exclude=README_SMOOTH_COMMENTS_STEP_9C_3.md' '--exclude=smooth-comments-step9c3.patch' step9c3_baseline/src/screens/profile/ProfilePostsFeedScreen.js step9c3_work/src/screens/profile/ProfilePostsFeedScreen.js
+--- step9c3_baseline/src/screens/profile/ProfilePostsFeedScreen.js	2026-07-22 19:37:21.639043870 +0000
++++ step9c3_work/src/screens/profile/ProfilePostsFeedScreen.js	2026-07-22 19:39:39.075048839 +0000
+@@ -15,11 +15,16 @@
+ import { useFocusEffect } from '@react-navigation/native';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { Avatar } from '../../components/Avatar';
++import { InstagramCommentsSheet } from '../../components/comments/InstagramCommentsSheet';
+ import { COLORS } from '../../theme/colors';
+ import { timeAgo } from '../../utils/timeAgo';
+ import { fetchProfilePage } from '../../services/profileService';
+ import { fetchPostDetail } from '../../services/postService';
+-import { togglePostLike } from '../../services/feedService';
++import {
++  addPostComment,
++  fetchPostComments,
++  togglePostLike,
++} from '../../services/feedService';
+ 
+ function normalizeMedia(detail) {
+   const rows = detail?.media || [];
+@@ -56,16 +61,29 @@
+   };
+ }
+ 
++function mapPersonalComment(comment) {
++  return {
++    id: comment.id,
++    userId: comment.userId || null,
++    name: comment.userName || 'Someone',
++    avatarUri: comment.avatarUri || null,
++    body: comment.text || '',
++    timeLabel: timeAgo(comment.createdAt),
++    canDelete: false,
++  };
++}
++
+ function PersonalPostFeedCard({
+   post,
+   width,
+   height,
+-  onOpenPost,
++  onOpenDetail,
++  onOpenComments,
+   onOpenProfile,
+   onToggleLike,
+ }) {
+   return (
+-    <View style={[styles.card, { height }]}>
++    <View style={[styles.card, { height }]}> 
+       <Pressable onPress={onOpenProfile} style={styles.authorRow}>
+         <Avatar
+           size={40}
+@@ -90,7 +108,7 @@
+         showsHorizontalScrollIndicator={false}
+         renderItem={({ item }) => (
+           <Pressable
+-            onPress={onOpenPost}
++            onPress={onOpenDetail}
+             style={[styles.mediaPage, { width, height: width }]}
+           >
+             {item.mediaType === 'image' ? (
+@@ -112,7 +130,7 @@
+             color={post.liked ? '#e11d48' : COLORS.text}
+           />
+         </Pressable>
+-        <Pressable onPress={onOpenPost} hitSlop={10} style={styles.actionButton}>
++        <Pressable onPress={onOpenComments} hitSlop={10} style={styles.actionButton}>
+           <Ionicons name="chatbubble-outline" size={25} color={COLORS.text} />
+         </Pressable>
+         {post.media.length > 1 ? (
+@@ -130,7 +148,7 @@
+             {post.caption}
+           </Text>
+         ) : null}
+-        <Pressable onPress={onOpenPost}>
++        <Pressable onPress={onOpenComments} style={styles.commentsButton}>
+           <Text style={styles.commentsLink}>
+             {post.commentCount
+               ? `View all ${post.commentCount} ${post.commentCount === 1 ? 'comment' : 'comments'}`
+@@ -146,13 +164,19 @@
+   const { userId, profileName, initialPostId } = route.params || {};
+   const { width } = useWindowDimensions();
+   const stageWidth = Math.min(width, 720);
+-  const cardHeight = stageWidth + 178;
++  const cardHeight = stageWidth + 212;
+   const [posts, setPosts] = useState([]);
+   const [resolvedName, setResolvedName] = useState(profileName || 'Posts');
+   const [loading, setLoading] = useState(true);
+   const [refreshing, setRefreshing] = useState(false);
+   const [error, setError] = useState('');
+ 
++  const [commentsVisible, setCommentsVisible] = useState(false);
++  const [commentsPost, setCommentsPost] = useState(null);
++  const [comments, setComments] = useState([]);
++  const [commentsLoading, setCommentsLoading] = useState(false);
++  const [commentsError, setCommentsError] = useState('');
++
+   const load = useCallback(async ({ refresh = false } = {}) => {
+     if (refresh) setRefreshing(true);
+     else setLoading(true);
+@@ -213,6 +237,48 @@
+     }
+   };
+ 
++  const loadComments = useCallback(async (postId, { quiet = false } = {}) => {
++    if (!postId) return;
++    if (!quiet) setCommentsLoading(true);
++    setCommentsError('');
++
++    try {
++      const rows = await fetchPostComments(postId);
++      setComments(rows.map(mapPersonalComment));
++      setPosts((current) => current.map((post) => (
++        post.id === postId ? { ...post, commentCount: rows.length } : post
++      )));
++      setCommentsPost((current) => (
++        current?.id === postId ? { ...current, commentCount: rows.length } : current
++      ));
++    } catch (loadError) {
++      setCommentsError(loadError?.message || 'Comments could not be loaded.');
++    } finally {
++      setCommentsLoading(false);
++    }
++  }, []);
++
++  const openComments = (post) => {
++    setCommentsPost(post);
++    setComments([]);
++    setCommentsError('');
++    setCommentsVisible(true);
++    loadComments(post.id);
++  };
++
++  const submitComment = async (body) => {
++    if (!commentsPost?.id) return;
++    await addPostComment(commentsPost.id, body);
++    await loadComments(commentsPost.id, { quiet: true });
++  };
++
++  const openCommentAuthor = (commentUserId) => {
++    setCommentsVisible(false);
++    setTimeout(() => {
++      navigation.navigate('Profile', { userId: commentUserId });
++    }, 180);
++  };
++
+   if (loading) {
+     return (
+       <SafeAreaView edges={['top']} style={styles.centerState}>
+@@ -259,7 +325,8 @@
+               post={item}
+               width={stageWidth}
+               height={cardHeight}
+-              onOpenPost={() => navigation.navigate('PostDetail', { postId: item.id })}
++              onOpenDetail={() => navigation.navigate('PostDetail', { postId: item.id })}
++              onOpenComments={() => openComments(item)}
+               onOpenProfile={() => navigation.navigate('Profile', { userId: item.authorId })}
+               onToggleLike={() => toggleLike(item.id)}
+             />
+@@ -281,6 +348,20 @@
+           contentContainerStyle={styles.listContent}
+         />
+       )}
++
++      <InstagramCommentsSheet
++        visible={commentsVisible}
++        title="Comments"
++        subtitle={commentsPost ? `${commentsPost.authorName}'s post` : undefined}
++        comments={comments}
++        loading={commentsLoading}
++        error={commentsError}
++        onClose={() => setCommentsVisible(false)}
++        onRetry={() => loadComments(commentsPost?.id)}
++        onSubmit={submitComment}
++        onOpenProfile={openCommentAuthor}
++        emptyBody="Be the first to leave a comment."
++      />
+     </SafeAreaView>
+   );
+ }
+@@ -320,7 +401,6 @@
+     backgroundColor: COLORS.bg,
+     borderBottomWidth: StyleSheet.hairlineWidth,
+     borderBottomColor: COLORS.border,
+-    overflow: 'hidden',
+   },
+   authorRow: {
+     height: 58,
+@@ -337,11 +417,12 @@
+   actionRow: { height: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
+   actionButton: { marginRight: 17 },
+   mediaCount: { marginLeft: 'auto', color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
+-  details: { flex: 1, paddingHorizontal: 12 },
++  details: { paddingHorizontal: 12, paddingBottom: 16 },
+   likes: { fontFamily: 'Manrope_700Bold', color: COLORS.text, fontSize: 13 },
+   caption: { marginTop: 5, color: COLORS.text, fontFamily: 'Manrope_400Regular', lineHeight: 19 },
+   captionAuthor: { fontFamily: 'Manrope_700Bold' },
+-  commentsLink: { marginTop: 6, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13 },
++  commentsButton: { alignSelf: 'flex-start', paddingTop: 6, paddingBottom: 8, paddingRight: 18 },
++  commentsLink: { color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13 },
+   centerState: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: COLORS.bg },
+   stateText: { marginTop: 10, color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
+   errorText: { marginTop: 12, color: COLORS.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },

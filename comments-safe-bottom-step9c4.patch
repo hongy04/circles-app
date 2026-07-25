@@ -1,0 +1,89 @@
+--- /mnt/data/step9c3_work/circles_smooth_comments_step9c3_package/src/components/comments/InstagramCommentsSheet.js	2026-07-22 19:41:42.000000000 +0000
++++ /mnt/data/circles_comments_safe_bottom_step9c4_package/src/components/comments/InstagramCommentsSheet.js	2026-07-22 19:49:37.051070463 +0000
+@@ -4,6 +4,7 @@
+   Alert,
+   Animated,
+   FlatList,
++  Keyboard,
+   KeyboardAvoidingView,
+   Modal,
+   Platform,
+@@ -13,7 +14,7 @@
+   View,
+   useWindowDimensions,
+ } from 'react-native';
+-import { SafeAreaView } from 'react-native-safe-area-context';
++import { initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { COLORS } from '../../theme/colors';
+ import {
+@@ -40,10 +41,12 @@
+   placeholder = 'Add a comment…',
+ }) {
+   const { height } = useWindowDimensions();
++  const insets = useSafeAreaInsets();
+   const [mounted, setMounted] = useState(visible);
+   const mountedRef = useRef(visible);
+   const [text, setText] = useState('');
+   const [sending, setSending] = useState(false);
++  const [keyboardVisible, setKeyboardVisible] = useState(false);
+   const backdropOpacity = useRef(new Animated.Value(0)).current;
+   const translateY = useRef(new Animated.Value(height)).current;
+   const listRef = useRef(null);
+@@ -95,6 +98,27 @@
+     return undefined;
+   }, [backdropOpacity, height, translateY, visible]);
+ 
++
++  useEffect(() => {
++    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
++    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
++    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
++    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
++
++    return () => {
++      showSubscription.remove();
++      hideSubscription.remove();
++    };
++  }, []);
++
++  const safeBottomInset = Math.max(
++    insets.bottom || 0,
++    initialWindowMetrics?.insets?.bottom || 0
++  );
++  const composerBottomInset = keyboardVisible
++    ? 8
++    : Math.max(14, safeBottomInset + 6);
++
+   const normalizedComments = useMemo(() => comments.filter(Boolean), [comments]);
+ 
+   const submit = async () => {
+@@ -132,6 +156,7 @@
+       animationType="none"
+       presentationStyle="overFullScreen"
+       statusBarTranslucent
++      navigationBarTranslucent={Platform.OS === 'android'}
+       onRequestClose={onClose}
+     >
+       <KeyboardAvoidingView
+@@ -154,7 +179,7 @@
+             },
+           ]}
+         >
+-          <SafeAreaView edges={['bottom']} style={styles.safeSheet}>
++          <View style={styles.safeSheet}>
+             <View style={styles.handle} />
+             <View style={styles.header}>
+               <View style={styles.headerSide} />
+@@ -225,9 +250,9 @@
+               onSubmit={submit}
+               sending={sending}
+               placeholder={placeholder}
+-              bottomInset={8}
++              bottomInset={composerBottomInset}
+             />
+-          </SafeAreaView>
++          </View>
+         </Animated.View>
+       </KeyboardAvoidingView>
+     </Modal>

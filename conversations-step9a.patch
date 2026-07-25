@@ -1,0 +1,3620 @@
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step9a_baseline/circles-app/App.js /mnt/data/circles_step9a_work/circles-app/App.js
+--- /mnt/data/circles_step9a_baseline/circles-app/App.js	2026-07-21 01:30:54.278617787 +0000
++++ /mnt/data/circles_step9a_work/circles-app/App.js	2026-07-21 02:13:56.863727925 +0000
+@@ -1,9 +1,8 @@
+ import 'react-native-gesture-handler';
+ import 'react-native-reanimated';
+-import React, { useEffect, useMemo, useRef, useState } from 'react';
++import React, { useEffect, useMemo, useState } from 'react';
+ import {
+-  ActivityIndicator, Alert, Dimensions, FlatList, KeyboardAvoidingView,
+-  Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View
++  ActivityIndicator, Alert, Dimensions, Pressable, ScrollView, StyleSheet, Text, View
+ } from 'react-native';
+ import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+ import { NavigationContainer } from '@react-navigation/native';
+@@ -25,7 +24,6 @@
+ import { Avatar } from './src/components/Avatar';
+ import { DevBanner } from './src/components/DevBanner';
+ import { MonoRingWithRipples } from './src/components/MonoRingWithRipples';
+-import { UnreadBadge } from './src/components/UnreadBadge';
+ import { AuthNavigator } from './src/navigation/AuthNavigator';
+ import { FeedScreen } from './src/screens/feed/FeedScreen';
+ import { CreatePostScreen } from './src/screens/posts/CreatePostScreen';
+@@ -37,28 +35,15 @@
+ import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
+ import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
+ import { DevAccountsScreen } from './src/screens/dev/DevAccountsScreen';
++import { InboxScreen } from './src/screens/conversations/InboxScreen';
++import { ChatScreen } from './src/screens/conversations/ChatScreen';
++import { CreateGroupScreen } from './src/screens/conversations/CreateGroupScreen';
++import { ConversationDetailsScreen } from './src/screens/conversations/ConversationDetailsScreen';
+ 
+ /* ---------------- Layout & helpers ---------------- */
+ const { width: W, height: H } = Dimensions.get('window');
+ const IS_SMALL = W < 360 || H < 720;
+ 
+-function randomId() { return Math.random().toString(36).slice(2); }
+-
+-/* ---------------- Demo data for Inbox ---------------- */
+-const USERS = {
+-  u1: { id: 'u1', name: 'You',            avatarUri: 'https://i.pravatar.cc/150?img=1' },
+-  u2: { id: 'u2', name: 'Alex Johnson',   avatarUri: 'https://i.pravatar.cc/150?img=5' },
+-  u3: { id: 'u3', name: 'Sam Lee',        avatarUri: 'https://i.pravatar.cc/150?img=15' },
+-  u4: { id: 'u4', name: 'Maya Patel',     avatarUri: 'https://i.pravatar.cc/150?img=22' },
+-};
+-const GROUPS = [
+-  { id: '1', name: 'Best Friends',    members: ['u1', 'u2', 'u3'], avatarUri: null,               last: 'See you at 7? I can drive.', time: '2m', unread: 3, pinned: true },
+-  { id: '2', name: 'Family',          members: ['u1', 'u4'],       avatarUri: null,               last: 'Mom sent a photo 📸',       time: '12m', unread: 0, pinned: true },
+-  { id: '3', name: 'Basketball Crew', members: ['u1','u2'],        avatarUri: null,               last: 'Court is open this wknd',   time: '1h', unread: 1, pinned: false },
+-  { id: '4', name: 'College',         members: ['u1','u3','u4'],   avatarUri: USERS.u2.avatarUri, last: 'Assignment due Mon',        time: '3h', unread: 0, pinned: false },
+-  { id: '5', name: 'Gaming',          members: ['u1','u2'],        avatarUri: USERS.u3.avatarUri, last: 'Queue later? 🎮',           time: 'Yesterday', unread: 0, pinned: false },
+-];
+-
+ /* ---------------- Navigation ---------------- */
+ const RootStack = createNativeStackNavigator();
+ const CirclesStackNav = createNativeStackNavigator();
+@@ -134,6 +119,7 @@
+ function AppTabs() {
+   const insets = useSafeAreaInsets();
+   const [reqCount, setReqCount] = useState(0);
++  const [conversationInviteCount, setConversationInviteCount] = useState(0);
+   const [authed, setAuthed] = useState(false);
+ 
+   useEffect(() => {
+@@ -143,15 +129,37 @@
+         const { data: { session } } = await supabase.auth.getSession();
+         const isAuthed = !!session;
+         if (mounted) setAuthed(isAuthed);
+-        if (!isAuthed) { if (IS_DEVELOPMENT) setReqCount(1); else setReqCount(0); return; }
+-        const { data, error } = await supabase.rpc('incoming_requests');
+-        if (error) throw error;
+-        if (mounted) setReqCount((data || []).length);
+-      } catch { if (mounted) setReqCount(0); }
++        if (!isAuthed) {
++          if (mounted) {
++            setReqCount(IS_DEVELOPMENT ? 1 : 0);
++            setConversationInviteCount(0);
++          }
++          return;
++        }
++
++        const [requestResult, invitationResult] = await Promise.all([
++          supabase.rpc('incoming_requests'),
++          supabase.rpc('get_my_conversation_invitations'),
++        ]);
++
++        if (requestResult.error) throw requestResult.error;
++        if (invitationResult.error) throw invitationResult.error;
++
++        if (mounted) {
++          setReqCount((requestResult.data || []).length);
++          setConversationInviteCount((invitationResult.data || []).length);
++        }
++      } catch {
++        if (mounted) {
++          setReqCount(0);
++          setConversationInviteCount(0);
++        }
++      }
+     };
+     loadCount();
+-    const ch = supabase.channel('connreqs_tabbadge')
++    const ch = supabase.channel('relationship_tabbadges')
+       .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests' }, () => loadCount())
++      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_invitations' }, () => loadCount())
+       .subscribe();
+     return () => { mounted = false; supabase.removeChannel(ch); };
+   }, []);
+@@ -184,6 +192,9 @@
+                 {route.name === 'Mutuals' && reqCount > 0 ? (
+                   <View style={styles.tabBadge}><Text style={styles.tabBadgeText}>{reqCount > 99 ? '99+' : String(reqCount)}</Text></View>
+                 ) : null}
++                {route.name === 'Circles' && conversationInviteCount > 0 ? (
++                  <View style={styles.tabBadge}><Text style={styles.tabBadgeText}>{conversationInviteCount > 99 ? '99+' : String(conversationInviteCount)}</Text></View>
++                ) : null}
+               </View>
+             );
+           },
+@@ -211,9 +222,26 @@
+         contentStyle: { backgroundColor: COLORS.bg },
+       }}
+     >
+-      <CirclesStackNav.Screen name="Inbox" component={InboxScreen} options={{ title: 'Circles' }} />
+-      <CirclesStackNav.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params?.name || 'Chat' })} />
+-      <CirclesStackNav.Screen name="GroupDetails" component={GroupDetailsScreen} options={{ title: 'Details' }} />
++      <CirclesStackNav.Screen
++        name="Inbox"
++        component={InboxScreen}
++        options={{ title: 'Circles' }}
++      />
++      <CirclesStackNav.Screen
++        name="Chat"
++        component={ChatScreen}
++        options={({ route }) => ({ title: route.params?.name || 'Chat' })}
++      />
++      <CirclesStackNav.Screen
++        name="CreateGroup"
++        component={CreateGroupScreen}
++        options={{ title: 'New Private Group' }}
++      />
++      <CirclesStackNav.Screen
++        name="ConversationDetails"
++        component={ConversationDetailsScreen}
++        options={{ title: 'Shared Space' }}
++      />
+     </CirclesStackNav.Navigator>
+   );
+ }
+@@ -377,279 +405,9 @@
+   );
+ }
+ 
+-/* ---------------- Inbox / Chat / GroupDetails ---------------- */
+-function InboxScreen({ navigation }) {
+-  const [convos, setConvos] = useState(GROUPS);
+-  const togglePin = async (id) => {
+-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+-    setConvos((prev) => prev.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c)).sort(sortConvos));
+-  };
+-  const openConversation = async (c) => { await Haptics.selectionAsync(); navigation.navigate('Chat', { groupId: c.id, name: c.name }); };
+-  const pinned = convos.filter((c) => c.pinned);
+-  const others = convos.filter((c) => !c.pinned);
+-
+-  return (
+-    <View style={styles.inboxRoot}>
+-      {pinned.length > 0 && (
+-        <View style={styles.pinnedWrap}>
+-          <View style={styles.pinnedGrid}>
+-            {pinned.map((c) => (
+-              <View key={c.id} style={styles.pinnedCell}>
+-                <Pressable onPress={() => openConversation(c)} onLongPress={() => togglePin(c.id)} style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.97 : 1 }] }]}>
+-                  <Avatar size={IS_SMALL ? 64 : 72} name={c.name} uri={c.avatarUri} ripple />
+-                </Pressable>
+-                <Text style={styles.pinnedLabel} numberOfLines={2}>{c.name}</Text>
+-              </View>
+-            ))}
+-          </View>
+-        </View>
+-      )}
+-      <View style={styles.listWrap}>
+-        {others.map((c) => (
+-          <Pressable key={c.id} onPress={() => openConversation(c)} onLongPress={() => togglePin(c.id)} style={({ pressed }) => [styles.row, { opacity: pressed ? 0.9 : 1 }]}>
+-            <Avatar size={IS_SMALL ? 48 : 54} name={c.name} uri={c.avatarUri} ripple={c.unread > 0} />
+-            <View style={styles.rowCenter}>
+-              <Text style={styles.rowTitle} numberOfLines={1}>{c.name}</Text>
+-              <Text style={styles.rowSubtitle} numberOfLines={1}>{c.last}</Text>
+-            </View>
+-            <View style={styles.rowRight}>
+-              <Text style={styles.rowTime}>{c.time}</Text>
+-              {c.unread > 0 ? <UnreadBadge count={c.unread} /> : null}
+-            </View>
+-          </Pressable>
+-        ))}
+-      </View>
+-    </View>
+-  );
+-}
+-
+-function ChatScreen({ route, navigation }) {
+-  const { groupId } = route.params || {};
+-  const group = GROUPS.find((g) => g.id === groupId) || GROUPS[0];
+-  const insets = useSafeAreaInsets();
+-  const [messages, setMessages] = useState([]);
+-  const [input, setInput] = useState('');
+-  const [sending, setSending] = useState(false);
+-  const [authed, setAuthed] = useState(false);
+-  const [sessionUserId, setSessionUserId] = useState(null);
+-  const typingTimerRef = useRef(null);
+-  const presenceRef = useRef(null);
+-  const listRef = useRef(null);
+-  const seenIdsRef = useRef(new Set());
+-
+-  useEffect(() => {
+-    navigation.setOptions({
+-      headerRight: () => (
+-        <Pressable onPress={() => navigation.navigate('GroupDetails', { groupId })} hitSlop={10}>
+-          <Ionicons name="ellipsis-horizontal-circle" size={22} color={COLORS.text} />
+-        </Pressable>
+-      ),
+-      title: group.name,
+-    });
+-  }, [navigation, groupId]);
+-
+-  useEffect(() => {
+-    let channel;
+-    (async () => {
+-      const { data: { session } } = await supabase.auth.getSession();
+-      const isAuthed = !!session;
+-      setAuthed(isAuthed);
+-      setSessionUserId(session?.user?.id || null);
+-
+-      if (!isAuthed) {
+-        const seed = [
+-          { id: 'm2', user_id: 'you', body: 'Testing messages locally 👋', created_at: new Date(Date.now()-1000*60*4).toISOString() },
+-          { id: 'm1', user_id: 'friend', body: `Welcome to ${group.name}!`, created_at: new Date(Date.now()-1000*60*5).toISOString() },
+-        ];
+-        seed.forEach(m => seenIdsRef.current.add(m.id));
+-        setMessages(seed);
+-        return;
+-      }
+-
+-      try {
+-        const { data, error } = await supabase
+-          .from('messages')
+-          .select('id, user_id, body, created_at')
+-          .eq('group_id', groupId)
+-          .order('created_at', { ascending: false });
+-        if (error) throw error;
+-
+-        (data || []).forEach(m => seenIdsRef.current.add(m.id));
+-        setMessages(data || []);
+-
+-        channel = supabase
+-          .channel(`messages_${groupId}`)
+-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `group_id=eq.${groupId}` }, (payload) => {
+-            const row = payload.new;
+-            if (seenIdsRef.current.has(row.id)) return;
+-            seenIdsRef.current.add(row.id);
+-            setMessages(prev => [row, ...prev]);
+-          })
+-          .subscribe();
+-
+-        const key = session.user.id;
+-        const presence = supabase.channel(`typing_${groupId}`, { config: { presence: { key } } });
+-        presence.subscribe(async (status) => {
+-          if (status === 'SUBSCRIBED') await presence.track({ typing: false, display_name: 'You' });
+-        });
+-        presenceRef.current = presence;
+-      } catch {
+-        setAuthed(false);
+-        const seed = [
+-          { id: 'm2', user_id: 'you', body: 'Testing messages locally 👋', created_at: new Date(Date.now()-1000*60*4).toISOString() },
+-          { id: 'm1', user_id: 'friend', body: `Welcome to ${group.name}!`, created_at: new Date(Date.now()-1000*60*5).toISOString() },
+-        ];
+-        seed.forEach(m => seenIdsRef.current.add(m.id));
+-        setMessages(seed);
+-      }
+-    })();
+-
+-    return () => {
+-      if (channel) supabase.removeChannel(channel);
+-      if (presenceRef.current) supabase.removeChannel(presenceRef.current);
+-    };
+-  }, [groupId]);
+-
+-  useEffect(() => { setTimeout(() => listRef.current?.scrollToOffset?.({ offset: 0, animated: true }), 0); }, [messages.length]);
+-
+-  const handleChangeText = (t) => {
+-    setInput(t);
+-    const presence = presenceRef.current;
+-    if (!authed || !presence) return;
+-    presence.track({ typing: true, display_name: 'You' }).catch(() => {});
+-    clearTimeout(typingTimerRef.current);
+-    typingTimerRef.current = setTimeout(() => { presence.track({ typing: false, display_name: 'You' }).catch(() => {}); }, 1200);
+-  };
+-
+-  const fmtHM = (ts) => {
+-    const d = new Date(ts); const h = d.getHours(); const m = String(d.getMinutes()).padStart(2, '0');
+-    const hh = ((h + 11) % 12) + 1; const ampm = h < 12 ? 'AM' : 'PM'; return `${hh}:${m} ${ampm}`;
+-  };
+-
+-  const sendMessage = async () => {
+-    const text = input.trim();
+-    if (!text) return;
+-    setInput('');
+-    await Haptics.selectionAsync();
+-
+-    if (!authed) {
+-      const local = { id: randomId(), user_id: 'you', body: text, created_at: new Date().toISOString() };
+-      seenIdsRef.current.add(local.id);
+-      setMessages(prev => [local, ...prev]);
+-      return;
+-    }
+-
+-    setSending(true);
+-    try {
+-      const { user } = await ensureAuthed();
+-      const { data: row, error } = await supabase
+-        .from('messages')
+-        .insert({ group_id: groupId, user_id: user.id, body: text })
+-        .select('id, user_id, body, created_at')
+-        .single();
+-      if (error) throw error;
+-      if (!seenIdsRef.current.has(row.id)) {
+-        seenIdsRef.current.add(row.id);
+-        setMessages(prev => [row, ...prev]);
+-      }
+-    } catch (e) { alert(e.message || 'Failed to send'); }
+-    finally { setSending(false); }
+-  };
+-
+-  const renderItem = ({ item }) => {
+-    const mine = authed ? (item.user_id === sessionUserId) : (item.user_id === 'you');
+-    const bubbleCommon = { maxWidth: '76%', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18 };
+-    const mineStyle = { alignSelf:'flex-end', backgroundColor: '#000', borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 18, borderBottomRightRadius: 6 };
+-    const otherStyle = { alignSelf:'flex-start', backgroundColor: '#e9e9eb', borderTopLeftRadius: 18, borderTopRightRadius: 18, borderBottomLeftRadius: 6, borderBottomRightRadius: 18 };
+-    return (
+-      <View style={{ paddingHorizontal: 12, paddingVertical: 4 }}>
+-        <View style={[bubbleCommon, mine ? mineStyle : otherStyle]}>
+-          <Text style={{ color: mine ? '#fff' : '#000', fontFamily: 'Manrope_400Regular', fontSize: 16 }}>{item.body}</Text>
+-        </View>
+-        <Text style={{ marginTop: 4, fontSize: 11, color: '#8e8e93', alignSelf: mine ? 'flex-end' : 'flex-start', fontFamily: 'Manrope_400Regular' }}>{fmtHM(item.created_at)}</Text>
+-      </View>
+-    );
+-  };
+-
+-  return (
+-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
+-      <FlatList
+-        ref={listRef}
+-        data={messages}
+-        keyExtractor={(m) => m.id}
+-        renderItem={renderItem}
+-        inverted
+-        keyboardShouldPersistTaps="handled"
+-        onContentSizeChange={() => listRef.current?.scrollToOffset?.({ offset: 0, animated: true })}
+-        contentContainerStyle={{ paddingTop: 8, paddingBottom: 8 + insets.bottom }}
+-      />
+-
+-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}>
+-        <View style={{ paddingHorizontal: 8, paddingTop: 8, paddingBottom: Math.max(8, insets.bottom), backgroundColor: COLORS.bg, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border, flexDirection: 'row', alignItems: 'center' }}>
+-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, paddingHorizontal: 12, paddingVertical: Platform.OS === 'ios' ? 10 : 8 }}>
+-            <TextInput
+-              value={input}
+-              onChangeText={handleChangeText}
+-              placeholder="iMessage"
+-              placeholderTextColor="#9e9e9e"
+-              style={{ flex: 1, fontFamily: 'Manrope_400Regular', fontSize: 16, color: COLORS.text }}
+-              onFocus={() => setTimeout(() => listRef.current?.scrollToOffset?.({ offset: 0, animated: true }), 50)}
+-              textAlignVertical="center"
+-            />
+-            <Pressable hitSlop={8}><Ionicons name="camera-outline" size={22} color="#7a7a7a" /></Pressable>
+-          </View>
+-          <Pressable
+-            onPress={sendMessage}
+-            disabled={sending || !input.trim()}
+-            style={({ pressed }) => ({
+-              marginLeft: 8, width: 36, height: 36, borderRadius: 18,
+-              backgroundColor: input.trim() ? COLORS.primary : '#d1d1d6',
+-              alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.85 : 1
+-            })}
+-          >
+-            <Ionicons name="arrow-up" size={18} color="#fff" />
+-          </Pressable>
+-        </View>
+-      </KeyboardAvoidingView>
+-    </SafeAreaView>
+-  );
+-}
+-
+-function GroupDetailsScreen({ route }) {
+-  const { groupId } = route.params || {};
+-  const group = GROUPS.find(g => g.id === groupId) || GROUPS[0];
+-  return (
+-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
+-      <View style={{ padding: 16 }}>
+-        <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 20, color: COLORS.text }}>{group.name}</Text>
+-        <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, marginTop: 4 }}>
+-          {group.members.length} member{group.members.length > 1 ? 's' : ''}
+-        </Text>
+-      </View>
+-      <View style={{ height: 1, backgroundColor: COLORS.border }} />
+-      <ScrollView contentContainerStyle={{ padding: 16 }}>
+-        {group.members.map((uid) => {
+-          const u = USERS[uid];
+-          return (
+-            <View key={uid} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+-              <Avatar size={48} name={u?.name || 'Member'} uri={u?.avatarUri} />
+-              <Text style={{ marginLeft: 12, fontFamily: 'Manrope_600SemiBold', color: COLORS.text }}>{u?.name || 'Member'}</Text>
+-            </View>
+-          );
+-        })}
+-      </ScrollView>
+-    </SafeAreaView>
+-  );
+-}
+-
+ /* ---------------- Small UI components ---------------- */
+ 
+ 
+-function sortConvos(a, b) {
+-  if (a.pinned && !b.pinned) return -1;
+-  if (!a.pinned && b.pinned) return 1;
+-  return 0;
+-}
+ 
+ /* ---------------- Styles ---------------- */
+ const styles = StyleSheet.create({
+@@ -662,18 +420,6 @@
+   tabBadge: { position: 'absolute', right: -6, top: -4, backgroundColor: '#000', minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+   tabBadgeText: { color: '#fff', fontSize: 10, fontFamily: 'Manrope_700Bold' },
+ 
+-  inboxRoot: { flex: 1, backgroundColor: COLORS.bg },
+-  pinnedWrap: { paddingHorizontal: 12, paddingTop: 10 },
+-  pinnedGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+-  pinnedCell: { width: (W - 12 * 2) / 4, alignItems: 'center', marginBottom: 12 },
+-  pinnedLabel: { marginTop: 6, fontSize: 12, color: COLORS.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
+-  listWrap: { paddingHorizontal: 12, paddingTop: 6 },
+-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
+-  rowCenter: { flex: 1, marginLeft: 10 },
+-  rowTitle: { fontFamily: 'Manrope_700Bold', color: COLORS.text },
+-  rowSubtitle: { color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
+-  rowRight: { alignItems: 'flex-end' },
+-  rowTime: { color: COLORS.subtext, fontSize: 12, fontFamily: 'Manrope_400Regular' },
+ 
+ 
+ });
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step9a_baseline/circles-app/README_CONVERSATIONS_STEP_9A.md /mnt/data/circles_step9a_work/circles-app/README_CONVERSATIONS_STEP_9A.md
+--- /mnt/data/circles_step9a_baseline/circles-app/README_CONVERSATIONS_STEP_9A.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9a_work/circles-app/README_CONVERSATIONS_STEP_9A.md	2026-07-21 02:15:09.771634209 +0000
+@@ -0,0 +1,125 @@
++# Circles Step 9A — Real Conversations + Private Group Invitations
++
++This checkpoint removes the placeholder Family, Basketball Crew, College,
++Gaming, and other demo chats. The Circles inbox now reflects real relationship
++and membership state.
++
++## What changes
++
++### Direct messages
++
++- Accepting a connection automatically creates exactly one private DM.
++- The connected person's profile appears in Circles even before either person
++  sends a message.
++- Pending connection requests and mutual-only candidates do not receive chats.
++- Existing accepted connections are backfilled when the migration runs.
++- Removing both connection rows removes the direct conversation and its test
++  message history.
++
++### Private groups
++
++- The compose button opens a real connected-person picker.
++- A group requires the creator plus at least two accepted connections.
++- Selected people receive pending invitations; they are not silently added.
++- Pending invitees cannot read the chat or shared-space details.
++- Accepting adds membership and opens the group.
++- Declining grants no access.
++- The creator can see who has accepted and who is still invited.
++
++### Shared private profile foundation
++
++The conversation details page establishes the private shared-space shell:
++
++- Chat is active now.
++- Timeline is reserved for the automatic archive of media sent in chat.
++- Posts is reserved for deliberate classic posts inside the conversation.
++- People shows accepted members separately from pending invitations.
++
++The automatic Timeline and intentional Posts remain separate by design.
++
++## Database migration
++
++Run:
++
++`supabase/migrations/20260720_009_real_conversations.sql`
++
++The migration:
++
++1. Archives the old `public.messages` prototype as
++   `public.legacy_messages_step9` without deleting its rows.
++2. Creates `conversations`, `conversation_members`,
++   `conversation_invitations`, and the new membership-bound `messages` table.
++3. Adds strict RLS and membership helpers.
++4. Adds triggers that create/backfill direct conversations from accepted
++   `connections` rows.
++5. Adds invitation-only group RPCs.
++6. Adds real inbox, details, message, read-state, and pin RPCs.
++
++Run the migration before replacing the app files.
++
++## Apply the package
++
++Copy the package contents into the project root and allow Windows to merge and
++replace files.
++
++Main app files:
++
++- `App.js`
++- `src/services/conversationService.js`
++- `src/screens/conversations/InboxScreen.js`
++- `src/screens/conversations/ChatScreen.js`
++- `src/screens/conversations/CreateGroupScreen.js`
++- `src/screens/conversations/ConversationDetailsScreen.js`
++- `docs/CONVERSATION_SPACES_ARCHITECTURE.md`
++
++## Test with Hongy, Alex Test, and Sam Test
++
++Start clean by using **Me → Settings → Test accounts → Reset requests and
++connections**, then prepare the mutual candidates again.
++
++### Direct-message test
++
++1. Connect Hongy and Alex Test.
++2. Open Hongy's Circles tab.
++3. Confirm Alex Test appears automatically with the empty-chat subtitle.
++4. Switch to Alex and confirm Hongy appears there too.
++5. Send a message from Alex.
++6. Switch to Hongy and confirm the message appears.
++7. Confirm Sam remains absent until Hongy and Sam actually connect.
++
++### Group invitation test
++
++1. Connect Hongy with both Alex Test and Sam Test.
++2. As Hongy, tap the compose icon in Circles.
++3. Select Alex and Sam, then create the group.
++4. Confirm Hongy sees the group and both people as pending invitations.
++5. Switch to Alex. Confirm the invitation appears, but the group chat itself is
++   not accessible before acceptance.
++6. Accept as Alex and send a message.
++7. Switch to Sam. Decline the invitation.
++8. Confirm Alex is an accepted member and Sam remains outside the private chat.
++9. Create another group and accept from all three accounts for the later
++   Timeline and Posts testing.
++
++### Ownership/privacy checks
++
++- A mutual-only or pending connection must not appear as a DM.
++- A pending group invite must not be able to query messages or details.
++- Only accepted members may send messages.
++- An account switch must show only that account's memberships and invitations.
++
++## Run
++
++```powershell
++cd C:\Users\honge\Dev\circles-app
++npx expo start --tunnel --clear
++```
++
++## Commit
++
++```powershell
++git status
++git add App.js src supabase/migrations docs README_CONVERSATIONS_STEP_9A.md
++git commit -m "Build real private conversations"
++git push
++```
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step9a_baseline/circles-app/docs/CONVERSATION_SPACES_ARCHITECTURE.md /mnt/data/circles_step9a_work/circles-app/docs/CONVERSATION_SPACES_ARCHITECTURE.md
+--- /mnt/data/circles_step9a_baseline/circles-app/docs/CONVERSATION_SPACES_ARCHITECTURE.md	2026-07-21 01:32:36.812246672 +0000
++++ /mnt/data/circles_step9a_work/circles-app/docs/CONVERSATION_SPACES_ARCHITECTURE.md	2026-07-21 02:15:09.759350458 +0000
+@@ -168,3 +168,38 @@
+ one feed. Their meaning is different, and that difference is the heart of this
+ feature: shared life can be remembered naturally while members still retain a
+ place for intentional expression.
++
++## Step 9A decisions now locked
++
++### Accepted connections automatically create DMs
++
++An accepted one-to-one connection automatically creates one private direct
++conversation. The conversation appears in both members' inboxes even before the
++first message is sent. Pending requests and mutual-contact candidates do not
++create a chat.
++
++There must never be duplicate direct conversations for the same pair. The
++server owns this invariant through a normalized pair key and database trigger;
++it is not left to whichever client happens to open first.
++
++### Groups are invitation-only
++
++Creating a group does not immediately grant every selected person access.
++
++1. The creator becomes the first accepted member and owner.
++2. Only existing accepted connections may be selected.
++3. Each selected person receives a separate pending invitation.
++4. A pending invite may reveal only the invitation summary needed to decide.
++5. Chat, Timeline, Posts, and People remain unavailable until that person
++   explicitly accepts.
++6. Declining grants no membership and no private-content access.
++
++This invitation boundary is enforced in Supabase membership checks. Hiding the
++group in the app is not considered sufficient privacy.
++
++### Placeholder chats are retired
++
++The old Family, Basketball Crew, College, Gaming, and similar sample chats are
++not part of the product model. Step 9A archives the old free-form message table
++and replaces the visible inbox with real accepted connections, accepted group
++memberships, and pending private-group invitations.
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step9a_baseline/circles-app/src/screens/conversations/ChatScreen.js /mnt/data/circles_step9a_work/circles-app/src/screens/conversations/ChatScreen.js
+--- /mnt/data/circles_step9a_baseline/circles-app/src/screens/conversations/ChatScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9a_work/circles-app/src/screens/conversations/ChatScreen.js	2026-07-21 02:18:13.087877215 +0000
+@@ -0,0 +1,419 @@
++import React, { useCallback, useEffect, useRef, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  FlatList,
++  KeyboardAvoidingView,
++  Platform,
++  Pressable,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++} from 'react-native';
++import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
++import { useFocusEffect } from '@react-navigation/native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import * as Haptics from 'expo-haptics';
++import { COLORS } from '../../theme/colors';
++import {
++  getCurrentConversationUser,
++  listConversationMessages,
++  markConversationRead,
++  sendConversationMessage,
++  subscribeToConversationChanges,
++} from '../../services/conversationService';
++
++function formatTime(timestamp) {
++  const date = new Date(timestamp);
++  if (!Number.isFinite(date.getTime())) return '';
++  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
++}
++
++export function ChatScreen({ route, navigation }) {
++  const { conversationId, name = 'Conversation', kind = 'direct' } = route.params || {};
++  const insets = useSafeAreaInsets();
++  const listRef = useRef(null);
++  const [currentUserId, setCurrentUserId] = useState(null);
++  const [messages, setMessages] = useState([]);
++  const [input, setInput] = useState('');
++  const [loading, setLoading] = useState(true);
++  const [sending, setSending] = useState(false);
++  const [error, setError] = useState(null);
++
++  const load = useCallback(async ({ quiet = false } = {}) => {
++    if (!conversationId) return;
++    if (!quiet) setLoading(true);
++    setError(null);
++
++    try {
++      const [user, rows] = await Promise.all([
++        getCurrentConversationUser(),
++        listConversationMessages(conversationId),
++      ]);
++      setCurrentUserId(user.id);
++      setMessages(rows);
++      await markConversationRead(conversationId);
++    } catch (loadError) {
++      setError(loadError?.message || 'Could not load this private conversation.');
++    } finally {
++      setLoading(false);
++    }
++  }, [conversationId]);
++
++  useEffect(() => {
++    navigation.setOptions({
++      title: name,
++      headerRight: () => (
++        <Pressable
++          onPress={() => navigation.navigate('ConversationDetails', {
++            conversationId,
++            name,
++          })}
++          hitSlop={10}
++          accessibilityRole="button"
++          accessibilityLabel="Open shared private space"
++        >
++          <Ionicons
++            name="ellipsis-horizontal-circle"
++            size={24}
++            color={COLORS.text}
++          />
++        </Pressable>
++      ),
++    });
++  }, [conversationId, name, navigation]);
++
++  useFocusEffect(
++    useCallback(() => {
++      load();
++    }, [load])
++  );
++
++  useEffect(() => {
++    if (!conversationId) return undefined;
++    return subscribeToConversationChanges({
++      conversationId,
++      onMessage: () => load({ quiet: true }),
++      onConversationChange: () => load({ quiet: true }),
++    });
++  }, [conversationId, load]);
++
++  useEffect(() => {
++    const timer = setTimeout(() => {
++      listRef.current?.scrollToOffset?.({ offset: 0, animated: true });
++    }, 40);
++    return () => clearTimeout(timer);
++  }, [messages.length]);
++
++  const send = async () => {
++    const body = input.trim();
++    if (!body || sending) return;
++
++    setInput('');
++    setSending(true);
++
++    try {
++      await Haptics.selectionAsync();
++      const message = await sendConversationMessage(conversationId, body);
++      setMessages((current) => {
++        if (current.some((item) => item.id === message.id)) return current;
++        return [message, ...current];
++      });
++      await markConversationRead(conversationId);
++    } catch (sendError) {
++      setInput(body);
++      Alert.alert(
++        'Message not sent',
++        sendError?.message || 'Please try again.'
++      );
++    } finally {
++      setSending(false);
++    }
++  };
++
++  const renderMessage = ({ item }) => {
++    const mine = item.senderId === currentUserId;
++
++    return (
++      <View style={styles.messageWrap}>
++        {!mine && kind === 'group' ? (
++          <Text style={styles.senderName}>{item.senderName}</Text>
++        ) : null}
++        <View style={[
++          styles.bubble,
++          mine ? styles.mineBubble : styles.otherBubble,
++        ]}>
++          <Text style={[
++            styles.messageText,
++            mine ? styles.mineText : styles.otherText,
++          ]}>
++            {item.body}
++          </Text>
++        </View>
++        <Text style={[
++          styles.messageTime,
++          mine ? styles.mineTime : styles.otherTime,
++        ]}>
++          {formatTime(item.createdAt)}
++        </Text>
++      </View>
++    );
++  };
++
++  if (!conversationId) {
++    return (
++      <View style={styles.centerState}>
++        <Text style={styles.errorText}>This conversation is unavailable.</Text>
++      </View>
++    );
++  }
++
++  return (
++    <SafeAreaView edges={['bottom']} style={styles.screen}>
++      {loading ? (
++        <View style={styles.centerState}>
++          <ActivityIndicator />
++          <Text style={styles.stateText}>Opening private conversation…</Text>
++        </View>
++      ) : error ? (
++        <View style={styles.centerState}>
++          <Ionicons name="lock-closed-outline" size={34} color={COLORS.text} />
++          <Text style={styles.errorText}>{error}</Text>
++          <Pressable onPress={() => load()} style={styles.retryButton}>
++            <Text style={styles.retryText}>Try again</Text>
++          </Pressable>
++        </View>
++      ) : messages.length === 0 ? (
++        <View style={styles.emptyState}>
++          <View style={styles.emptyIcon}>
++            <Ionicons name="lock-closed" size={25} color={COLORS.text} />
++          </View>
++          <Text style={styles.emptyTitle}>A private space for you</Text>
++          <Text style={styles.emptyBody}>
++            Messages are visible only to accepted members. Send the first
++            message to begin this shared history.
++          </Text>
++        </View>
++      ) : (
++        <FlatList
++          ref={listRef}
++          data={messages}
++          keyExtractor={(item) => item.id}
++          renderItem={renderMessage}
++          inverted
++          keyboardShouldPersistTaps="handled"
++          contentContainerStyle={styles.messageList}
++        />
++      )}
++
++      {!loading && !error ? (
++        <KeyboardAvoidingView
++          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
++          keyboardVerticalOffset={Platform.OS === 'ios' ? 86 : 0}
++        >
++          <View style={[
++            styles.composer,
++            { paddingBottom: Math.max(8, insets.bottom) },
++          ]}>
++            <View style={styles.inputWrap}>
++              <TextInput
++                value={input}
++                onChangeText={setInput}
++                placeholder="Message"
++                placeholderTextColor="#9e9e9e"
++                multiline
++                maxLength={4000}
++                style={styles.input}
++                onFocus={() => setTimeout(() => {
++                  listRef.current?.scrollToOffset?.({ offset: 0, animated: true });
++                }, 60)}
++              />
++            </View>
++
++            <Pressable
++              onPress={send}
++              disabled={sending || !input.trim()}
++              accessibilityRole="button"
++              accessibilityLabel="Send message"
++              style={({ pressed }) => [
++                styles.sendButton,
++                input.trim() ? styles.sendButtonReady : styles.sendButtonDisabled,
++                pressed && styles.pressed,
++              ]}
++            >
++              {sending ? (
++                <ActivityIndicator color="#fff" size="small" />
++              ) : (
++                <Ionicons name="arrow-up" size={18} color="#fff" />
++              )}
++            </Pressable>
++          </View>
++        </KeyboardAvoidingView>
++      ) : null}
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  centerState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorText: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    textAlign: 'center',
++  },
++  retryButton: {
++    marginTop: 14,
++    paddingHorizontal: 16,
++    paddingVertical: 9,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  retryText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  messageList: {
++    flexGrow: 1,
++    paddingTop: 10,
++    paddingBottom: 8,
++  },
++  messageWrap: {
++    paddingHorizontal: 12,
++    paddingVertical: 4,
++  },
++  senderName: {
++    marginLeft: 7,
++    marginBottom: 3,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
++  },
++  bubble: {
++    maxWidth: '78%',
++    paddingHorizontal: 14,
++    paddingVertical: 10,
++    borderRadius: 18,
++  },
++  mineBubble: {
++    alignSelf: 'flex-end',
++    borderBottomRightRadius: 6,
++    backgroundColor: COLORS.primary,
++  },
++  otherBubble: {
++    alignSelf: 'flex-start',
++    borderBottomLeftRadius: 6,
++    backgroundColor: '#e9e9eb',
++  },
++  messageText: {
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 16,
++    lineHeight: 21,
++  },
++  mineText: {
++    color: '#fff',
++  },
++  otherText: {
++    color: COLORS.text,
++  },
++  messageTime: {
++    marginTop: 3,
++    color: '#8e8e93',
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 10,
++  },
++  mineTime: {
++    alignSelf: 'flex-end',
++  },
++  otherTime: {
++    alignSelf: 'flex-start',
++  },
++  emptyState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 34,
++  },
++  emptyIcon: {
++    width: 54,
++    height: 54,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 27,
++    backgroundColor: '#f1f1f1',
++  },
++  emptyTitle: {
++    marginTop: 14,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 17,
++  },
++  emptyBody: {
++    marginTop: 6,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    lineHeight: 20,
++    textAlign: 'center',
++  },
++  composer: {
++    flexDirection: 'row',
++    alignItems: 'flex-end',
++    paddingHorizontal: 9,
++    paddingTop: 8,
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderTopColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  inputWrap: {
++    flex: 1,
++    minHeight: 40,
++    maxHeight: 120,
++    justifyContent: 'center',
++    paddingHorizontal: 13,
++    paddingVertical: Platform.OS === 'ios' ? 8 : 5,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    borderRadius: 20,
++    backgroundColor: '#fff',
++  },
++  input: {
++    maxHeight: 96,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 16,
++    padding: 0,
++  },
++  sendButton: {
++    width: 38,
++    height: 38,
++    alignItems: 'center',
++    justifyContent: 'center',
++    marginLeft: 8,
++    borderRadius: 19,
++  },
++  sendButtonReady: {
++    backgroundColor: COLORS.primary,
++  },
++  sendButtonDisabled: {
++    backgroundColor: '#d1d1d6',
++  },
++  pressed: {
++    opacity: 0.75,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step9a_baseline/circles-app/src/screens/conversations/ConversationDetailsScreen.js /mnt/data/circles_step9a_work/circles-app/src/screens/conversations/ConversationDetailsScreen.js
+--- /mnt/data/circles_step9a_baseline/circles-app/src/screens/conversations/ConversationDetailsScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9a_work/circles-app/src/screens/conversations/ConversationDetailsScreen.js	2026-07-21 02:12:29.890050754 +0000
+@@ -0,0 +1,435 @@
++import React, { useCallback, useEffect, useState } from 'react';
++import {
++  ActivityIndicator,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { useFocusEffect } from '@react-navigation/native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { Avatar } from '../../components/Avatar';
++import { COLORS } from '../../theme/colors';
++import { getConversationDetails } from '../../services/conversationService';
++
++function FeatureCard({ icon, title, body, badge }) {
++  return (
++    <View style={styles.featureCard}>
++      <View style={styles.featureIcon}>
++        <Ionicons name={icon} size={22} color={COLORS.text} />
++      </View>
++      <View style={styles.featureText}>
++        <View style={styles.featureTitleRow}>
++          <Text style={styles.featureTitle}>{title}</Text>
++          {badge ? <Text style={styles.featureBadge}>{badge}</Text> : null}
++        </View>
++        <Text style={styles.featureBody}>{body}</Text>
++      </View>
++    </View>
++  );
++}
++
++export function ConversationDetailsScreen({ route, navigation }) {
++  const { conversationId } = route.params || {};
++  const [details, setDetails] = useState(null);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState(null);
++
++  const load = useCallback(async () => {
++    if (!conversationId) return;
++    setLoading(true);
++    setError(null);
++    try {
++      const result = await getConversationDetails(conversationId);
++      setDetails(result);
++    } catch (loadError) {
++      setError(loadError?.message || 'Could not open this shared private space.');
++    } finally {
++      setLoading(false);
++    }
++  }, [conversationId]);
++
++  useEffect(() => {
++    load();
++  }, [load]);
++
++  useFocusEffect(
++    useCallback(() => {
++      load();
++    }, [load])
++  );
++
++  const conversation = details?.conversation;
++  const members = details?.members || [];
++  const pendingInvitations = details?.pending_invitations || [];
++
++  if (loading) {
++    return (
++      <View style={styles.centerState}>
++        <ActivityIndicator />
++        <Text style={styles.stateText}>Opening shared private space…</Text>
++      </View>
++    );
++  }
++
++  if (error || !conversation) {
++    return (
++      <View style={styles.centerState}>
++        <Ionicons name="lock-closed-outline" size={34} color={COLORS.text} />
++        <Text style={styles.errorText}>{error || 'Conversation unavailable.'}</Text>
++        <Pressable onPress={load} style={styles.retryButton}>
++          <Text style={styles.retryText}>Try again</Text>
++        </Pressable>
++      </View>
++    );
++  }
++
++  return (
++    <SafeAreaView edges={['bottom']} style={styles.screen}>
++      <ScrollView contentContainerStyle={styles.content}>
++        <View style={styles.hero}>
++          <Avatar
++            size={92}
++            name={conversation.title}
++            uri={conversation.avatar_url}
++          />
++          <Text style={styles.title}>{conversation.title}</Text>
++          <View style={styles.privatePill}>
++            <Ionicons name="lock-closed" size={13} color={COLORS.text} />
++            <Text style={styles.privateText}>
++              {conversation.kind === 'direct'
++                ? 'Private connection'
++                : 'Invitation-only group'}
++            </Text>
++          </View>
++          <Text style={styles.heroBody}>
++            This conversation is also a shared private profile. Only accepted
++            members can read its chat or see what is preserved here.
++          </Text>
++        </View>
++
++        <Text style={styles.sectionLabel}>SHARED SPACE</Text>
++        <View style={styles.featureStack}>
++          <Pressable
++            onPress={() => navigation.goBack()}
++            style={({ pressed }) => [pressed && styles.pressed]}
++          >
++            <FeatureCard
++              icon="chatbubble-ellipses-outline"
++              title="Chat"
++              body="The immediate conversation stream for accepted members."
++              badge="ACTIVE"
++            />
++          </Pressable>
++          <FeatureCard
++            icon="images-outline"
++            title="Timeline"
++            body="Photos and videos sent in chat will automatically form a faithful shared archive without duplicate uploads."
++            badge="NEXT"
++          />
++          <FeatureCard
++            icon="albums-outline"
++            title="Posts"
++            body="A separate place for deliberate classic posts made specifically for this private circle."
++            badge="PLANNED"
++          />
++        </View>
++
++        <View style={styles.sectionHeader}>
++          <Text style={styles.sectionLabel}>PEOPLE</Text>
++          <Text style={styles.countText}>{members.length} accepted</Text>
++        </View>
++        <View style={styles.peopleCard}>
++          {members.map((member, index) => (
++            <View key={member.user_id}>
++              {index > 0 ? <View style={styles.separator} /> : null}
++              <Pressable
++                onPress={() => navigation.navigate('Profile', {
++                  userId: member.user_id,
++                })}
++                style={({ pressed }) => [
++                  styles.personRow,
++                  pressed && styles.pressed,
++                ]}
++              >
++                <Avatar
++                  size={46}
++                  name={member.display_name || 'Member'}
++                  uri={member.avatar_url}
++                />
++                <View style={styles.personText}>
++                  <Text style={styles.personName} numberOfLines={1}>
++                    {member.display_name || 'Member'}
++                    {member.is_me ? ' (You)' : ''}
++                  </Text>
++                  <Text style={styles.personRole}>
++                    {member.role === 'owner' ? 'Group owner' : 'Accepted member'}
++                  </Text>
++                </View>
++                <Ionicons name="chevron-forward" size={17} color="#c7c7cc" />
++              </Pressable>
++            </View>
++          ))}
++        </View>
++
++        {pendingInvitations.length > 0 ? (
++          <>
++            <View style={styles.sectionHeader}>
++              <Text style={styles.sectionLabel}>PENDING INVITATIONS</Text>
++              <Text style={styles.countText}>{pendingInvitations.length}</Text>
++            </View>
++            <View style={styles.peopleCard}>
++              {pendingInvitations.map((invitation, index) => (
++                <View key={invitation.invitation_id}>
++                  {index > 0 ? <View style={styles.separator} /> : null}
++                  <View style={styles.personRow}>
++                    <Avatar
++                      size={46}
++                      name={invitation.display_name || 'Invited person'}
++                      uri={invitation.avatar_url}
++                    />
++                    <View style={styles.personText}>
++                      <Text style={styles.personName} numberOfLines={1}>
++                        {invitation.display_name || 'Invited person'}
++                      </Text>
++                      <Text style={styles.personRole}>
++                        Cannot enter until they accept
++                      </Text>
++                    </View>
++                    <View style={styles.invitedPill}>
++                      <Text style={styles.invitedText}>Invited</Text>
++                    </View>
++                  </View>
++                </View>
++              ))}
++            </View>
++          </>
++        ) : null}
++
++        <View style={styles.privacyNote}>
++          <Ionicons name="shield-checkmark-outline" size={22} color={COLORS.text} />
++          <Text style={styles.privacyNoteText}>
++            Membership is enforced in Supabase, not only hidden in the app. A
++            pending invite does not grant access to messages or this page.
++          </Text>
++        </View>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: '#f7f7f7',
++  },
++  content: {
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++    padding: 16,
++    paddingBottom: 44,
++  },
++  centerState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorText: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    textAlign: 'center',
++  },
++  retryButton: {
++    marginTop: 14,
++    paddingHorizontal: 16,
++    paddingVertical: 9,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  retryText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  hero: {
++    alignItems: 'center',
++    paddingHorizontal: 20,
++    paddingVertical: 24,
++    borderRadius: 18,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++    marginBottom: 24,
++  },
++  title: {
++    marginTop: 13,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 22,
++    textAlign: 'center',
++  },
++  privatePill: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 5,
++    marginTop: 8,
++    paddingHorizontal: 10,
++    paddingVertical: 5,
++    borderRadius: 12,
++    backgroundColor: '#f1f1f1',
++  },
++  privateText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
++  },
++  heroBody: {
++    marginTop: 12,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    lineHeight: 20,
++    textAlign: 'center',
++  },
++  sectionLabel: {
++    marginLeft: 4,
++    marginBottom: 7,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 11,
++    letterSpacing: 0.6,
++  },
++  featureStack: {
++    gap: 10,
++    marginBottom: 24,
++  },
++  featureCard: {
++    flexDirection: 'row',
++    padding: 14,
++    borderRadius: 14,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  featureIcon: {
++    width: 42,
++    height: 42,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 12,
++    backgroundColor: '#f1f1f1',
++  },
++  featureText: {
++    flex: 1,
++    marginLeft: 12,
++  },
++  featureTitleRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++  },
++  featureTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  featureBadge: {
++    marginLeft: 8,
++    paddingHorizontal: 6,
++    paddingVertical: 2,
++    borderRadius: 7,
++    color: COLORS.subtext,
++    backgroundColor: '#f1f1f1',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 9,
++  },
++  featureBody: {
++    marginTop: 3,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 17,
++  },
++  sectionHeader: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++  },
++  countText: {
++    marginRight: 4,
++    marginBottom: 7,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
++  },
++  peopleCard: {
++    overflow: 'hidden',
++    marginBottom: 24,
++    borderRadius: 14,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  personRow: {
++    minHeight: 70,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 14,
++    paddingVertical: 10,
++  },
++  personText: {
++    flex: 1,
++    marginLeft: 12,
++    marginRight: 8,
++  },
++  personName: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  personRole: {
++    marginTop: 2,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++  },
++  separator: {
++    height: StyleSheet.hairlineWidth,
++    marginLeft: 72,
++    backgroundColor: COLORS.border,
++  },
++  invitedPill: {
++    paddingHorizontal: 9,
++    paddingVertical: 5,
++    borderRadius: 10,
++    backgroundColor: '#f1f1f1',
++  },
++  invitedText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 10,
++  },
++  privacyNote: {
++    flexDirection: 'row',
++    padding: 15,
++    borderRadius: 14,
++    backgroundColor: '#ededed',
++  },
++  privacyNoteText: {
++    flex: 1,
++    marginLeft: 10,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 18,
++  },
++  pressed: {
++    opacity: 0.72,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step9a_baseline/circles-app/src/screens/conversations/CreateGroupScreen.js /mnt/data/circles_step9a_work/circles-app/src/screens/conversations/CreateGroupScreen.js
+--- /mnt/data/circles_step9a_baseline/circles-app/src/screens/conversations/CreateGroupScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9a_work/circles-app/src/screens/conversations/CreateGroupScreen.js	2026-07-21 02:11:10.131733225 +0000
+@@ -0,0 +1,380 @@
++import React, { useCallback, useEffect, useMemo, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { Avatar } from '../../components/Avatar';
++import { COLORS } from '../../theme/colors';
++import {
++  createGroupConversation,
++  listConnectedPeopleForGroup,
++} from '../../services/conversationService';
++
++export function CreateGroupScreen({ navigation }) {
++  const [title, setTitle] = useState('');
++  const [people, setPeople] = useState([]);
++  const [selectedIds, setSelectedIds] = useState(new Set());
++  const [loading, setLoading] = useState(true);
++  const [creating, setCreating] = useState(false);
++  const [error, setError] = useState(null);
++
++  const load = useCallback(async () => {
++    setLoading(true);
++    setError(null);
++    try {
++      const rows = await listConnectedPeopleForGroup();
++      setPeople(rows);
++    } catch (loadError) {
++      setError(loadError?.message || 'Could not load your connections.');
++    } finally {
++      setLoading(false);
++    }
++  }, []);
++
++  useEffect(() => {
++    load();
++  }, [load]);
++
++  const selectedPeople = useMemo(
++    () => people.filter((person) => selectedIds.has(person.id)),
++    [people, selectedIds]
++  );
++
++  const toggle = (userId) => {
++    setSelectedIds((current) => {
++      const next = new Set(current);
++      if (next.has(userId)) next.delete(userId);
++      else next.add(userId);
++      return next;
++    });
++  };
++
++  const create = async () => {
++    if (selectedIds.size < 2) {
++      Alert.alert(
++        'Choose at least two people',
++        'A group starts with you and at least two accepted connections.'
++      );
++      return;
++    }
++
++    setCreating(true);
++    try {
++      const conversationId = await createGroupConversation({
++        title,
++        inviteeIds: Array.from(selectedIds),
++      });
++
++      const resolvedTitle = title.trim()
++        || selectedPeople.map((person) => person.displayName).join(', ')
++        || 'Private group';
++
++      navigation.replace('Chat', {
++        conversationId,
++        name: resolvedTitle,
++        kind: 'group',
++      });
++    } catch (createError) {
++      Alert.alert(
++        'Could not create group',
++        createError?.message || 'Please try again.'
++      );
++    } finally {
++      setCreating(false);
++    }
++  };
++
++  return (
++    <SafeAreaView edges={['bottom']} style={styles.screen}>
++      <ScrollView contentContainerStyle={styles.content}>
++        <View style={styles.privacyCard}>
++          <Ionicons name="lock-closed-outline" size={24} color={COLORS.text} />
++          <View style={styles.privacyText}>
++            <Text style={styles.privacyTitle}>Invitation-only by design</Text>
++            <Text style={styles.privacyBody}>
++              Only accepted connections can be invited. Each person must accept
++              before they can enter the chat or its shared private profile.
++            </Text>
++          </View>
++        </View>
++
++        <Text style={styles.label}>GROUP NAME</Text>
++        <TextInput
++          value={title}
++          onChangeText={setTitle}
++          placeholder="Optional — names will be used automatically"
++          maxLength={60}
++          style={styles.input}
++        />
++        <Text style={styles.counter}>{title.length}/60</Text>
++
++        <View style={styles.selectionHeader}>
++          <Text style={styles.label}>INVITE CONNECTIONS</Text>
++          <Text style={styles.selectedCount}>{selectedIds.size} selected</Text>
++        </View>
++
++        {loading ? (
++          <View style={styles.stateCard}>
++            <ActivityIndicator />
++            <Text style={styles.stateText}>Loading connections…</Text>
++          </View>
++        ) : error ? (
++          <View style={styles.errorCard}>
++            <Text style={styles.errorText}>{error}</Text>
++            <Pressable onPress={load} style={styles.retryButton}>
++              <Text style={styles.retryText}>Try again</Text>
++            </Pressable>
++          </View>
++        ) : people.length < 2 ? (
++          <View style={styles.stateCard}>
++            <Ionicons name="people-outline" size={34} color={COLORS.text} />
++            <Text style={styles.emptyTitle}>Connect with two people first</Text>
++            <Text style={styles.emptyBody}>
++              Direct conversations appear after one accepted connection. A
++              private group needs at least two people besides you.
++            </Text>
++          </View>
++        ) : (
++          <View style={styles.peopleCard}>
++            {people.map((person, index) => {
++              const selected = selectedIds.has(person.id);
++              return (
++                <View key={person.id}>
++                  {index > 0 ? <View style={styles.separator} /> : null}
++                  <Pressable
++                    onPress={() => toggle(person.id)}
++                    style={({ pressed }) => [
++                      styles.personRow,
++                      pressed && styles.pressed,
++                    ]}
++                  >
++                    <Avatar
++                      size={46}
++                      name={person.displayName}
++                      uri={person.avatarUri}
++                    />
++                    <Text style={styles.personName} numberOfLines={1}>
++                      {person.displayName}
++                    </Text>
++                    <View style={[
++                      styles.checkbox,
++                      selected && styles.checkboxSelected,
++                    ]}>
++                      {selected ? (
++                        <Ionicons name="checkmark" size={16} color="#fff" />
++                      ) : null}
++                    </View>
++                  </Pressable>
++                </View>
++              );
++            })}
++          </View>
++        )}
++
++        <Pressable
++          onPress={create}
++          disabled={creating || selectedIds.size < 2}
++          style={({ pressed }) => [
++            styles.createButton,
++            selectedIds.size < 2 && styles.createButtonDisabled,
++            (pressed || creating) && styles.pressed,
++          ]}
++        >
++          {creating ? (
++            <ActivityIndicator color="#fff" />
++          ) : (
++            <Text style={styles.createButtonText}>
++              Send {selectedIds.size || ''} invitation{selectedIds.size === 1 ? '' : 's'}
++            </Text>
++          )}
++        </Pressable>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: '#f7f7f7',
++  },
++  content: {
++    width: '100%',
++    maxWidth: 700,
++    alignSelf: 'center',
++    padding: 16,
++    paddingBottom: 44,
++  },
++  privacyCard: {
++    flexDirection: 'row',
++    padding: 15,
++    borderRadius: 15,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++    marginBottom: 24,
++  },
++  privacyText: {
++    flex: 1,
++    marginLeft: 12,
++  },
++  privacyTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  privacyBody: {
++    marginTop: 3,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 18,
++  },
++  label: {
++    marginLeft: 4,
++    marginBottom: 7,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 11,
++    letterSpacing: 0.6,
++  },
++  input: {
++    minHeight: 48,
++    paddingHorizontal: 13,
++    borderRadius: 12,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    color: COLORS.text,
++    backgroundColor: COLORS.bg,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 15,
++  },
++  counter: {
++    alignSelf: 'flex-end',
++    marginTop: 5,
++    marginBottom: 22,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++  },
++  selectionHeader: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++  },
++  selectedCount: {
++    marginBottom: 7,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
++  },
++  peopleCard: {
++    overflow: 'hidden',
++    borderRadius: 14,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  personRow: {
++    minHeight: 70,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 14,
++    paddingVertical: 10,
++  },
++  personName: {
++    flex: 1,
++    marginLeft: 12,
++    marginRight: 10,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  checkbox: {
++    width: 25,
++    height: 25,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 13,
++    borderWidth: 1,
++    borderColor: '#c7c7cc',
++    backgroundColor: COLORS.bg,
++  },
++  checkboxSelected: {
++    borderColor: COLORS.primary,
++    backgroundColor: COLORS.primary,
++  },
++  separator: {
++    height: StyleSheet.hairlineWidth,
++    marginLeft: 72,
++    backgroundColor: COLORS.border,
++  },
++  stateCard: {
++    alignItems: 'center',
++    paddingHorizontal: 26,
++    paddingVertical: 30,
++    borderRadius: 14,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 9,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  emptyTitle: {
++    marginTop: 13,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 17,
++  },
++  emptyBody: {
++    marginTop: 6,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    lineHeight: 19,
++    textAlign: 'center',
++  },
++  errorCard: {
++    padding: 14,
++    borderRadius: 12,
++    backgroundColor: '#fff1f0',
++  },
++  errorText: {
++    color: '#b42318',
++    fontFamily: 'Manrope_400Regular',
++  },
++  retryButton: {
++    alignSelf: 'flex-start',
++    marginTop: 9,
++  },
++  retryText: {
++    color: '#b42318',
++    fontFamily: 'Manrope_700Bold',
++  },
++  createButton: {
++    minHeight: 50,
++    alignItems: 'center',
++    justifyContent: 'center',
++    marginTop: 22,
++    borderRadius: 13,
++    backgroundColor: COLORS.primary,
++  },
++  createButtonDisabled: {
++    backgroundColor: '#c7c7cc',
++  },
++  createButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  pressed: {
++    opacity: 0.72,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step9a_baseline/circles-app/src/screens/conversations/InboxScreen.js /mnt/data/circles_step9a_work/circles-app/src/screens/conversations/InboxScreen.js
+--- /mnt/data/circles_step9a_baseline/circles-app/src/screens/conversations/InboxScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9a_work/circles-app/src/screens/conversations/InboxScreen.js	2026-07-21 02:08:44.216910501 +0000
+@@ -0,0 +1,541 @@
++import React, { useCallback, useEffect, useMemo, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Pressable,
++  RefreshControl,
++  ScrollView,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
++import { useFocusEffect } from '@react-navigation/native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import * as Haptics from 'expo-haptics';
++import { Avatar } from '../../components/Avatar';
++import { UnreadBadge } from '../../components/UnreadBadge';
++import { COLORS } from '../../theme/colors';
++import { timeAgo } from '../../utils/timeAgo';
++import {
++  listConversationInvitations,
++  listMyConversations,
++  respondToConversationInvitation,
++  subscribeToConversationChanges,
++  toggleConversationPin,
++} from '../../services/conversationService';
++
++function ConversationRow({ conversation, onOpen, onTogglePin }) {
++  const subtitle = conversation.lastMessage
++    || (conversation.kind === 'direct'
++      ? 'You are connected. Start a private conversation.'
++      : conversation.pendingInvitationCount > 0
++        ? `Waiting on ${conversation.pendingInvitationCount} invitation${conversation.pendingInvitationCount === 1 ? '' : 's'}`
++        : `${conversation.memberCount} members`);
++
++  return (
++    <Pressable
++      onPress={() => onOpen(conversation)}
++      onLongPress={() => onTogglePin(conversation)}
++      delayLongPress={350}
++      style={({ pressed }) => [
++        styles.row,
++        pressed && styles.pressed,
++      ]}
++    >
++      <Avatar
++        size={54}
++        name={conversation.title}
++        uri={conversation.avatarUri}
++        ripple={conversation.unreadCount > 0}
++      />
++
++      <View style={styles.rowCenter}>
++        <View style={styles.titleLine}>
++          <Text style={styles.rowTitle} numberOfLines={1}>
++            {conversation.title}
++          </Text>
++          {conversation.kind === 'group' ? (
++            <Ionicons
++              name="people-outline"
++              size={15}
++              color={COLORS.subtext}
++              style={styles.kindIcon}
++            />
++          ) : null}
++        </View>
++        <Text style={styles.rowSubtitle} numberOfLines={1}>
++          {subtitle}
++        </Text>
++      </View>
++
++      <View style={styles.rowRight}>
++        <View style={styles.timeLine}>
++          {conversation.pinned ? (
++            <Ionicons name="pin" size={13} color={COLORS.subtext} />
++          ) : null}
++          <Text style={styles.rowTime}>
++            {timeAgo(conversation.lastMessageAt || conversation.createdAt)}
++          </Text>
++        </View>
++        {conversation.unreadCount > 0 ? (
++          <UnreadBadge count={conversation.unreadCount} />
++        ) : (
++          <Ionicons name="chevron-forward" size={17} color="#c7c7cc" />
++        )}
++      </View>
++    </Pressable>
++  );
++}
++
++function InvitationCard({ invitation, busy, onRespond }) {
++  return (
++    <View style={styles.invitationCard}>
++      <View style={styles.invitationHeader}>
++        <Avatar
++          size={48}
++          name={invitation.inviterName}
++          uri={invitation.inviterAvatar}
++        />
++        <View style={styles.invitationText}>
++          <Text style={styles.invitationTitle} numberOfLines={1}>
++            {invitation.title}
++          </Text>
++          <Text style={styles.invitationSubtitle}>
++            {invitation.inviterName} invited you to a private group with{' '}
++            {invitation.memberCount} people.
++          </Text>
++        </View>
++      </View>
++
++      <View style={styles.invitationActions}>
++        <Pressable
++          onPress={() => onRespond(invitation, 'decline')}
++          disabled={busy}
++          style={({ pressed }) => [
++            styles.secondaryButton,
++            (pressed || busy) && styles.pressed,
++          ]}
++        >
++          <Text style={styles.secondaryButtonText}>Decline</Text>
++        </Pressable>
++        <Pressable
++          onPress={() => onRespond(invitation, 'accept')}
++          disabled={busy}
++          style={({ pressed }) => [
++            styles.primaryButton,
++            (pressed || busy) && styles.pressed,
++          ]}
++        >
++          {busy ? (
++            <ActivityIndicator color="#fff" size="small" />
++          ) : (
++            <Text style={styles.primaryButtonText}>Accept</Text>
++          )}
++        </Pressable>
++      </View>
++    </View>
++  );
++}
++
++export function InboxScreen({ navigation }) {
++  const [conversations, setConversations] = useState([]);
++  const [invitations, setInvitations] = useState([]);
++  const [loading, setLoading] = useState(true);
++  const [refreshing, setRefreshing] = useState(false);
++  const [error, setError] = useState(null);
++  const [respondingId, setRespondingId] = useState(null);
++
++  const load = useCallback(async ({ quiet = false } = {}) => {
++    if (!quiet) setLoading(true);
++    setError(null);
++
++    try {
++      const [conversationRows, invitationRows] = await Promise.all([
++        listMyConversations(),
++        listConversationInvitations(),
++      ]);
++      setConversations(conversationRows);
++      setInvitations(invitationRows);
++    } catch (loadError) {
++      setError(loadError?.message || 'Could not load private conversations.');
++    } finally {
++      setLoading(false);
++      setRefreshing(false);
++    }
++  }, []);
++
++  useEffect(() => {
++    navigation.setOptions({
++      headerRight: () => (
++        <Pressable
++          onPress={() => navigation.navigate('CreateGroup')}
++          hitSlop={10}
++          accessibilityRole="button"
++          accessibilityLabel="Create private group"
++        >
++          <Ionicons name="create-outline" size={24} color={COLORS.text} />
++        </Pressable>
++      ),
++    });
++  }, [navigation]);
++
++  useFocusEffect(
++    useCallback(() => {
++      load();
++    }, [load])
++  );
++
++  useEffect(() => {
++    return subscribeToConversationChanges({
++      onConversationChange: () => load({ quiet: true }),
++    });
++  }, [load]);
++
++  const sortedConversations = useMemo(
++    () => [...conversations].sort((a, b) => {
++      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
++      const aTime = new Date(a.lastMessageAt || a.createdAt || 0).getTime();
++      const bTime = new Date(b.lastMessageAt || b.createdAt || 0).getTime();
++      return bTime - aTime;
++    }),
++    [conversations]
++  );
++
++  const openConversation = async (conversation) => {
++    await Haptics.selectionAsync();
++    navigation.navigate('Chat', {
++      conversationId: conversation.id,
++      name: conversation.title,
++      kind: conversation.kind,
++    });
++  };
++
++  const togglePin = async (conversation) => {
++    try {
++      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
++      const pinned = await toggleConversationPin(conversation.id);
++      setConversations((current) => current.map((item) => (
++        item.id === conversation.id ? { ...item, pinned } : item
++      )));
++    } catch (pinError) {
++      Alert.alert('Could not update pin', pinError?.message || 'Please try again.');
++    }
++  };
++
++  const respond = async (invitation, action) => {
++    setRespondingId(invitation.id);
++    try {
++      const conversationId = await respondToConversationInvitation(
++        invitation.id,
++        action
++      );
++      await load({ quiet: true });
++
++      if (action === 'accept') {
++        navigation.navigate('Chat', {
++          conversationId,
++          name: invitation.title,
++          kind: 'group',
++        });
++      }
++    } catch (responseError) {
++      Alert.alert(
++        'Could not update invitation',
++        responseError?.message || 'Please try again.'
++      );
++    } finally {
++      setRespondingId(null);
++    }
++  };
++
++  if (loading) {
++    return (
++      <View style={styles.centerState}>
++        <ActivityIndicator />
++        <Text style={styles.stateText}>Loading your circles…</Text>
++      </View>
++    );
++  }
++
++  return (
++    <ScrollView
++      style={styles.screen}
++      contentContainerStyle={styles.content}
++      refreshControl={(
++        <RefreshControl
++          refreshing={refreshing}
++          onRefresh={() => {
++            setRefreshing(true);
++            load({ quiet: true });
++          }}
++        />
++      )}
++    >
++      {error ? (
++        <View style={styles.errorCard}>
++          <Text style={styles.errorText}>{error}</Text>
++          <Pressable onPress={() => load()} style={styles.retryButton}>
++            <Text style={styles.retryText}>Try again</Text>
++          </Pressable>
++        </View>
++      ) : null}
++
++      {invitations.length > 0 ? (
++        <View style={styles.section}>
++          <Text style={styles.sectionLabel}>PRIVATE GROUP INVITATIONS</Text>
++          {invitations.map((invitation) => (
++            <InvitationCard
++              key={invitation.id}
++              invitation={invitation}
++              busy={respondingId === invitation.id}
++              onRespond={respond}
++            />
++          ))}
++        </View>
++      ) : null}
++
++      {sortedConversations.length > 0 ? (
++        <View style={styles.section}>
++          <Text style={styles.sectionLabel}>MESSAGES</Text>
++          <View style={styles.listCard}>
++            {sortedConversations.map((conversation, index) => (
++              <View key={conversation.id}>
++                {index > 0 ? <View style={styles.separator} /> : null}
++                <ConversationRow
++                  conversation={conversation}
++                  onOpen={openConversation}
++                  onTogglePin={togglePin}
++                />
++              </View>
++            ))}
++          </View>
++          <Text style={styles.pinHint}>Press and hold a conversation to pin it.</Text>
++        </View>
++      ) : (
++        <View style={styles.emptyCard}>
++          <View style={styles.emptyIcon}>
++            <Ionicons name="chatbubbles-outline" size={34} color={COLORS.text} />
++          </View>
++          <Text style={styles.emptyTitle}>Your private conversations</Text>
++          <Text style={styles.emptyBody}>
++            Accepted connections appear here automatically. After you connect
++            with at least two people, use the compose button to invite them into
++            a private group.
++          </Text>
++        </View>
++      )}
++    </ScrollView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: '#f7f7f7',
++  },
++  content: {
++    width: '100%',
++    maxWidth: 760,
++    alignSelf: 'center',
++    padding: 14,
++    paddingBottom: 40,
++  },
++  centerState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  section: {
++    marginBottom: 22,
++  },
++  sectionLabel: {
++    marginLeft: 4,
++    marginBottom: 7,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 11,
++    letterSpacing: 0.6,
++  },
++  listCard: {
++    overflow: 'hidden',
++    borderRadius: 14,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  row: {
++    minHeight: 76,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 13,
++    paddingVertical: 10,
++  },
++  rowCenter: {
++    flex: 1,
++    marginLeft: 11,
++    marginRight: 8,
++  },
++  titleLine: {
++    flexDirection: 'row',
++    alignItems: 'center',
++  },
++  rowTitle: {
++    flexShrink: 1,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 15,
++  },
++  kindIcon: {
++    marginLeft: 5,
++  },
++  rowSubtitle: {
++    marginTop: 3,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++  },
++  rowRight: {
++    minWidth: 48,
++    alignItems: 'flex-end',
++  },
++  timeLine: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 4,
++    marginBottom: 6,
++  },
++  rowTime: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++  },
++  separator: {
++    height: StyleSheet.hairlineWidth,
++    marginLeft: 78,
++    backgroundColor: COLORS.border,
++  },
++  pinHint: {
++    marginTop: 7,
++    marginLeft: 4,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++  },
++  invitationCard: {
++    marginBottom: 10,
++    padding: 14,
++    borderRadius: 14,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  invitationHeader: {
++    flexDirection: 'row',
++    alignItems: 'center',
++  },
++  invitationText: {
++    flex: 1,
++    marginLeft: 11,
++  },
++  invitationTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 15,
++  },
++  invitationSubtitle: {
++    marginTop: 2,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 17,
++  },
++  invitationActions: {
++    flexDirection: 'row',
++    gap: 10,
++    marginTop: 13,
++  },
++  primaryButton: {
++    flex: 1,
++    minHeight: 40,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  primaryButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  secondaryButton: {
++    flex: 1,
++    minHeight: 40,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 10,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  secondaryButtonText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  emptyCard: {
++    alignItems: 'center',
++    marginTop: 40,
++    paddingHorizontal: 28,
++    paddingVertical: 34,
++    borderRadius: 18,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  emptyIcon: {
++    width: 66,
++    height: 66,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 33,
++    backgroundColor: '#f1f1f1',
++  },
++  emptyTitle: {
++    marginTop: 16,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 18,
++  },
++  emptyBody: {
++    marginTop: 7,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    lineHeight: 20,
++    textAlign: 'center',
++  },
++  errorCard: {
++    marginBottom: 16,
++    padding: 14,
++    borderRadius: 12,
++    backgroundColor: '#fff1f0',
++  },
++  errorText: {
++    color: '#b42318',
++    fontFamily: 'Manrope_400Regular',
++  },
++  retryButton: {
++    alignSelf: 'flex-start',
++    marginTop: 9,
++  },
++  retryText: {
++    color: '#b42318',
++    fontFamily: 'Manrope_700Bold',
++  },
++  pressed: {
++    opacity: 0.7,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step9a_baseline/circles-app/src/services/conversationService.js /mnt/data/circles_step9a_work/circles-app/src/services/conversationService.js
+--- /mnt/data/circles_step9a_baseline/circles-app/src/services/conversationService.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9a_work/circles-app/src/services/conversationService.js	2026-07-21 02:07:09.806356886 +0000
+@@ -0,0 +1,198 @@
++import { supabase } from '../lib/supabase';
++import { ensureAuthed } from './authService';
++
++function mapConversation(row) {
++  return {
++    id: row.conversation_id,
++    kind: row.kind,
++    title: row.display_title || 'Conversation',
++    avatarUri: row.display_avatar || null,
++    otherUserId: row.other_user_id || null,
++    lastMessage: row.last_message || null,
++    lastMessageAt: row.last_message_at || null,
++    unreadCount: Number(row.unread_count || 0),
++    pinned: Boolean(row.is_pinned),
++    memberCount: Number(row.member_count || 0),
++    pendingInvitationCount: Number(row.pending_invitation_count || 0),
++    createdAt: row.created_at,
++  };
++}
++
++function mapInvitation(row) {
++  return {
++    id: row.invitation_id,
++    conversationId: row.conversation_id,
++    title: row.title || 'Private group',
++    inviterId: row.inviter_id,
++    inviterName: row.inviter_name || 'A connection',
++    inviterAvatar: row.inviter_avatar || null,
++    memberCount: Number(row.invited_member_count || 0),
++    createdAt: row.created_at,
++  };
++}
++
++function mapMessage(row) {
++  return {
++    id: row.message_id,
++    conversationId: row.conversation_id,
++    senderId: row.sender_id,
++    senderName: row.sender_name || 'Member',
++    senderAvatar: row.sender_avatar || null,
++    body: row.body,
++    createdAt: row.created_at,
++  };
++}
++
++export async function getCurrentConversationUser() {
++  const { user } = await ensureAuthed();
++  return user;
++}
++
++export async function listMyConversations() {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('get_my_conversations');
++  if (error) throw error;
++  return (data || []).map(mapConversation);
++}
++
++export async function listConversationInvitations() {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc(
++    'get_my_conversation_invitations'
++  );
++  if (error) throw error;
++  return (data || []).map(mapInvitation);
++}
++
++export async function respondToConversationInvitation(invitationId, action) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc(
++    'respond_conversation_invitation',
++    {
++      p_invitation_id: invitationId,
++      p_action: action,
++    }
++  );
++  if (error) throw error;
++  return data;
++}
++
++export async function listConnectedPeopleForGroup() {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc(
++    'get_connected_people_for_group'
++  );
++  if (error) throw error;
++  return (data || []).map((row) => ({
++    id: row.user_id,
++    displayName: row.display_name || 'Connection',
++    avatarUri: row.avatar_url || null,
++  }));
++}
++
++export async function createGroupConversation({ title, inviteeIds }) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('create_group_conversation', {
++    p_title: title?.trim() || null,
++    p_invitee_ids: inviteeIds,
++  });
++  if (error) throw error;
++  return data;
++}
++
++export async function listConversationMessages(conversationId) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('get_conversation_messages', {
++    p_conversation_id: conversationId,
++    p_limit_count: 100,
++    p_before: new Date().toISOString(),
++  });
++  if (error) throw error;
++  return (data || []).map(mapMessage);
++}
++
++export async function sendConversationMessage(conversationId, body) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('send_conversation_message', {
++    p_conversation_id: conversationId,
++    p_body: body,
++  });
++  if (error) throw error;
++  const row = Array.isArray(data) ? data[0] : data;
++  if (!row) throw new Error('The message was sent, but no message row returned.');
++  return mapMessage(row);
++}
++
++export async function markConversationRead(conversationId) {
++  await ensureAuthed();
++  const { error } = await supabase.rpc('mark_conversation_read', {
++    p_conversation_id: conversationId,
++  });
++  if (error) throw error;
++}
++
++export async function toggleConversationPin(conversationId) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('toggle_conversation_pin', {
++    p_conversation_id: conversationId,
++  });
++  if (error) throw error;
++  return Boolean(data);
++}
++
++export async function getConversationDetails(conversationId) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('get_conversation_details', {
++    p_conversation_id: conversationId,
++  });
++  if (error) throw error;
++  return data || null;
++}
++
++export function subscribeToConversationChanges({
++  conversationId,
++  onMessage,
++  onConversationChange,
++}) {
++  const channels = [];
++
++  if (conversationId && onMessage) {
++    const messageChannel = supabase
++      .channel(`conversation_messages_${conversationId}`)
++      .on(
++        'postgres_changes',
++        {
++          event: 'INSERT',
++          schema: 'public',
++          table: 'messages',
++          filter: `conversation_id=eq.${conversationId}`,
++        },
++        onMessage
++      )
++      .subscribe();
++    channels.push(messageChannel);
++  }
++
++  if (onConversationChange) {
++    const membershipChannel = supabase
++      .channel(`conversation_membership_${conversationId || 'inbox'}`)
++      .on(
++        'postgres_changes',
++        { event: '*', schema: 'public', table: 'conversation_members' },
++        onConversationChange
++      )
++      .on(
++        'postgres_changes',
++        { event: '*', schema: 'public', table: 'conversation_invitations' },
++        onConversationChange
++      )
++      .subscribe();
++    channels.push(membershipChannel);
++  }
++
++  return () => {
++    channels.forEach((channel) => {
++      supabase.removeChannel(channel);
++    });
++  };
++}
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step9a_baseline/circles-app/supabase/migrations/20260720_008_fix_dev_network_ambiguous_id.sql /mnt/data/circles_step9a_work/circles-app/supabase/migrations/20260720_008_fix_dev_network_ambiguous_id.sql
+--- /mnt/data/circles_step9a_baseline/circles-app/supabase/migrations/20260720_008_fix_dev_network_ambiguous_id.sql	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9a_work/circles-app/supabase/migrations/20260720_008_fix_dev_network_ambiguous_id.sql	2026-07-21 02:03:34.828974255 +0000
+@@ -0,0 +1,93 @@
++-- Circles Step 8.1 — fix ambiguous `id` in dev_prepare_test_network
++--
++-- Why this is needed:
++-- The original PL/pgSQL function returned a table column named `id`.
++-- PL/pgSQL exposes RETURN TABLE column names as variables, so
++-- `on conflict (id)` became ambiguous between the output variable and
++-- public.users.id.
++--
++-- The RPC name and arguments stay the same. Only the returned first column is
++-- renamed to `account_id`, which the current app does not depend on by name.
++
++drop function if exists public.dev_prepare_test_network();
++
++create function public.dev_prepare_test_network()
++returns table (
++  account_id uuid,
++  email text,
++  display_name text,
++  is_current boolean
++)
++language plpgsql
++security definer
++set search_path = public, auth, extensions
++as $$
++declare
++  viewer_id uuid := auth.uid();
++  viewer_email text;
++begin
++  if viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  select au.email
++    into viewer_email
++  from auth.users au
++  where au.id = viewer_id
++    and au.email_confirmed_at is not null;
++
++  if not public.is_circles_dev_test_email(viewer_email) then
++    raise exception 'Development test account required';
++  end if;
++
++  insert into public.users as target (id, phone_hash, display_name)
++  select
++    au.id,
++    encode(digest('circles-dev-test:' || au.id::text, 'sha256'), 'hex'),
++    coalesce(
++      nullif(trim(au.raw_user_meta_data ->> 'display_name'), ''),
++      case
++        when split_part(split_part(au.email, '@', 1), '+', 2) <> '' then
++          initcap(
++            replace(
++              split_part(split_part(au.email, '@', 1), '+', 2),
++              '.',
++              ' '
++            )
++          )
++        else 'Developer'
++      end
++    )
++  from auth.users au
++  where au.email_confirmed_at is not null
++    and public.is_circles_dev_test_email(au.email)
++  on conflict (id) do update
++    set display_name = coalesce(target.display_name, excluded.display_name);
++
++  insert into public.contact_edges (from_user, to_user)
++  select source_user.id, target_user.id
++  from auth.users source_user
++  cross join auth.users target_user
++  where source_user.id <> target_user.id
++    and source_user.email_confirmed_at is not null
++    and target_user.email_confirmed_at is not null
++    and public.is_circles_dev_test_email(source_user.email)
++    and public.is_circles_dev_test_email(target_user.email)
++  on conflict do nothing;
++
++  return query
++  select
++    au.id,
++    au.email::text,
++    u.display_name,
++    au.id = viewer_id
++  from auth.users au
++  join public.users u on u.id = au.id
++  where au.email_confirmed_at is not null
++    and public.is_circles_dev_test_email(au.email)
++  order by au.email;
++end;
++$$;
++
++revoke all on function public.dev_prepare_test_network() from public;
++grant execute on function public.dev_prepare_test_network() to authenticated;
+diff -ruN '--exclude=node_modules' '--exclude=.git' '--exclude=.env.local' /mnt/data/circles_step9a_baseline/circles-app/supabase/migrations/20260720_009_real_conversations.sql /mnt/data/circles_step9a_work/circles-app/supabase/migrations/20260720_009_real_conversations.sql
+--- /mnt/data/circles_step9a_baseline/circles-app/supabase/migrations/20260720_009_real_conversations.sql	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/circles_step9a_work/circles-app/supabase/migrations/20260720_009_real_conversations.sql	2026-07-21 02:14:19.800212725 +0000
+@@ -0,0 +1,908 @@
++-- Circles Step 9A — real conversations and invitation-gated groups
++--
++-- This migration replaces the active free-form group_id message prototype with
++-- membership-protected conversations. Existing prototype messages are archived
++-- as public.legacy_messages_step9 and are no longer used by the app.
++
++create extension if not exists pgcrypto;
++
++-- Archive the old prototype table only when it still has the free-form group_id
++-- shape. No rows are deleted.
++do $$
++begin
++  if to_regclass('public.messages') is not null
++     and exists (
++       select 1
++       from information_schema.columns
++       where table_schema = 'public'
++         and table_name = 'messages'
++         and column_name = 'group_id'
++     )
++     and not exists (
++       select 1
++       from information_schema.columns
++       where table_schema = 'public'
++         and table_name = 'messages'
++         and column_name = 'conversation_id'
++     ) then
++    if to_regclass('public.legacy_messages_step9') is null then
++      alter table public.messages rename to legacy_messages_step9;
++    else
++      raise exception 'public.legacy_messages_step9 already exists; inspect the legacy messaging tables before rerunning Step 9A';
++    end if;
++  end if;
++end;
++$$;
++
++create table if not exists public.conversations (
++  id uuid primary key default gen_random_uuid(),
++  kind text not null check (kind in ('direct', 'group')),
++  title text,
++  avatar_url text,
++  created_by uuid references public.users(id) on delete set null,
++  direct_key text,
++  created_at timestamptz not null default now(),
++  updated_at timestamptz not null default now(),
++  constraint conversations_kind_shape_check check (
++    (kind = 'direct' and direct_key is not null)
++    or
++    (kind = 'group' and direct_key is null)
++  )
++);
++
++create unique index if not exists conversations_direct_key_unique
++  on public.conversations (direct_key)
++  where direct_key is not null;
++
++create table if not exists public.conversation_members (
++  conversation_id uuid not null references public.conversations(id) on delete cascade,
++  user_id uuid not null references public.users(id) on delete cascade,
++  role text not null default 'member' check (role in ('owner', 'admin', 'member')),
++  joined_at timestamptz not null default now(),
++  last_read_at timestamptz not null default now(),
++  is_pinned boolean not null default false,
++  primary key (conversation_id, user_id)
++);
++
++create index if not exists conversation_members_user_index
++  on public.conversation_members (user_id, conversation_id);
++
++create table if not exists public.conversation_invitations (
++  id uuid primary key default gen_random_uuid(),
++  conversation_id uuid not null references public.conversations(id) on delete cascade,
++  invited_user_id uuid not null references public.users(id) on delete cascade,
++  invited_by uuid not null references public.users(id) on delete cascade,
++  status text not null default 'pending' check (status in ('pending', 'accepted', 'declined', 'cancelled')),
++  created_at timestamptz not null default now(),
++  responded_at timestamptz,
++  unique (conversation_id, invited_user_id)
++);
++
++create index if not exists conversation_invitations_user_status_index
++  on public.conversation_invitations (invited_user_id, status, created_at desc);
++
++create table if not exists public.messages (
++  id uuid primary key default gen_random_uuid(),
++  conversation_id uuid not null references public.conversations(id) on delete cascade,
++  sender_id uuid not null references public.users(id) on delete cascade,
++  body text not null check (length(trim(body)) between 1 and 4000),
++  created_at timestamptz not null default now(),
++  edited_at timestamptz
++);
++
++create index if not exists messages_conversation_created_index
++  on public.messages (conversation_id, created_at desc);
++
++create or replace function public.conversation_direct_key(p_user_a uuid, p_user_b uuid)
++returns text
++language sql
++immutable
++strict
++set search_path = public
++as $$
++  select case
++    when p_user_a::text < p_user_b::text
++      then p_user_a::text || ':' || p_user_b::text
++    else p_user_b::text || ':' || p_user_a::text
++  end;
++$$;
++
++create or replace function public.conversation_is_member(
++  p_conversation_id uuid,
++  p_user_id uuid default auth.uid()
++)
++returns boolean
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select p_user_id is not null
++    and exists (
++      select 1
++      from public.conversation_members cm
++      where cm.conversation_id = p_conversation_id
++        and cm.user_id = p_user_id
++    );
++$$;
++
++revoke all on function public.conversation_is_member(uuid, uuid) from public;
++grant execute on function public.conversation_is_member(uuid, uuid) to authenticated;
++
++alter table public.conversations enable row level security;
++alter table public.conversation_members enable row level security;
++alter table public.conversation_invitations enable row level security;
++alter table public.messages enable row level security;
++
++drop policy if exists "Conversation members can view conversations" on public.conversations;
++create policy "Conversation members can view conversations"
++on public.conversations
++for select
++to authenticated
++using (public.conversation_is_member(id, auth.uid()));
++
++drop policy if exists "Conversation members can view membership" on public.conversation_members;
++create policy "Conversation members can view membership"
++on public.conversation_members
++for select
++to authenticated
++using (public.conversation_is_member(conversation_id, auth.uid()));
++
++drop policy if exists "Conversation invite participants can view invitations" on public.conversation_invitations;
++create policy "Conversation invite participants can view invitations"
++on public.conversation_invitations
++for select
++to authenticated
++using (
++  invited_user_id = auth.uid()
++  or invited_by = auth.uid()
++  or public.conversation_is_member(conversation_id, auth.uid())
++);
++
++drop policy if exists "Conversation members can read messages" on public.messages;
++create policy "Conversation members can read messages"
++on public.messages
++for select
++to authenticated
++using (public.conversation_is_member(conversation_id, auth.uid()));
++
++drop policy if exists "Conversation members can send their own messages" on public.messages;
++create policy "Conversation members can send their own messages"
++on public.messages
++for insert
++to authenticated
++with check (
++  sender_id = auth.uid()
++  and public.conversation_is_member(conversation_id, auth.uid())
++);
++
++create or replace function public.ensure_direct_conversation(
++  p_user_a uuid,
++  p_user_b uuid
++)
++returns uuid
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_key text;
++  v_conversation_id uuid;
++begin
++  if p_user_a is null or p_user_b is null or p_user_a = p_user_b then
++    raise exception 'Two different users are required';
++  end if;
++
++  if not exists (
++    select 1
++    from public.connections c
++    where c.user_id = p_user_a
++      and c.other_user_id = p_user_b
++  ) and not exists (
++    select 1
++    from public.connections c
++    where c.user_id = p_user_b
++      and c.other_user_id = p_user_a
++  ) then
++    raise exception 'A direct conversation requires an accepted connection';
++  end if;
++
++  v_key := public.conversation_direct_key(p_user_a, p_user_b);
++
++  insert into public.conversations (
++    kind,
++    created_by,
++    direct_key
++  )
++  values (
++    'direct',
++    p_user_a,
++    v_key
++  )
++  on conflict (direct_key) where direct_key is not null
++  do update set direct_key = excluded.direct_key
++  returning id into v_conversation_id;
++
++  insert into public.conversation_members (
++    conversation_id,
++    user_id,
++    role
++  )
++  values
++    (v_conversation_id, p_user_a, 'member'),
++    (v_conversation_id, p_user_b, 'member')
++  on conflict (conversation_id, user_id) do nothing;
++
++  return v_conversation_id;
++end;
++$$;
++
++revoke all on function public.ensure_direct_conversation(uuid, uuid) from public;
++
++create or replace function public.sync_direct_conversation_after_connection_insert()
++returns trigger
++language plpgsql
++security definer
++set search_path = public
++as $$
++begin
++  perform public.ensure_direct_conversation(new.user_id, new.other_user_id);
++  return new;
++end;
++$$;
++
++drop trigger if exists connections_create_direct_conversation on public.connections;
++create trigger connections_create_direct_conversation
++after insert on public.connections
++for each row
++execute function public.sync_direct_conversation_after_connection_insert();
++
++create or replace function public.cleanup_direct_conversation_after_connection_delete()
++returns trigger
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_key text;
++begin
++  if exists (
++    select 1
++    from public.connections c
++    where (c.user_id = old.user_id and c.other_user_id = old.other_user_id)
++       or (c.user_id = old.other_user_id and c.other_user_id = old.user_id)
++  ) then
++    return old;
++  end if;
++
++  v_key := public.conversation_direct_key(old.user_id, old.other_user_id);
++
++  delete from public.conversations c
++  where c.kind = 'direct'
++    and c.direct_key = v_key;
++
++  return old;
++end;
++$$;
++
++drop trigger if exists connections_remove_direct_conversation on public.connections;
++create trigger connections_remove_direct_conversation
++after delete on public.connections
++for each row
++execute function public.cleanup_direct_conversation_after_connection_delete();
++
++-- Backfill direct conversations for accepted relationships that already exist.
++do $$
++declare
++  v_pair record;
++begin
++  for v_pair in
++    select distinct
++      least(c.user_id::text, c.other_user_id::text)::uuid as user_a,
++      greatest(c.user_id::text, c.other_user_id::text)::uuid as user_b
++    from public.connections c
++    where c.user_id <> c.other_user_id
++  loop
++    perform public.ensure_direct_conversation(v_pair.user_a, v_pair.user_b);
++  end loop;
++end;
++$$;
++
++create or replace function public.get_my_conversations()
++returns table (
++  conversation_id uuid,
++  kind text,
++  display_title text,
++  display_avatar text,
++  other_user_id uuid,
++  last_message text,
++  last_message_at timestamptz,
++  unread_count bigint,
++  is_pinned boolean,
++  member_count bigint,
++  pending_invitation_count bigint,
++  created_at timestamptz
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  with mine as (
++    select
++      c.id,
++      c.kind,
++      c.title,
++      c.avatar_url,
++      c.created_at,
++      c.updated_at,
++      cm.last_read_at,
++      cm.is_pinned
++    from public.conversations c
++    join public.conversation_members cm
++      on cm.conversation_id = c.id
++     and cm.user_id = auth.uid()
++  )
++  select
++    m.id as conversation_id,
++    m.kind,
++    case
++      when m.kind = 'direct' then coalesce(other_user.display_name, 'Connection')
++      else coalesce(nullif(trim(m.title), ''), 'Private group')
++    end as display_title,
++    case
++      when m.kind = 'direct' then other_user.avatar_url
++      else m.avatar_url
++    end as display_avatar,
++    case when m.kind = 'direct' then other_user.id else null end as other_user_id,
++    last_message.body as last_message,
++    last_message.created_at as last_message_at,
++    (
++      select count(*)
++      from public.messages unread
++      where unread.conversation_id = m.id
++        and unread.sender_id <> auth.uid()
++        and unread.created_at > m.last_read_at
++    ) as unread_count,
++    m.is_pinned,
++    (
++      select count(*)
++      from public.conversation_members member_rows
++      where member_rows.conversation_id = m.id
++    ) as member_count,
++    (
++      select count(*)
++      from public.conversation_invitations invite_rows
++      where invite_rows.conversation_id = m.id
++        and invite_rows.status = 'pending'
++    ) as pending_invitation_count,
++    m.created_at
++  from mine m
++  left join lateral (
++    select u.id, u.display_name, u.avatar_url
++    from public.conversation_members other_member
++    join public.users u on u.id = other_member.user_id
++    where other_member.conversation_id = m.id
++      and other_member.user_id <> auth.uid()
++    order by other_member.joined_at asc
++    limit 1
++  ) other_user on true
++  left join lateral (
++    select msg.body, msg.created_at
++    from public.messages msg
++    where msg.conversation_id = m.id
++    order by msg.created_at desc
++    limit 1
++  ) last_message on true
++  order by
++    m.is_pinned desc,
++    coalesce(last_message.created_at, m.updated_at, m.created_at) desc;
++$$;
++
++revoke all on function public.get_my_conversations() from public;
++grant execute on function public.get_my_conversations() to authenticated;
++
++create or replace function public.get_my_conversation_invitations()
++returns table (
++  invitation_id uuid,
++  conversation_id uuid,
++  title text,
++  inviter_id uuid,
++  inviter_name text,
++  inviter_avatar text,
++  invited_member_count bigint,
++  created_at timestamptz
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select
++    invitation.id as invitation_id,
++    conversation.id as conversation_id,
++    coalesce(nullif(trim(conversation.title), ''), 'Private group') as title,
++    invitation.invited_by as inviter_id,
++    inviter.display_name as inviter_name,
++    inviter.avatar_url as inviter_avatar,
++    (
++      select count(*) + 1
++      from public.conversation_invitations all_invites
++      where all_invites.conversation_id = conversation.id
++        and all_invites.status in ('pending', 'accepted')
++    ) as invited_member_count,
++    invitation.created_at
++  from public.conversation_invitations invitation
++  join public.conversations conversation
++    on conversation.id = invitation.conversation_id
++   and conversation.kind = 'group'
++  join public.users inviter
++    on inviter.id = invitation.invited_by
++  where invitation.invited_user_id = auth.uid()
++    and invitation.status = 'pending'
++  order by invitation.created_at desc;
++$$;
++
++revoke all on function public.get_my_conversation_invitations() from public;
++grant execute on function public.get_my_conversation_invitations() to authenticated;
++
++create or replace function public.get_connected_people_for_group()
++returns table (
++  user_id uuid,
++  display_name text,
++  avatar_url text
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select distinct
++    u.id as user_id,
++    u.display_name,
++    u.avatar_url
++  from public.connections c
++  join public.users u on u.id = c.other_user_id
++  where c.user_id = auth.uid()
++    and c.other_user_id <> auth.uid()
++  order by u.display_name nulls last, u.id;
++$$;
++
++revoke all on function public.get_connected_people_for_group() from public;
++grant execute on function public.get_connected_people_for_group() to authenticated;
++
++create or replace function public.create_group_conversation(
++  p_title text,
++  p_invitee_ids uuid[]
++)
++returns uuid
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_invitee_ids uuid[];
++  v_invitee_id uuid;
++  v_title text;
++  v_conversation_id uuid;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  select coalesce(array_agg(distinct invitee_id), array[]::uuid[])
++    into v_invitee_ids
++  from unnest(coalesce(p_invitee_ids, array[]::uuid[])) as invitee_id
++  where invitee_id is not null
++    and invitee_id <> v_viewer_id;
++
++  if cardinality(v_invitee_ids) < 2 then
++    raise exception 'Choose at least two connected people for a group';
++  end if;
++
++  if cardinality(v_invitee_ids) > 20 then
++    raise exception 'Groups are currently limited to 21 people including you';
++  end if;
++
++  foreach v_invitee_id in array v_invitee_ids loop
++    if not exists (
++      select 1
++      from public.connections c
++      where c.user_id = v_viewer_id
++        and c.other_user_id = v_invitee_id
++    ) then
++      raise exception 'Every invited person must already be an accepted connection';
++    end if;
++  end loop;
++
++  v_title := nullif(trim(p_title), '');
++
++  if v_title is null then
++    select string_agg(coalesce(u.display_name, 'Connection'), ', ' order by u.display_name)
++      into v_title
++    from public.users u
++    where u.id = any(v_invitee_ids);
++  end if;
++
++  if length(v_title) > 60 then
++    raise exception 'Group name must be 60 characters or fewer';
++  end if;
++
++  insert into public.conversations (
++    kind,
++    title,
++    created_by
++  )
++  values (
++    'group',
++    coalesce(v_title, 'Private group'),
++    v_viewer_id
++  )
++  returning id into v_conversation_id;
++
++  insert into public.conversation_members (
++    conversation_id,
++    user_id,
++    role
++  )
++  values (
++    v_conversation_id,
++    v_viewer_id,
++    'owner'
++  );
++
++  insert into public.conversation_invitations (
++    conversation_id,
++    invited_user_id,
++    invited_by
++  )
++  select
++    v_conversation_id,
++    invitee_id,
++    v_viewer_id
++  from unnest(v_invitee_ids) as invitee_id;
++
++  return v_conversation_id;
++end;
++$$;
++
++revoke all on function public.create_group_conversation(text, uuid[]) from public;
++grant execute on function public.create_group_conversation(text, uuid[]) to authenticated;
++
++create or replace function public.respond_conversation_invitation(
++  p_invitation_id uuid,
++  p_action text
++)
++returns uuid
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_invitation public.conversation_invitations%rowtype;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if p_action not in ('accept', 'decline') then
++    raise exception 'Action must be accept or decline';
++  end if;
++
++  select invitation.*
++    into v_invitation
++  from public.conversation_invitations invitation
++  where invitation.id = p_invitation_id
++    and invitation.invited_user_id = v_viewer_id
++    and invitation.status = 'pending'
++  for update;
++
++  if not found then
++    raise exception 'This invitation is no longer available';
++  end if;
++
++  update public.conversation_invitations invitation
++  set
++    status = case when p_action = 'accept' then 'accepted' else 'declined' end,
++    responded_at = now()
++  where invitation.id = v_invitation.id;
++
++  if p_action = 'accept' then
++    insert into public.conversation_members (
++      conversation_id,
++      user_id,
++      role
++    )
++    values (
++      v_invitation.conversation_id,
++      v_viewer_id,
++      'member'
++    )
++    on conflict (conversation_id, user_id) do nothing;
++  end if;
++
++  return v_invitation.conversation_id;
++end;
++$$;
++
++revoke all on function public.respond_conversation_invitation(uuid, text) from public;
++grant execute on function public.respond_conversation_invitation(uuid, text) to authenticated;
++
++create or replace function public.get_conversation_messages(
++  p_conversation_id uuid,
++  p_limit_count integer default 100,
++  p_before timestamptz default now()
++)
++returns table (
++  message_id uuid,
++  conversation_id uuid,
++  sender_id uuid,
++  sender_name text,
++  sender_avatar text,
++  body text,
++  created_at timestamptz
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select
++    message.id as message_id,
++    message.conversation_id,
++    message.sender_id,
++    sender.display_name as sender_name,
++    sender.avatar_url as sender_avatar,
++    message.body,
++    message.created_at
++  from public.messages message
++  join public.users sender on sender.id = message.sender_id
++  where message.conversation_id = p_conversation_id
++    and message.created_at < coalesce(p_before, now())
++    and public.conversation_is_member(p_conversation_id, auth.uid())
++  order by message.created_at desc
++  limit greatest(1, least(coalesce(p_limit_count, 100), 200));
++$$;
++
++revoke all on function public.get_conversation_messages(uuid, integer, timestamptz) from public;
++grant execute on function public.get_conversation_messages(uuid, integer, timestamptz) to authenticated;
++
++create or replace function public.send_conversation_message(
++  p_conversation_id uuid,
++  p_body text
++)
++returns table (
++  message_id uuid,
++  conversation_id uuid,
++  sender_id uuid,
++  sender_name text,
++  sender_avatar text,
++  body text,
++  created_at timestamptz
++)
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_clean_body text := trim(coalesce(p_body, ''));
++  v_message public.messages%rowtype;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if not public.conversation_is_member(p_conversation_id, v_viewer_id) then
++    raise exception 'You are not a member of this private conversation';
++  end if;
++
++  if length(v_clean_body) < 1 then
++    raise exception 'Message cannot be empty';
++  end if;
++
++  if length(v_clean_body) > 4000 then
++    raise exception 'Message is too long';
++  end if;
++
++  insert into public.messages (
++    conversation_id,
++    sender_id,
++    body
++  )
++  values (
++    p_conversation_id,
++    v_viewer_id,
++    v_clean_body
++  )
++  returning * into v_message;
++
++  update public.conversations conversation
++  set updated_at = v_message.created_at
++  where conversation.id = p_conversation_id;
++
++  return query
++  select
++    v_message.id,
++    v_message.conversation_id,
++    v_message.sender_id,
++    sender.display_name,
++    sender.avatar_url,
++    v_message.body,
++    v_message.created_at
++  from public.users sender
++  where sender.id = v_viewer_id;
++end;
++$$;
++
++revoke all on function public.send_conversation_message(uuid, text) from public;
++grant execute on function public.send_conversation_message(uuid, text) to authenticated;
++
++create or replace function public.mark_conversation_read(p_conversation_id uuid)
++returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++begin
++  update public.conversation_members member_row
++  set last_read_at = now()
++  where member_row.conversation_id = p_conversation_id
++    and member_row.user_id = auth.uid();
++
++  if not found then
++    raise exception 'You are not a member of this private conversation';
++  end if;
++end;
++$$;
++
++revoke all on function public.mark_conversation_read(uuid) from public;
++grant execute on function public.mark_conversation_read(uuid) to authenticated;
++
++create or replace function public.toggle_conversation_pin(p_conversation_id uuid)
++returns boolean
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_pinned boolean;
++begin
++  update public.conversation_members member_row
++  set is_pinned = not member_row.is_pinned
++  where member_row.conversation_id = p_conversation_id
++    and member_row.user_id = auth.uid()
++  returning member_row.is_pinned into v_pinned;
++
++  if not found then
++    raise exception 'You are not a member of this private conversation';
++  end if;
++
++  return v_pinned;
++end;
++$$;
++
++revoke all on function public.toggle_conversation_pin(uuid) from public;
++grant execute on function public.toggle_conversation_pin(uuid) to authenticated;
++
++create or replace function public.get_conversation_details(p_conversation_id uuid)
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_result jsonb;
++begin
++  if not public.conversation_is_member(p_conversation_id, v_viewer_id) then
++    raise exception 'You are not a member of this private conversation';
++  end if;
++
++  select jsonb_build_object(
++    'conversation', jsonb_build_object(
++      'id', conversation.id,
++      'kind', conversation.kind,
++      'title', case
++        when conversation.kind = 'direct' then coalesce(other_user.display_name, 'Connection')
++        else coalesce(nullif(trim(conversation.title), ''), 'Private group')
++      end,
++      'avatar_url', case
++        when conversation.kind = 'direct' then other_user.avatar_url
++        else conversation.avatar_url
++      end,
++      'created_at', conversation.created_at,
++      'created_by', conversation.created_by
++    ),
++    'members', coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'user_id', member_user.id,
++          'display_name', member_user.display_name,
++          'avatar_url', member_user.avatar_url,
++          'role', member_row.role,
++          'joined_at', member_row.joined_at,
++          'is_me', member_user.id = v_viewer_id
++        )
++        order by
++          case member_row.role when 'owner' then 0 when 'admin' then 1 else 2 end,
++          member_row.joined_at
++      )
++      from public.conversation_members member_row
++      join public.users member_user on member_user.id = member_row.user_id
++      where member_row.conversation_id = conversation.id
++    ), '[]'::jsonb),
++    'pending_invitations', coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'invitation_id', invitation.id,
++          'user_id', invited_user.id,
++          'display_name', invited_user.display_name,
++          'avatar_url', invited_user.avatar_url,
++          'status', invitation.status,
++          'created_at', invitation.created_at
++        )
++        order by invitation.created_at
++      )
++      from public.conversation_invitations invitation
++      join public.users invited_user on invited_user.id = invitation.invited_user_id
++      where invitation.conversation_id = conversation.id
++        and invitation.status = 'pending'
++    ), '[]'::jsonb)
++  )
++  into v_result
++  from public.conversations conversation
++  left join lateral (
++    select u.display_name, u.avatar_url
++    from public.conversation_members other_member
++    join public.users u on u.id = other_member.user_id
++    where other_member.conversation_id = conversation.id
++      and other_member.user_id <> v_viewer_id
++    order by other_member.joined_at
++    limit 1
++  ) other_user on true
++  where conversation.id = p_conversation_id;
++
++  return v_result;
++end;
++$$;
++
++revoke all on function public.get_conversation_details(uuid) from public;
++grant execute on function public.get_conversation_details(uuid) to authenticated;
++
++-- Add the real messaging tables to Realtime when the publication exists.
++do $$
++begin
++  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
++    if not exists (
++      select 1 from pg_publication_tables
++      where pubname = 'supabase_realtime'
++        and schemaname = 'public'
++        and tablename = 'messages'
++    ) then
++      alter publication supabase_realtime add table public.messages;
++    end if;
++
++    if not exists (
++      select 1 from pg_publication_tables
++      where pubname = 'supabase_realtime'
++        and schemaname = 'public'
++        and tablename = 'conversation_members'
++    ) then
++      alter publication supabase_realtime add table public.conversation_members;
++    end if;
++
++    if not exists (
++      select 1 from pg_publication_tables
++      where pubname = 'supabase_realtime'
++        and schemaname = 'public'
++        and tablename = 'conversation_invitations'
++    ) then
++      alter publication supabase_realtime add table public.conversation_invitations;
++    end if;
++  end if;
++end;
++$$;

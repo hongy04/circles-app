@@ -21,6 +21,10 @@ import { COLORS } from './src/theme/colors';
 import { IS_DEVELOPMENT } from './src/config/env';
 import { supabase } from './src/lib/supabase';
 import { ensureAuthed } from './src/services/authService';
+import {
+  getNotificationBadgeCount,
+  subscribeToNotificationChanges,
+} from './src/services/notificationService';
 import { Avatar } from './src/components/Avatar';
 import { DevBanner } from './src/components/DevBanner';
 import { MonoRingWithRipples } from './src/components/MonoRingWithRipples';
@@ -35,8 +39,12 @@ import { ProfileScreen } from './src/screens/profile/ProfileScreen';
 import { ProfilePostsFeedScreen } from './src/screens/profile/ProfilePostsFeedScreen';
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
+import { InvitePeopleScreen } from './src/screens/profile/InvitePeopleScreen';
+import { InvitationLandingScreen } from './src/screens/invitations/InvitationLandingScreen';
 import { DevAccountsScreen } from './src/screens/dev/DevAccountsScreen';
 import { InboxScreen } from './src/screens/conversations/InboxScreen';
+import { NotificationsScreen } from './src/screens/conversations/NotificationsScreen';
+import { ConversationNotificationSettingsScreen } from './src/screens/conversations/ConversationNotificationSettingsScreen';
 import { ChatScreen } from './src/screens/conversations/ChatScreen';
 import { CreateGroupScreen } from './src/screens/conversations/CreateGroupScreen';
 import { CircleProfileScreen } from './src/screens/conversations/CircleProfileScreen';
@@ -50,6 +58,7 @@ import { CirclePostDetailScreen } from './src/screens/conversations/CirclePostDe
 import { CirclePostsFeedScreen } from './src/screens/conversations/CirclePostsFeedScreen';
 import { CircleTimelineFeedScreen } from './src/screens/conversations/CircleTimelineFeedScreen';
 import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
+import { getInviteLinkingPrefixes } from './src/services/inviteService';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W, height: H } = Dimensions.get('window');
@@ -60,6 +69,15 @@ const RootStack = createNativeStackNavigator();
 const CirclesStackNav = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
 
+const APP_LINKING = {
+  prefixes: getInviteLinkingPrefixes(),
+  config: {
+    screens: {
+      Invite: 'invite/:token',
+    },
+  },
+};
+
 /* ---------------- App ---------------- */
 export default function App() {
   const [fontsLoaded] = useFonts({ Manrope_400Regular, Manrope_600SemiBold, Manrope_700Bold });
@@ -67,9 +85,10 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
+      <NavigationContainer linking={APP_LINKING}>
         <RootStack.Navigator screenOptions={{ headerShown: false }}>
           <RootStack.Screen name="Gate" component={GateScreen} />
+          <RootStack.Screen name="Invite" component={InvitationLandingScreen} />
           <RootStack.Screen name="Auth" component={AuthNavigator} />
           <RootStack.Screen name="MainTabs" component={AppTabs} />
           <RootStack.Screen name="CreatePost" component={CreatePostScreen} />
@@ -78,6 +97,7 @@ export default function App() {
           <RootStack.Screen name="ProfilePostsFeed" component={ProfilePostsFeedScreen} />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
+          <RootStack.Screen name="InvitePeople" component={InvitePeopleScreen} />
           {IS_DEVELOPMENT ? (
             <RootStack.Screen name="DevAccounts" component={DevAccountsScreen} />
           ) : null}
@@ -131,7 +151,7 @@ function GateScreen({ navigation }) {
 function AppTabs() {
   const insets = useSafeAreaInsets();
   const [reqCount, setReqCount] = useState(0);
-  const [conversationInviteCount, setConversationInviteCount] = useState(0);
+  const [circleBadgeCount, setCircleBadgeCount] = useState(0);
   const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
@@ -144,36 +164,39 @@ function AppTabs() {
         if (!isAuthed) {
           if (mounted) {
             setReqCount(IS_DEVELOPMENT ? 1 : 0);
-            setConversationInviteCount(0);
+            setCircleBadgeCount(0);
           }
           return;
         }
 
-        const [requestResult, invitationResult] = await Promise.all([
+        const [requestResult, nextCircleBadgeCount] = await Promise.all([
           supabase.rpc('incoming_requests'),
-          supabase.rpc('get_my_conversation_invitations'),
+          getNotificationBadgeCount(),
         ]);
 
         if (requestResult.error) throw requestResult.error;
-        if (invitationResult.error) throw invitationResult.error;
 
         if (mounted) {
           setReqCount((requestResult.data || []).length);
-          setConversationInviteCount((invitationResult.data || []).length);
+          setCircleBadgeCount(nextCircleBadgeCount);
         }
       } catch {
         if (mounted) {
           setReqCount(0);
-          setConversationInviteCount(0);
+          setCircleBadgeCount(0);
         }
       }
     };
     loadCount();
     const ch = supabase.channel('relationship_tabbadges')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests' }, () => loadCount())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_invitations' }, () => loadCount())
       .subscribe();
-    return () => { mounted = false; supabase.removeChannel(ch); };
+    const unsubscribeNotifications = subscribeToNotificationChanges(loadCount);
+    return () => {
+      mounted = false;
+      supabase.removeChannel(ch);
+      unsubscribeNotifications();
+    };
   }, []);
 
   return (
@@ -204,8 +227,8 @@ function AppTabs() {
                 {route.name === 'Mutuals' && reqCount > 0 ? (
                   <View style={styles.tabBadge}><Text style={styles.tabBadgeText}>{reqCount > 99 ? '99+' : String(reqCount)}</Text></View>
                 ) : null}
-                {route.name === 'Circles' && conversationInviteCount > 0 ? (
-                  <View style={styles.tabBadge}><Text style={styles.tabBadgeText}>{conversationInviteCount > 99 ? '99+' : String(conversationInviteCount)}</Text></View>
+                {route.name === 'Circles' && circleBadgeCount > 0 ? (
+                  <View style={styles.tabBadge}><Text style={styles.tabBadgeText}>{circleBadgeCount > 99 ? '99+' : String(circleBadgeCount)}</Text></View>
                 ) : null}
               </View>
             );
@@ -238,6 +261,16 @@ function CirclesStack() {
         name="Inbox"
         component={InboxScreen}
         options={{ title: 'Circles' }}
+      />
+      <CirclesStackNav.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ title: 'Notifications' }}
+      />
+      <CirclesStackNav.Screen
+        name="ConversationNotificationSettings"
+        component={ConversationNotificationSettingsScreen}
+        options={{ title: 'Notifications' }}
       />
       <CirclesStackNav.Screen
         name="Chat"
@@ -315,66 +348,121 @@ const MOCK_CANDIDATES = [
 const MOCK_INCOMING = [
   { id: 'r1', from_user: 'uZ', display_name: 'Taylor Brooks', avatar_url: 'https://i.pravatar.cc/150?img=47', note: null, created_at: new Date().toISOString() },
 ];
+const MOCK_CONNECTIONS = [
+  { user_id: 'c1', display_name: 'Alex Rivera', username: 'alex', avatar_url: 'https://i.pravatar.cc/150?img=12' },
+];
 
-function MutualsScreen({ navigation }) {
+function MutualsScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [candidates, setCandidates] = useState([]);
   const [incoming, setIncoming] = useState([]);
+  const [connections, setConnections] = useState([]);
   const [sending, setSending] = useState({});
   const [responding, setResponding] = useState({});
-  const [tab, setTab] = useState('forYou');
+  const [tab, setTab] = useState(route?.params?.initialTab || 'mutuals');
   const [authed, setAuthed] = useState(false);
 
-  useEffect(() => { (async () => { const { data: { session } } = await supabase.auth.getSession(); setAuthed(!!session); })(); }, []);
+  useEffect(() => {
+    if (route?.params?.initialTab) {
+      setTab(route.params.initialTab);
+    }
+  }, [route?.params?.initialTab]);
+
+  useEffect(() => {
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setAuthed(!!session);
+    })();
+  }, []);
 
   const load = async () => {
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { if (IS_DEVELOPMENT) { setCandidates(MOCK_CANDIDATES); setIncoming(MOCK_INCOMING); } return; }
-      const [{ data: cand }, { data: reqs }] = await Promise.all([
+      if (!session) {
+        if (IS_DEVELOPMENT) {
+          setCandidates(MOCK_CANDIDATES);
+          setIncoming(MOCK_INCOMING);
+          setConnections(MOCK_CONNECTIONS);
+        }
+        return;
+      }
+
+      const [candidateResult, requestResult, connectionResult] = await Promise.all([
         supabase.rpc('mutual_candidates'),
         supabase.rpc('incoming_requests'),
+        supabase.rpc('get_my_connections'),
       ]);
-      setCandidates(cand || []);
-      setIncoming(reqs || []);
+
+      if (candidateResult.error) throw candidateResult.error;
+      if (requestResult.error) throw requestResult.error;
+      if (connectionResult.error) throw connectionResult.error;
+
+      setCandidates(candidateResult.data || []);
+      setIncoming(requestResult.data || []);
+      setConnections(connectionResult.data || []);
     } catch (err) {
-      alert(err.message || 'Failed to load mutuals');
-    } finally { setLoading(false); }
+      Alert.alert('Could not load people', err?.message || 'Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
   useEffect(() => {
     if (!authed) return;
     const ch = supabase
-      .channel('connreqs_mutuals')
+      .channel('people_relationship_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [authed]);
 
   const sendRequest = async (userId) => {
-    if (!authed && IS_DEVELOPMENT) { setCandidates(prev => prev.filter(u => u.id !== userId)); Alert.alert('DEV', 'Simulated request.'); return; }
-    setSending(s => ({ ...s, [userId]: true }));
+    if (!authed && IS_DEVELOPMENT) {
+      setCandidates((current) => current.filter((user) => user.id !== userId));
+      Alert.alert('DEV', 'Simulated request.');
+      return;
+    }
+
+    setSending((current) => ({ ...current, [userId]: true }));
     try {
       await ensureAuthed();
-      const { error } = await supabase.rpc('send_connection_request', { to_user_id: userId });
+      const { error } = await supabase.rpc('send_connection_request', {
+        to_user_id: userId,
+        note: null,
+      });
       if (error) throw error;
-      setCandidates(prev => prev.filter(u => u.id !== userId));
-    } catch (e) { alert(e.message || 'Failed to send request'); }
-    finally { setSending(s => ({ ...s, [userId]: false })); }
+      setCandidates((current) => current.filter((user) => user.id !== userId));
+    } catch (error) {
+      Alert.alert('Could not send request', error?.message || 'Please try again.');
+    } finally {
+      setSending((current) => ({ ...current, [userId]: false }));
+    }
   };
 
-  const respond = async (reqId, action) => {
-    if (!authed && IS_DEVELOPMENT) { setIncoming(prev => prev.filter(r => r.id !== reqId)); Alert.alert('DEV', `Simulated ${action}.`); return; }
-    setResponding(s => ({ ...s, [reqId]: true }));
+  const respond = async (requestId, action) => {
+    if (!authed && IS_DEVELOPMENT) {
+      setIncoming((current) => current.filter((request) => request.id !== requestId));
+      Alert.alert('DEV', `Simulated ${action}.`);
+      return;
+    }
+
+    setResponding((current) => ({ ...current, [requestId]: true }));
     try {
       await ensureAuthed();
-      const { error } = await supabase.rpc('respond_connection_request', { req_id: reqId, action });
+      const { error } = await supabase.rpc('respond_connection_request', {
+        req_id: requestId,
+        action,
+      });
       if (error) throw error;
-      setIncoming(prev => prev.filter(r => r.id !== reqId));
-    } catch (e) { alert(e.message || 'Failed to update request'); }
-    finally { setResponding(s => ({ ...s, [reqId]: false })); }
+      await load();
+    } catch (error) {
+      Alert.alert('Could not update request', error?.message || 'Please try again.');
+    } finally {
+      setResponding((current) => ({ ...current, [requestId]: false }));
+    }
   };
 
   if (loading) {
@@ -385,81 +473,205 @@ function MutualsScreen({ navigation }) {
     );
   }
 
+  const segmentItems = [
+    { key: 'mutuals', label: 'Mutuals' },
+    { key: 'requests', label: incoming.length ? `Requests (${incoming.length})` : 'Requests' },
+    { key: 'connections', label: 'Connections' },
+  ];
+
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 24 }}>People</Text>
+          <Text style={{ color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, marginTop: 2 }}>
+            Mutual context first. Access only after connection.
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => navigation.navigate('InvitePeople')}
+          style={({ pressed }) => ({
+            minHeight: 40,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            paddingHorizontal: 12,
+            opacity: pressed ? 0.65 : 1,
+          })}
+        >
+          <Ionicons name="person-add-outline" size={18} color={COLORS.text} />
+          <Text style={{ color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12 }}>Invite</Text>
+        </Pressable>
+      </View>
+
       <View style={{ flexDirection: 'row', margin: 12, backgroundColor: '#f2f2f2', borderRadius: 10 }}>
-        {(['forYou','requests']).map(k => (
-          <Pressable key={k} onPress={() => setTab(k)} style={({pressed}) => ({
-            flex:1, paddingVertical:10, alignItems:'center',
-            backgroundColor: tab===k ? COLORS.primary : 'transparent',
-            borderRadius:10, opacity: pressed?0.9:1
-          })}>
-            <Text style={{ color: tab===k ? '#fff' : COLORS.text, fontFamily:'Manrope_700Bold' }}>
-              {k==='forYou' ? 'For You' : `Requests${incoming.length ? ` (${incoming.length})` : ''}`}
+        {segmentItems.map((item) => (
+          <Pressable
+            key={item.key}
+            onPress={() => setTab(item.key)}
+            style={({ pressed }) => ({
+              flex: 1,
+              paddingVertical: 10,
+              alignItems: 'center',
+              backgroundColor: tab === item.key ? COLORS.primary : 'transparent',
+              borderRadius: 10,
+              opacity: pressed ? 0.9 : 1,
+            })}
+          >
+            <Text
+              numberOfLines={1}
+              style={{
+                color: tab === item.key ? '#fff' : COLORS.text,
+                fontFamily: 'Manrope_700Bold',
+                fontSize: 12,
+              }}
+            >
+              {item.label}
             </Text>
           </Pressable>
         ))}
       </View>
 
-      {tab==='forYou' ? (
-        <ScrollView contentContainerStyle={{ padding:12, gap:12 }}>
+      {tab === 'mutuals' ? (
+        <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }}>
           {candidates.length === 0 ? (
-            <Text style={{ textAlign:'center', color:COLORS.subtext, fontFamily:'Manrope_400Regular' }}>
-              No mutuals yet. Upload contacts to grow your circle.
-            </Text>
-          ) : candidates.map(u => (
-            <View key={u.id} style={{ flexDirection:'row', alignItems:'center', padding:12, borderWidth:StyleSheet.hairlineWidth, borderColor:COLORS.divider, borderRadius:12 }}>
+            <View style={{ alignItems: 'center', paddingVertical: 38, paddingHorizontal: 24 }}>
+              <Ionicons name="people-outline" size={38} color={COLORS.subtext} />
+              <Text style={{ marginTop: 10, textAlign: 'center', color: COLORS.text, fontFamily: 'Manrope_700Bold' }}>
+                No mutuals yet
+              </Text>
+              <Text style={{ marginTop: 5, textAlign: 'center', color: COLORS.subtext, fontFamily: 'Manrope_400Regular', lineHeight: 19 }}>
+                Sync contacts or invite people you already know. Profiles remain private until both people connect.
+              </Text>
               <Pressable
-                onPress={() => navigation.navigate('Profile', { userId: u.id })}
-                style={{ flex:1, flexDirection:'row', alignItems:'center' }}
+                onPress={() => navigation.navigate('InvitePeople')}
+                style={({ pressed }) => ({
+                  marginTop: 16,
+                  minHeight: 42,
+                  borderRadius: 11,
+                  backgroundColor: COLORS.primary,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: 18,
+                  opacity: pressed ? 0.7 : 1,
+                })}
               >
-                <Avatar size={48} name={u.display_name || 'Unknown'} uri={u.avatar_url} />
-                <View style={{ flex:1, marginHorizontal:12 }}>
-                  <Text style={{ fontFamily:'Manrope_700Bold', color:COLORS.text }} numberOfLines={1}>{u.display_name || 'Unknown'}</Text>
-                  <Text style={{ fontFamily:'Manrope_400Regular', color:COLORS.subtext, fontSize:12 }}>Mutual contact</Text>
+                <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Invite people</Text>
+              </Pressable>
+            </View>
+          ) : candidates.map((user) => (
+            <View key={user.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider, borderRadius: 12 }}>
+              <Pressable
+                onPress={() => navigation.navigate('Profile', { userId: user.id })}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+              >
+                <Avatar size={48} name={user.display_name || 'Unknown'} uri={user.avatar_url} />
+                <View style={{ flex: 1, marginHorizontal: 12 }}>
+                  <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>{user.display_name || 'Unknown'}</Text>
+                  <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }}>Mutual contact</Text>
                 </View>
               </Pressable>
-              <Pressable onPress={() => sendRequest(u.id)} disabled={!!sending[u.id]} style={({pressed}) => ({
-                paddingHorizontal:14, paddingVertical:8, borderRadius:10,
-                backgroundColor:COLORS.primary, opacity: pressed||sending[u.id] ? 0.7 : 1
-              })}>
-                {sending[u.id] ? <ActivityIndicator color="#fff" /> : <Text style={{ color:'#fff', fontFamily:'Manrope_700Bold' }}>Request</Text>}
+              <Pressable
+                onPress={() => sendRequest(user.id)}
+                disabled={Boolean(sending[user.id])}
+                style={({ pressed }) => ({
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  backgroundColor: COLORS.primary,
+                  opacity: pressed || sending[user.id] ? 0.7 : 1,
+                })}
+              >
+                {sending[user.id] ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Request</Text>}
               </Pressable>
             </View>
           ))}
         </ScrollView>
-      ) : (
-        <ScrollView contentContainerStyle={{ padding:12, gap:12 }}>
+      ) : tab === 'requests' ? (
+        <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }}>
           {incoming.length === 0 ? (
-            <Text style={{ textAlign:'center', color:COLORS.subtext, fontFamily:'Manrope_400Regular' }}>No requests right now.</Text>
-          ) : incoming.map(r => (
-            <View key={r.id} style={{ padding:12, borderWidth:StyleSheet.hairlineWidth, borderColor:COLORS.divider, borderRadius:12 }}>
+            <Text style={{ textAlign: 'center', color: COLORS.subtext, fontFamily: 'Manrope_400Regular', paddingTop: 38 }}>No requests right now.</Text>
+          ) : incoming.map((request) => (
+            <View key={request.id} style={{ padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider, borderRadius: 12 }}>
               <Pressable
-                onPress={() => navigation.navigate('Profile', { userId: r.from_user })}
-                style={{ flexDirection:'row', alignItems:'center' }}
+                onPress={() => navigation.navigate('Profile', { userId: request.from_user })}
+                style={{ flexDirection: 'row', alignItems: 'center' }}
               >
-                <Avatar size={48} name={r.display_name || 'Unknown'} uri={r.avatar_url} />
-                <View style={{ flex:1, marginHorizontal:12 }}>
-                  <Text style={{ fontFamily:'Manrope_700Bold', color:COLORS.text }} numberOfLines={1}>{r.display_name || 'Unknown'}</Text>
-                  <Text style={{ fontFamily:'Manrope_400Regular', color:COLORS.subtext, fontSize:12 }}>wants to connect</Text>
+                <Avatar size={48} name={request.display_name || 'Unknown'} uri={request.avatar_url} />
+                <View style={{ flex: 1, marginHorizontal: 12 }}>
+                  <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>{request.display_name || 'Unknown'}</Text>
+                  <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }}>wants to connect</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
               </Pressable>
-              <View style={{ flexDirection:'row', gap:10, marginTop:10 }}>
-                <Pressable onPress={() => respond(r.id,'accept')} disabled={!!responding[r.id]} style={({pressed}) => ({
-                  flex:1, paddingVertical:10, borderRadius:10, backgroundColor:COLORS.primary, alignItems:'center',
-                  opacity: pressed||responding[r.id] ? 0.7 : 1
-                })}>
-                  {responding[r.id] ? <ActivityIndicator color="#fff" /> : <Text style={{ color:'#fff', fontFamily:'Manrope_700Bold' }}>Accept</Text>}
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                <Pressable
+                  onPress={() => respond(request.id, 'accept')}
+                  disabled={Boolean(responding[request.id])}
+                  style={({ pressed }) => ({
+                    flex: 1,
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                    backgroundColor: COLORS.primary,
+                    alignItems: 'center',
+                    opacity: pressed || responding[request.id] ? 0.7 : 1,
+                  })}
+                >
+                  {responding[request.id] ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Accept</Text>}
                 </Pressable>
-                <Pressable onPress={() => respond(r.id,'decline')} disabled={!!responding[r.id]} style={({pressed}) => ({
-                  flex:1, paddingVertical:10, borderRadius:10, borderWidth:1, borderColor:COLORS.border, alignItems:'center',
-                  opacity: pressed||responding[r.id] ? 0.7 : 1
-                })}>
-                  <Text style={{ color:COLORS.text, fontFamily:'Manrope_700Bold' }}>Decline</Text>
+                <Pressable
+                  onPress={() => respond(request.id, 'decline')}
+                  disabled={Boolean(responding[request.id])}
+                  style={({ pressed }) => ({
+                    flex: 1,
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                    alignItems: 'center',
+                    opacity: pressed || responding[request.id] ? 0.7 : 1,
+                  })}
+                >
+                  <Text style={{ color: COLORS.text, fontFamily: 'Manrope_700Bold' }}>Decline</Text>
                 </Pressable>
               </View>
             </View>
+          ))}
+        </ScrollView>
+      ) : (
+        <ScrollView contentContainerStyle={{ padding: 12, gap: 10 }}>
+          {connections.length === 0 ? (
+            <Text style={{ textAlign: 'center', color: COLORS.subtext, fontFamily: 'Manrope_400Regular', paddingTop: 38 }}>
+              Accepted connections will appear here.
+            </Text>
+          ) : connections.map((person) => (
+            <Pressable
+              key={person.user_id}
+              onPress={() => navigation.navigate('Profile', { userId: person.user_id })}
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                padding: 12,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: COLORS.divider,
+                borderRadius: 12,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Avatar size={48} name={person.display_name || 'Connection'} uri={person.avatar_url} />
+              <View style={{ flex: 1, marginHorizontal: 12 }}>
+                <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>
+                  {person.display_name || 'Connection'}
+                </Text>
+                <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }} numberOfLines={1}>
+                  {person.username ? `@${person.username}` : 'Accepted connection'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
+            </Pressable>
           ))}
         </ScrollView>
       )}

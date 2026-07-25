@@ -10,7 +10,8 @@ import { SyncingScreen } from '../screens/auth/SyncingScreen';
 
 const Stack = createNativeStackNavigator();
 
-export function AuthNavigator() {
+export function AuthNavigator({ route }) {
+  const inviteToken = route?.params?.inviteToken || null;
   return (
     <Stack.Navigator
       screenOptions={{
@@ -18,7 +19,11 @@ export function AuthNavigator() {
         contentStyle: { backgroundColor: COLORS.bg },
       }}
     >
-      <Stack.Screen name="AuthPhone" component={AuthPhoneScreen} />
+      <Stack.Screen
+        name="AuthPhone"
+        component={AuthPhoneScreen}
+        initialParams={{ inviteToken }}
+      />
       <Stack.Screen name="AuthOtp" component={AuthOtpScreen} />
       <Stack.Screen
         name="ContactsIntro"

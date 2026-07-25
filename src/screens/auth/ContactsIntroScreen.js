@@ -10,7 +10,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { replaceWithMainTabs } from '../../navigation/navigationActions';
 import { authStyles } from './authStyles';
 
-export function ContactsIntroScreen({ navigation }) {
+export function ContactsIntroScreen({ route, navigation }) {
+  const inviteResult = route?.params?.inviteResult || null;
+  const inviteError = route?.params?.inviteError || '';
   const isWeb = Platform.OS === 'web';
 
   const continueFromIntro = () => {
@@ -37,6 +39,25 @@ export function ContactsIntroScreen({ navigation }) {
           <Text style={authStyles.caption}>
             Continue to Circles here, then sync contacts later from the mobile
             app.
+          </Text>
+        </View>
+      ) : null}
+
+
+      {inviteResult ? (
+        <View style={authStyles.webNotice}>
+          <Text style={authStyles.caption}>
+            {inviteResult.kind === 'circle'
+              ? `Your invitation to ${inviteResult.circleName} is ready. You can review it after contact setup.`
+              : `${inviteResult.inviterName}'s connection request is ready. You can review it after contact setup.`}
+          </Text>
+        </View>
+      ) : null}
+
+      {inviteError ? (
+        <View style={authStyles.webNotice}>
+          <Text style={authStyles.caption}>
+            You are signed in, but the invitation could not be applied: {inviteError}
           </Text>
         </View>
       ) : null}

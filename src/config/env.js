@@ -15,6 +15,10 @@ export const IS_DEVELOPMENT = APP_MODE === 'development' && __DEV__;
 
 export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 
+export const INVITE_BASE_URL = (
+  process.env.EXPO_PUBLIC_INVITE_BASE_URL || ''
+).trim();
+
 export const SUPABASE_KEY =
   process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;

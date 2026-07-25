@@ -24,6 +24,10 @@ import {
   subscribeToConversationChanges,
   toggleConversationPin,
 } from '../../services/conversationService';
+import {
+  getNotificationCenterUnreadCount,
+  subscribeToNotificationChanges,
+} from '../../services/notificationService';
 
 function getConversationSubtitle(conversation) {
   return conversation.lastMessage
@@ -62,7 +66,7 @@ function PinnedConversation({
             ripple={conversation.unreadCount > 0}
           />
 
-          {conversation.kind === 'group' ? (
+          {conversation.isCircle ? (
             <View style={styles.groupBadge}>
               <Ionicons name="people" size={13} color="#fff" />
             </View>
@@ -71,6 +75,12 @@ function PinnedConversation({
           {conversation.unreadCount > 0 ? (
             <View style={styles.pinnedUnreadBadge}>
               <UnreadBadge count={conversation.unreadCount} />
+            </View>
+          ) : null}
+
+          {conversation.notificationsMuted ? (
+            <View style={styles.pinnedMuteBadge}>
+              <Ionicons name="notifications-off" size={12} color="#fff" />
             </View>
           ) : null}
         </View>
@@ -106,7 +116,7 @@ function ConversationRow({ conversation, onOpen, onTogglePin }) {
           uri={conversation.avatarUri}
           ripple={conversation.unreadCount > 0}
         />
-        {conversation.kind === 'group' ? (
+        {conversation.isCircle ? (
           <View style={styles.rowGroupBadge}>
             <Ionicons name="people" size={11} color="#fff" />
           </View>
@@ -127,6 +137,14 @@ function ConversationRow({ conversation, onOpen, onTogglePin }) {
           <Text style={styles.rowSubtitle} numberOfLines={1}>
             {subtitle}
           </Text>
+          {conversation.notificationsMuted ? (
+            <Ionicons
+              name="notifications-off-outline"
+              size={16}
+              color={COLORS.subtext}
+              style={styles.rowMuteIcon}
+            />
+          ) : null}
           {conversation.unreadCount > 0 ? (
             <UnreadBadge count={conversation.unreadCount} />
           ) : (
@@ -196,18 +214,25 @@ export function InboxScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [respondingId, setRespondingId] = useState(null);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
     setError(null);
 
     try {
-      const [conversationRows, invitationRows] = await Promise.all([
+      const [
+        conversationRows,
+        invitationRows,
+        nextNotificationCount,
+      ] = await Promise.all([
         listMyConversations(),
         listConversationInvitations(),
+        getNotificationCenterUnreadCount(),
       ]);
       setConversations(conversationRows);
       setInvitations(invitationRows);
+      setNotificationCount(nextNotificationCount);
     } catch (loadError) {
       setError(loadError?.message || 'Could not load private conversations.');
     } finally {
@@ -219,18 +244,42 @@ export function InboxScreen({ navigation }) {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable
-          onPress={() => navigation.navigate('CreateGroup')}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="Create private group"
-          style={({ pressed }) => pressed && styles.headerButtonPressed}
-        >
-          <Ionicons name="create-outline" size={25} color={COLORS.text} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => navigation.navigate('Notifications')}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Open notifications"
+            style={({ pressed }) => [
+              styles.headerIconButton,
+              pressed && styles.headerButtonPressed,
+            ]}
+          >
+            <Ionicons name="notifications-outline" size={24} color={COLORS.text} />
+            {notificationCount > 0 ? (
+              <View style={styles.headerBadge}>
+                <Text style={styles.headerBadgeText}>
+                  {notificationCount > 99 ? '99+' : String(notificationCount)}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+          <Pressable
+            onPress={() => navigation.navigate('CreateGroup')}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Create private group"
+            style={({ pressed }) => [
+              styles.headerIconButton,
+              pressed && styles.headerButtonPressed,
+            ]}
+          >
+            <Ionicons name="create-outline" size={25} color={COLORS.text} />
+          </Pressable>
+        </View>
       ),
     });
-  }, [navigation]);
+  }, [navigation, notificationCount]);
 
   useFocusEffect(
     useCallback(() => {
@@ -239,9 +288,18 @@ export function InboxScreen({ navigation }) {
   );
 
   useEffect(() => {
-    return subscribeToConversationChanges({
+    const unsubscribeConversations = subscribeToConversationChanges({
+      onMessage: () => load({ quiet: true }),
       onConversationChange: () => load({ quiet: true }),
     });
+    const unsubscribeNotifications = subscribeToNotificationChanges(
+      () => load({ quiet: true })
+    );
+
+    return () => {
+      unsubscribeConversations();
+      unsubscribeNotifications();
+    };
   }, [load]);
 
   const sortedConversations = useMemo(
@@ -274,9 +332,6 @@ export function InboxScreen({ navigation }) {
       conversationId: conversation.id,
       name: conversation.title,
       kind: conversation.kind,
-      avatarUri: conversation.avatarUri,
-      otherUserId: conversation.otherUserId,
-      isCircle: conversation.isCircle,
     });
   };
 
@@ -306,7 +361,6 @@ export function InboxScreen({ navigation }) {
           conversationId,
           name: invitation.title,
           kind: 'group',
-          avatarUri: null,
         });
       }
     } catch (responseError) {
@@ -564,6 +618,19 @@ const styles = StyleSheet.create({
     top: -2,
     right: -2,
   },
+  pinnedMuteBadge: {
+    position: 'absolute',
+    left: 1,
+    bottom: 1,
+    width: 23,
+    height: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.bg,
+    backgroundColor: '#6f6f73',
+  },
   pinnedLabel: {
     maxWidth: 96,
     marginTop: 5,
@@ -705,6 +772,37 @@ const styles = StyleSheet.create({
   retryText: {
     color: '#b42318',
     fontFamily: 'Manrope_700Bold',
+  },
+  rowMuteIcon: {
+    marginRight: 7,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerIconButton: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -5,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+  },
+  headerBadgeText: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 9,
   },
   headerButtonPressed: {
     opacity: 0.55,

@@ -29,6 +29,7 @@ function mapConversation(row) {
     lastMessageAt: row.last_message_at || null,
     unreadCount: Number(row.unread_count || 0),
     pinned: Boolean(row.is_pinned),
+    notificationsMuted: Boolean(row.notifications_muted),
     memberCount: Number(row.member_count || 0),
     pendingInvitationCount: Number(row.pending_invitation_count || 0),
     createdAt: row.created_at,
@@ -360,16 +361,22 @@ export function subscribeToConversationChanges({
 }) {
   const channels = [];
 
-  if (conversationId && (onMessage || onMediaChange)) {
+  if (onMessage || onMediaChange) {
+    const messageFilter = conversationId
+      ? { filter: `conversation_id=eq.${conversationId}` }
+      : {};
     const messageChannel = supabase
-      .channel(createRealtimeChannelName('conversation_messages', conversationId))
+      .channel(createRealtimeChannelName(
+        'conversation_messages',
+        conversationId || 'inbox'
+      ))
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`,
+          ...messageFilter,
         },
         onMessage || onMediaChange
       )

@@ -1,0 +1,2418 @@
+--- a/App.js
++++ b/App.js
+@@ -40,6 +40,8 @@
+ import { ChatScreen } from './src/screens/conversations/ChatScreen';
+ import { CreateGroupScreen } from './src/screens/conversations/CreateGroupScreen';
+ import { CircleProfileScreen } from './src/screens/conversations/CircleProfileScreen';
++import { CirclePeopleScreen } from './src/screens/conversations/CirclePeopleScreen';
++import { InviteCirclePeopleScreen } from './src/screens/conversations/InviteCirclePeopleScreen';
+ import { DirectConversationDetailsScreen } from './src/screens/conversations/DirectConversationDetailsScreen';
+ import { EditCircleScreen } from './src/screens/conversations/EditCircleScreen';
+ import { ConversationMediaViewerScreen } from './src/screens/conversations/ConversationMediaViewerScreen';
+@@ -253,6 +255,16 @@
+         options={{ title: 'Circle' }}
+       />
+       <CirclesStackNav.Screen
++        name="CirclePeople"
++        component={CirclePeopleScreen}
++        options={{ title: 'People' }}
++      />
++      <CirclesStackNav.Screen
++        name="InviteCirclePeople"
++        component={InviteCirclePeopleScreen}
++        options={{ title: 'Invite People' }}
++      />
++      <CirclesStackNav.Screen
+         name="CirclePostsFeed"
+         component={CirclePostsFeedScreen}
+         options={{ title: 'Posts' }}
+--- a/src/screens/conversations/CircleProfileScreen.js
++++ b/src/screens/conversations/CircleProfileScreen.js
+@@ -201,6 +201,13 @@
+     });
+   };
+ 
++  const openPeople = () => {
++    navigation.navigate('CirclePeople', {
++      conversationId,
++      circleName: conversation?.title || 'Circle',
++    });
++  };
++
+   const header = conversation ? (
+     <>
+       <View style={styles.profileHeader}>
+@@ -236,7 +243,11 @@
+             label="Timeline"
+             onPress={() => setActiveTab('timeline')}
+           />
+-          <Stat value={members.length} label="Members" />
++          <Stat
++            value={members.length}
++            label="People"
++            onPress={openPeople}
++          />
+         </View>
+ 
+         <View style={styles.actionRow}>
+@@ -251,6 +262,17 @@
+             <Text style={styles.primaryActionText}>New Post</Text>
+           </Pressable>
+ 
++          <Pressable
++            onPress={openPeople}
++            style={({ pressed }) => [
++              styles.secondaryAction,
++              pressed && styles.pressed,
++            ]}
++          >
++            <Ionicons name="people-outline" size={16} color={COLORS.text} />
++            <Text style={styles.secondaryActionText}>People</Text>
++          </Pressable>
++
+           {conversation.can_edit ? (
+             <Pressable
+               onPress={() => navigation.navigate('EditCircle', {
+@@ -261,14 +283,24 @@
+                 pressed && styles.pressed,
+               ]}
+             >
+-              <Text style={styles.secondaryActionText}>Edit Circle</Text>
++              <Ionicons name="create-outline" size={16} color={COLORS.text} />
++              <Text style={styles.secondaryActionText}>Edit</Text>
+             </Pressable>
+           ) : null}
+         </View>
+       </View>
+ 
+       <View style={styles.membersStrip}>
+-        <Text style={styles.membersHeading}>Members</Text>
++        <View style={styles.membersHeadingRow}>
++          <Text style={styles.membersHeading}>People</Text>
++          <Pressable
++            onPress={openPeople}
++            hitSlop={8}
++            style={({ pressed }) => pressed && styles.pressed}
++          >
++            <Text style={styles.seeAllText}>See all</Text>
++          </Pressable>
++        </View>
+         <FlatList
+           horizontal
+           data={members}
+@@ -544,8 +576,10 @@
+   secondaryAction: {
+     flex: 1,
+     minHeight: 40,
++    flexDirection: 'row',
+     alignItems: 'center',
+     justifyContent: 'center',
++    gap: 5,
+     borderRadius: 9,
+     borderWidth: StyleSheet.hairlineWidth,
+     borderColor: COLORS.border,
+@@ -562,13 +596,23 @@
+     paddingTop: 12,
+     paddingBottom: 11,
+   },
+-  membersHeading: {
+-    marginLeft: 14,
++  membersHeadingRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    marginHorizontal: 14,
+     marginBottom: 9,
++  },
++  membersHeading: {
+     color: COLORS.text,
+     fontFamily: 'Manrope_700Bold',
+     fontSize: 13,
+   },
++  seeAllText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 12,
++  },
+   membersList: {
+     paddingHorizontal: 10,
+   },
+--- a/src/screens/conversations/CirclePeopleScreen.js
++++ b/src/screens/conversations/CirclePeopleScreen.js
+@@ -0,0 +1,844 @@
++import React, { useCallback, useMemo, useState } from 'react';
++import {
++  ActionSheetIOS,
++  ActivityIndicator,
++  Alert,
++  FlatList,
++  Platform,
++  Pressable,
++  RefreshControl,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { useFocusEffect } from '@react-navigation/native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { Avatar } from '../../components/Avatar';
++import { COLORS } from '../../theme/colors';
++import { subscribeToConversationChanges } from '../../services/conversationService';
++import {
++  cancelCircleInvitation,
++  getCirclePeople,
++  leaveCircle,
++  removeCircleMember,
++  transferCircleOwnership,
++  updateCircleMemberRole,
++} from '../../services/circlePeopleService';
++
++function roleLabel(role) {
++  if (role === 'owner') return 'Owner';
++  if (role === 'admin') return 'Admin';
++  return '';
++}
++
++function formatInviteDate(value) {
++  if (!value) return 'Pending';
++  const date = new Date(value);
++  if (Number.isNaN(date.getTime())) return 'Pending';
++  return `Invited ${date.toLocaleDateString(undefined, {
++    month: 'short',
++    day: 'numeric',
++  })}`;
++}
++
++function RolePill({ role }) {
++  const label = roleLabel(role);
++  if (!label) return null;
++
++  return (
++    <View style={[
++      styles.rolePill,
++      role === 'owner' && styles.ownerPill,
++    ]}>
++      <Text style={styles.rolePillText}>{label}</Text>
++    </View>
++  );
++}
++
++function EmptySection({ icon, title, body }) {
++  return (
++    <View style={styles.emptySection}>
++      <Ionicons name={icon} size={31} color={COLORS.subtext} />
++      <Text style={styles.emptyTitle}>{title}</Text>
++      <Text style={styles.emptyBody}>{body}</Text>
++    </View>
++  );
++}
++
++export function CirclePeopleScreen({ route, navigation }) {
++  const { conversationId, circleName = 'Circle' } = route.params || {};
++  const [data, setData] = useState(null);
++  const [loading, setLoading] = useState(true);
++  const [refreshing, setRefreshing] = useState(false);
++  const [busyKey, setBusyKey] = useState('');
++  const [error, setError] = useState('');
++
++  const load = useCallback(async ({ quiet = false } = {}) => {
++    if (!conversationId) return;
++    if (!quiet) setLoading(true);
++    setError('');
++
++    try {
++      setData(await getCirclePeople(conversationId));
++    } catch (loadError) {
++      setError(loadError?.message || 'Could not load this Circle’s people.');
++    } finally {
++      setLoading(false);
++      setRefreshing(false);
++    }
++  }, [conversationId]);
++
++  useFocusEffect(
++    useCallback(() => {
++      load();
++    }, [load])
++  );
++
++  useFocusEffect(
++    useCallback(() => {
++      if (!conversationId) return undefined;
++      return subscribeToConversationChanges({
++        conversationId,
++        onConversationChange: () => load({ quiet: true }),
++      });
++    }, [conversationId, load])
++  );
++
++  const viewer = useMemo(
++    () => data?.members?.find((member) => member.isMe) || null,
++    [data]
++  );
++
++  const run = async (key, task) => {
++    setBusyKey(key);
++    try {
++      await task();
++      await load({ quiet: true });
++    } catch (actionError) {
++      Alert.alert(
++        'Could not update Circle',
++        actionError?.message || 'Please try again.'
++      );
++    } finally {
++      setBusyKey('');
++    }
++  };
++
++  const confirmRemove = (member) => {
++    Alert.alert(
++      `Remove ${member.displayName}?`,
++      'They will immediately lose access to the Circle, Chat, Posts, and Timeline. Their past contributions stay in the shared history.',
++      [
++        { text: 'Cancel', style: 'cancel' },
++        {
++          text: 'Remove',
++          style: 'destructive',
++          onPress: () => run(`remove:${member.userId}`, () =>
++            removeCircleMember(conversationId, member.userId)
++          ),
++        },
++      ]
++    );
++  };
++
++  const confirmTransfer = (member) => {
++    Alert.alert(
++      `Make ${member.displayName} the owner?`,
++      'They will become the only owner. You will remain in the Circle as an admin.',
++      [
++        { text: 'Cancel', style: 'cancel' },
++        {
++          text: 'Transfer',
++          onPress: () => run(`transfer:${member.userId}`, () =>
++            transferCircleOwnership(conversationId, member.userId)
++          ),
++        },
++      ]
++    );
++  };
++
++  const memberActions = (member) => {
++    if (!data || member.isMe || member.role === 'owner') return [];
++
++    const actions = [];
++    if (data.viewerRole === 'owner') {
++      actions.push({
++        label: member.role === 'admin' ? 'Remove Admin Role' : 'Make Admin',
++        onPress: () => run(`role:${member.userId}`, () =>
++          updateCircleMemberRole(
++            conversationId,
++            member.userId,
++            member.role === 'admin' ? 'member' : 'admin'
++          )
++        ),
++      });
++      actions.push({
++        label: 'Transfer Ownership',
++        onPress: () => confirmTransfer(member),
++      });
++      actions.push({
++        label: 'Remove from Circle',
++        destructive: true,
++        onPress: () => confirmRemove(member),
++      });
++    } else if (data.viewerRole === 'admin' && member.role === 'member') {
++      actions.push({
++        label: 'Remove from Circle',
++        destructive: true,
++        onPress: () => confirmRemove(member),
++      });
++    }
++
++    return actions;
++  };
++
++  const showMemberActions = (member) => {
++    const actions = memberActions(member);
++    if (!actions.length) return;
++
++    if (Platform.OS === 'ios') {
++      const labels = ['Cancel', ...actions.map((action) => action.label)];
++      const destructiveIndex = actions.findIndex((action) => action.destructive);
++      ActionSheetIOS.showActionSheetWithOptions(
++        {
++          options: labels,
++          cancelButtonIndex: 0,
++          destructiveButtonIndex: destructiveIndex >= 0
++            ? destructiveIndex + 1
++            : undefined,
++          title: member.displayName,
++        },
++        (buttonIndex) => {
++          if (buttonIndex > 0) actions[buttonIndex - 1]?.onPress();
++        }
++      );
++      return;
++    }
++
++    Alert.alert(
++      member.displayName,
++      undefined,
++      [
++        ...actions.map((action) => ({
++          text: action.label,
++          style: action.destructive ? 'destructive' : 'default',
++          onPress: action.onPress,
++        })),
++        { text: 'Cancel', style: 'cancel' },
++      ]
++    );
++  };
++
++  const cancelInvitation = (invitation) => {
++    Alert.alert(
++      `Cancel invitation to ${invitation.displayName}?`,
++      'They will no longer be able to accept this invitation.',
++      [
++        { text: 'Keep Invitation', style: 'cancel' },
++        {
++          text: 'Cancel Invitation',
++          style: 'destructive',
++          onPress: () => run(`invite:${invitation.id}`, () =>
++            cancelCircleInvitation(invitation.id)
++          ),
++        },
++      ]
++    );
++  };
++
++  const confirmLeave = () => {
++    Alert.alert(
++      `Leave ${data?.conversation?.title || circleName}?`,
++      'You will immediately lose access. Messages and posts you already shared will stay as part of the Circle’s history.',
++      [
++        { text: 'Stay', style: 'cancel' },
++        {
++          text: 'Leave Circle',
++          style: 'destructive',
++          onPress: async () => {
++            setBusyKey('leave');
++            try {
++              await leaveCircle(conversationId);
++              navigation.popToTop();
++            } catch (leaveError) {
++              Alert.alert(
++                'Could not leave Circle',
++                leaveError?.message || 'Please try again.'
++              );
++              setBusyKey('');
++            }
++          },
++        },
++      ]
++    );
++  };
++
++  if (loading && !data) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <ActivityIndicator />
++        <Text style={styles.stateText}>Loading people…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  if (error && !data) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <Ionicons name="people-outline" size={38} color={COLORS.text} />
++        <Text style={styles.errorText}>{error}</Text>
++        <Pressable onPress={() => load()} style={styles.retryButton}>
++          <Text style={styles.retryText}>Try again</Text>
++        </Pressable>
++      </SafeAreaView>
++    );
++  }
++
++  const members = data?.members || [];
++  const invitations = data?.pendingInvitations || [];
++  const title = data?.conversation?.title || circleName;
++
++  const header = (
++    <>
++      <View style={styles.circleSummary}>
++        <Avatar
++          size={72}
++          name={title}
++          uri={data?.conversation?.avatarUri}
++        />
++        <View style={styles.summaryText}>
++          <Text style={styles.circleTitle} numberOfLines={1}>{title}</Text>
++          <View style={styles.privateLine}>
++            <Ionicons name="lock-closed" size={12} color={COLORS.subtext} />
++            <Text style={styles.privateText}>
++              {members.length} member{members.length === 1 ? '' : 's'}
++              {invitations.length
++                ? ` · ${invitations.length} pending`
++                : ''}
++            </Text>
++          </View>
++        </View>
++      </View>
++
++      {data?.permissions?.canInvite ? (
++        <Pressable
++          onPress={() => navigation.navigate('InviteCirclePeople', {
++            conversationId,
++            circleName: title,
++          })}
++          style={({ pressed }) => [
++            styles.inviteButton,
++            pressed && styles.pressed,
++          ]}
++        >
++          <View style={styles.inviteIcon}>
++            <Ionicons name="person-add" size={18} color="#fff" />
++          </View>
++          <View style={styles.inviteCopy}>
++            <Text style={styles.inviteTitle}>Invite people</Text>
++            <Text style={styles.inviteBody}>
++              Add accepted connections through a private invitation.
++            </Text>
++          </View>
++          <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
++        </Pressable>
++      ) : null}
++
++      <View style={styles.sectionHeader}>
++        <Text style={styles.sectionTitle}>MEMBERS</Text>
++        <Text style={styles.sectionCount}>{members.length}</Text>
++      </View>
++    </>
++  );
++
++  const footer = (
++    <>
++      <View style={styles.sectionHeader}>
++        <Text style={styles.sectionTitle}>PENDING INVITATIONS</Text>
++        <Text style={styles.sectionCount}>{invitations.length}</Text>
++      </View>
++
++      {invitations.length ? (
++        <View style={styles.card}>
++          {invitations.map((invitation, index) => (
++            <View key={invitation.id}>
++              {index > 0 ? <View style={styles.separator} /> : null}
++              <View style={styles.personRow}>
++                <Avatar
++                  size={48}
++                  name={invitation.displayName}
++                  uri={invitation.avatarUri}
++                />
++                <View style={styles.personCopy}>
++                  <Text style={styles.personName} numberOfLines={1}>
++                    {invitation.displayName}
++                  </Text>
++                  <Text style={styles.personSubtitle} numberOfLines={2}>
++                    {formatInviteDate(invitation.createdAt)} by{' '}
++                    {invitation.invitedByName}
++                  </Text>
++                </View>
++                {data?.permissions?.canCancelInvitations ? (
++                  <Pressable
++                    onPress={() => cancelInvitation(invitation)}
++                    disabled={busyKey === `invite:${invitation.id}`}
++                    style={({ pressed }) => [
++                      styles.cancelInviteButton,
++                      (pressed || busyKey === `invite:${invitation.id}`)
++                        && styles.pressed,
++                    ]}
++                  >
++                    {busyKey === `invite:${invitation.id}` ? (
++                      <ActivityIndicator size="small" />
++                    ) : (
++                      <Text style={styles.cancelInviteText}>Cancel</Text>
++                    )}
++                  </Pressable>
++                ) : (
++                  <View style={styles.pendingPill}>
++                    <Text style={styles.pendingText}>Pending</Text>
++                  </View>
++                )}
++              </View>
++            </View>
++          ))}
++        </View>
++      ) : (
++        <EmptySection
++          icon="mail-open-outline"
++          title="No pending invitations"
++          body="Everyone invited to this Circle has responded."
++        />
++      )}
++
++      <View style={styles.historyCard}>
++        <Ionicons name="time-outline" size={21} color={COLORS.text} />
++        <Text style={styles.historyText}>
++          Leaving or removing someone ends their access immediately, but it
++          does not rewrite the Circle’s shared history. Past messages, posts,
++          and comments remain attributed to the person who shared them.
++        </Text>
++      </View>
++
++      {viewer?.role === 'owner' ? (
++        <View style={styles.ownerNotice}>
++          <Text style={styles.ownerNoticeTitle}>You own this Circle</Text>
++          <Text style={styles.ownerNoticeBody}>
++            Transfer ownership to another member before you can leave.
++          </Text>
++        </View>
++      ) : (
++        <Pressable
++          onPress={confirmLeave}
++          disabled={busyKey === 'leave'}
++          style={({ pressed }) => [
++            styles.leaveButton,
++            (pressed || busyKey === 'leave') && styles.pressed,
++          ]}
++        >
++          {busyKey === 'leave' ? (
++            <ActivityIndicator color="#c62828" />
++          ) : (
++            <Text style={styles.leaveText}>Leave Circle</Text>
++          )}
++        </Pressable>
++      )}
++    </>
++  );
++
++  return (
++    <SafeAreaView edges={['bottom']} style={styles.screen}>
++      <FlatList
++        data={members}
++        keyExtractor={(member) => member.userId}
++        ListHeaderComponent={header}
++        ListFooterComponent={footer}
++        refreshControl={(
++          <RefreshControl
++            refreshing={refreshing}
++            onRefresh={() => {
++              setRefreshing(true);
++              load({ quiet: true });
++            }}
++            tintColor={COLORS.text}
++          />
++        )}
++        renderItem={({ item, index }) => {
++          const actions = memberActions(item);
++          const itemBusy = busyKey.endsWith(item.userId);
++          return (
++            <View style={[
++              styles.cardRowWrap,
++              index === 0 && styles.firstMemberRow,
++              index === members.length - 1 && styles.lastMemberRow,
++            ]}>
++              {index === 0 ? null : <View style={styles.separator} />}
++              <View style={styles.personRow}>
++                <Pressable
++                  onPress={() => navigation.navigate('Profile', {
++                    userId: item.userId,
++                  })}
++                  style={({ pressed }) => [
++                    styles.personMain,
++                    pressed && styles.pressed,
++                  ]}
++                >
++                  <Avatar
++                    size={50}
++                    name={item.displayName}
++                    uri={item.avatarUri}
++                  />
++                  <View style={styles.personCopy}>
++                    <View style={styles.nameLine}>
++                      <Text style={styles.personName} numberOfLines={1}>
++                        {item.isMe ? 'You' : item.displayName}
++                      </Text>
++                      <RolePill role={item.role} />
++                    </View>
++                    <Text style={styles.personSubtitle} numberOfLines={1}>
++                      {item.role === 'owner'
++                        ? 'Controls ownership and member roles'
++                        : item.role === 'admin'
++                          ? 'Can invite and manage members'
++                          : 'Circle member'}
++                    </Text>
++                  </View>
++                </Pressable>
++
++                {itemBusy ? (
++                  <ActivityIndicator size="small" />
++                ) : actions.length ? (
++                  <Pressable
++                    onPress={() => showMemberActions(item)}
++                    hitSlop={8}
++                    style={({ pressed }) => [
++                      styles.moreButton,
++                      pressed && styles.pressed,
++                    ]}
++                  >
++                    <Ionicons
++                      name="ellipsis-horizontal"
++                      size={21}
++                      color={COLORS.text}
++                    />
++                  </Pressable>
++                ) : null}
++              </View>
++            </View>
++          );
++        }}
++        contentContainerStyle={styles.content}
++        showsVerticalScrollIndicator={false}
++      />
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: '#f7f7f7',
++  },
++  content: {
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++    paddingHorizontal: 14,
++    paddingBottom: 44,
++  },
++  centerState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    padding: 28,
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorText: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    textAlign: 'center',
++  },
++  retryButton: {
++    marginTop: 16,
++    paddingHorizontal: 18,
++    paddingVertical: 10,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  retryText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  circleSummary: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingTop: 20,
++    paddingBottom: 16,
++  },
++  summaryText: {
++    flex: 1,
++    marginLeft: 14,
++  },
++  circleTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 21,
++  },
++  privateLine: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 5,
++    marginTop: 5,
++  },
++  privateText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 12,
++  },
++  inviteButton: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    padding: 13,
++    borderRadius: 15,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  inviteIcon: {
++    width: 38,
++    height: 38,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 19,
++    backgroundColor: COLORS.primary,
++  },
++  inviteCopy: {
++    flex: 1,
++    marginHorizontal: 11,
++  },
++  inviteTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 14,
++  },
++  inviteBody: {
++    marginTop: 2,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++  },
++  sectionHeader: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    marginTop: 24,
++    marginBottom: 8,
++    paddingHorizontal: 4,
++  },
++  sectionTitle: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 11,
++    letterSpacing: 0.6,
++  },
++  sectionCount: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
++  },
++  card: {
++    overflow: 'hidden',
++    borderRadius: 15,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  cardRowWrap: {
++    overflow: 'hidden',
++    marginHorizontal: 0,
++    backgroundColor: COLORS.bg,
++    borderLeftWidth: StyleSheet.hairlineWidth,
++    borderRightWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++  },
++  firstMemberRow: {
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderTopLeftRadius: 15,
++    borderTopRightRadius: 15,
++  },
++  lastMemberRow: {
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomLeftRadius: 15,
++    borderBottomRightRadius: 15,
++  },
++  personRow: {
++    minHeight: 72,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 13,
++    paddingVertical: 10,
++  },
++  personMain: {
++    flex: 1,
++    flexDirection: 'row',
++    alignItems: 'center',
++  },
++  personCopy: {
++    flex: 1,
++    marginLeft: 12,
++  },
++  nameLine: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 7,
++  },
++  personName: {
++    flexShrink: 1,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 14,
++  },
++  personSubtitle: {
++    marginTop: 3,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++    lineHeight: 15,
++  },
++  rolePill: {
++    paddingHorizontal: 7,
++    paddingVertical: 3,
++    borderRadius: 8,
++    backgroundColor: '#ececec',
++  },
++  ownerPill: {
++    backgroundColor: '#dedede',
++  },
++  rolePillText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 9,
++  },
++  moreButton: {
++    width: 38,
++    height: 38,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 19,
++  },
++  separator: {
++    height: StyleSheet.hairlineWidth,
++    marginLeft: 74,
++    backgroundColor: COLORS.border,
++  },
++  cancelInviteButton: {
++    minWidth: 65,
++    minHeight: 34,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 10,
++    borderRadius: 9,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: '#f4f4f4',
++  },
++  cancelInviteText: {
++    color: '#b3261e',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 11,
++  },
++  pendingPill: {
++    paddingHorizontal: 9,
++    paddingVertical: 5,
++    borderRadius: 9,
++    backgroundColor: '#eeeeee',
++  },
++  pendingText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 10,
++  },
++  emptySection: {
++    alignItems: 'center',
++    paddingHorizontal: 25,
++    paddingVertical: 25,
++    borderRadius: 15,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  emptyTitle: {
++    marginTop: 9,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 15,
++  },
++  emptyBody: {
++    marginTop: 4,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 17,
++    textAlign: 'center',
++  },
++  historyCard: {
++    flexDirection: 'row',
++    alignItems: 'flex-start',
++    gap: 10,
++    marginTop: 22,
++    padding: 14,
++    borderRadius: 14,
++    backgroundColor: '#eeeeee',
++  },
++  historyText: {
++    flex: 1,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++    lineHeight: 17,
++  },
++  ownerNotice: {
++    marginTop: 16,
++    padding: 14,
++    borderRadius: 14,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  ownerNoticeTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 13,
++  },
++  ownerNoticeBody: {
++    marginTop: 3,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++    lineHeight: 16,
++  },
++  leaveButton: {
++    minHeight: 46,
++    alignItems: 'center',
++    justifyContent: 'center',
++    marginTop: 16,
++    borderRadius: 12,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: '#d9a4a0',
++    backgroundColor: COLORS.bg,
++  },
++  leaveText: {
++    color: '#c62828',
++    fontFamily: 'Manrope_700Bold',
++  },
++  pressed: {
++    opacity: 0.67,
++  },
++});
+--- a/src/screens/conversations/InviteCirclePeopleScreen.js
++++ b/src/screens/conversations/InviteCirclePeopleScreen.js
+@@ -0,0 +1,502 @@
++import React, { useCallback, useMemo, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  FlatList,
++  KeyboardAvoidingView,
++  Platform,
++  Pressable,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { useFocusEffect } from '@react-navigation/native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import * as Haptics from 'expo-haptics';
++import { Avatar } from '../../components/Avatar';
++import { COLORS } from '../../theme/colors';
++import {
++  invitePeopleToCircle,
++  listCircleInviteCandidates,
++} from '../../services/circlePeopleService';
++
++export function InviteCirclePeopleScreen({ route, navigation }) {
++  const { conversationId, circleName = 'Circle' } = route.params || {};
++  const [people, setPeople] = useState([]);
++  const [selectedIds, setSelectedIds] = useState(new Set());
++  const [query, setQuery] = useState('');
++  const [loading, setLoading] = useState(true);
++  const [sending, setSending] = useState(false);
++  const [error, setError] = useState('');
++
++  const load = useCallback(async () => {
++    if (!conversationId) return;
++    setLoading(true);
++    setError('');
++
++    try {
++      setPeople(await listCircleInviteCandidates(conversationId));
++      setSelectedIds(new Set());
++    } catch (loadError) {
++      setError(loadError?.message || 'Could not load people you can invite.');
++    } finally {
++      setLoading(false);
++    }
++  }, [conversationId]);
++
++  useFocusEffect(
++    useCallback(() => {
++      load();
++    }, [load])
++  );
++
++  const filteredPeople = useMemo(() => {
++    const normalized = query.trim().toLowerCase();
++    if (!normalized) return people;
++    return people.filter((person) =>
++      person.displayName.toLowerCase().includes(normalized)
++    );
++  }, [people, query]);
++
++  const selectedPeople = useMemo(
++    () => people.filter((person) => selectedIds.has(person.userId)),
++    [people, selectedIds]
++  );
++
++  const toggle = (userId) => {
++    Haptics.selectionAsync().catch(() => {});
++    setSelectedIds((current) => {
++      const next = new Set(current);
++      if (next.has(userId)) next.delete(userId);
++      else next.add(userId);
++      return next;
++    });
++  };
++
++  const send = async () => {
++    if (!selectedIds.size || sending) return;
++    setSending(true);
++
++    try {
++      const count = await invitePeopleToCircle(
++        conversationId,
++        Array.from(selectedIds)
++      );
++      await Haptics.notificationAsync(
++        Haptics.NotificationFeedbackType.Success
++      );
++      navigation.goBack();
++      setTimeout(() => {
++        Alert.alert(
++          count === 1 ? 'Invitation sent' : 'Invitations sent',
++          `${count} private invitation${count === 1 ? '' : 's'} sent to ${circleName}.`
++        );
++      }, 250);
++    } catch (sendError) {
++      Alert.alert(
++        'Could not send invitations',
++        sendError?.message || 'Please try again.'
++      );
++      setSending(false);
++    }
++  };
++
++  if (loading) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <ActivityIndicator />
++        <Text style={styles.stateText}>Finding connections…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  if (error) {
++    return (
++      <SafeAreaView edges={['bottom']} style={styles.centerState}>
++        <Ionicons name="person-add-outline" size={38} color={COLORS.text} />
++        <Text style={styles.errorText}>{error}</Text>
++        <Pressable onPress={load} style={styles.retryButton}>
++          <Text style={styles.retryText}>Try again</Text>
++        </Pressable>
++      </SafeAreaView>
++    );
++  }
++
++  return (
++    <SafeAreaView edges={['bottom']} style={styles.screen}>
++      <KeyboardAvoidingView
++        style={styles.keyboardView}
++        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
++        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
++      >
++        <View style={styles.topArea}>
++          <View style={styles.privacyCard}>
++            <Ionicons name="lock-closed-outline" size={21} color={COLORS.text} />
++            <Text style={styles.privacyText}>
++              Only your accepted connections appear here. Everyone must accept
++              before they can view the Circle or its history.
++            </Text>
++          </View>
++
++          <View style={styles.searchBox}>
++            <Ionicons name="search" size={18} color={COLORS.subtext} />
++            <TextInput
++              value={query}
++              onChangeText={setQuery}
++              placeholder="Search connections"
++              placeholderTextColor="#8e8e93"
++              autoCorrect={false}
++              style={styles.searchInput}
++            />
++            {query ? (
++              <Pressable onPress={() => setQuery('')} hitSlop={8}>
++                <Ionicons name="close-circle" size={18} color="#a3a3a3" />
++              </Pressable>
++            ) : null}
++          </View>
++
++          {selectedPeople.length ? (
++            <FlatList
++              horizontal
++              data={selectedPeople}
++              keyExtractor={(person) => person.userId}
++              showsHorizontalScrollIndicator={false}
++              contentContainerStyle={styles.selectedList}
++              renderItem={({ item }) => (
++                <Pressable
++                  onPress={() => toggle(item.userId)}
++                  style={({ pressed }) => [
++                    styles.selectedPerson,
++                    pressed && styles.pressed,
++                  ]}
++                >
++                  <View>
++                    <Avatar
++                      size={48}
++                      name={item.displayName}
++                      uri={item.avatarUri}
++                    />
++                    <View style={styles.removeBadge}>
++                      <Ionicons name="close" size={11} color="#fff" />
++                    </View>
++                  </View>
++                  <Text style={styles.selectedName} numberOfLines={1}>
++                    {item.displayName}
++                  </Text>
++                </Pressable>
++              )}
++            />
++          ) : null}
++        </View>
++
++        <FlatList
++          data={filteredPeople}
++          keyExtractor={(person) => person.userId}
++          keyboardShouldPersistTaps="handled"
++          contentContainerStyle={styles.listContent}
++          ListEmptyComponent={(
++            <View style={styles.emptyState}>
++              <Ionicons name="people-outline" size={38} color={COLORS.subtext} />
++              <Text style={styles.emptyTitle}>
++                {query ? 'No matching connections' : 'No one else to invite'}
++              </Text>
++              <Text style={styles.emptyBody}>
++                {query
++                  ? 'Try another name.'
++                  : 'Everyone eligible is already a member or has a pending invitation.'}
++              </Text>
++            </View>
++          )}
++          renderItem={({ item, index }) => {
++            const selected = selectedIds.has(item.userId);
++            return (
++              <View style={[
++                styles.rowWrap,
++                index === 0 && styles.firstRow,
++                index === filteredPeople.length - 1 && styles.lastRow,
++              ]}>
++                {index > 0 ? <View style={styles.separator} /> : null}
++                <Pressable
++                  onPress={() => toggle(item.userId)}
++                  style={({ pressed }) => [
++                    styles.personRow,
++                    pressed && styles.pressed,
++                  ]}
++                >
++                  <Avatar
++                    size={49}
++                    name={item.displayName}
++                    uri={item.avatarUri}
++                  />
++                  <View style={styles.personCopy}>
++                    <Text style={styles.personName} numberOfLines={1}>
++                      {item.displayName}
++                    </Text>
++                    <Text style={styles.personSubtitle}>Accepted connection</Text>
++                  </View>
++                  <View style={[
++                    styles.checkbox,
++                    selected && styles.checkboxSelected,
++                  ]}>
++                    {selected ? (
++                      <Ionicons name="checkmark" size={16} color="#fff" />
++                    ) : null}
++                  </View>
++                </Pressable>
++              </View>
++            );
++          }}
++          showsVerticalScrollIndicator={false}
++        />
++
++        <View style={styles.bottomBar}>
++          <Pressable
++            onPress={send}
++            disabled={!selectedIds.size || sending}
++            style={({ pressed }) => [
++              styles.sendButton,
++              !selectedIds.size && styles.sendButtonDisabled,
++              (pressed || sending) && styles.pressed,
++            ]}
++          >
++            {sending ? (
++              <ActivityIndicator color="#fff" />
++            ) : (
++              <Text style={styles.sendText}>
++                Send {selectedIds.size || ''} invitation{selectedIds.size === 1 ? '' : 's'}
++              </Text>
++            )}
++          </Pressable>
++        </View>
++      </KeyboardAvoidingView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: '#f7f7f7',
++  },
++  keyboardView: {
++    flex: 1,
++  },
++  centerState: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    padding: 28,
++    backgroundColor: COLORS.bg,
++  },
++  stateText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorText: {
++    marginTop: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    textAlign: 'center',
++  },
++  retryButton: {
++    marginTop: 16,
++    paddingHorizontal: 18,
++    paddingVertical: 10,
++    borderRadius: 10,
++    backgroundColor: COLORS.primary,
++  },
++  retryText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  topArea: {
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++    paddingHorizontal: 14,
++    paddingTop: 12,
++  },
++  privacyCard: {
++    flexDirection: 'row',
++    alignItems: 'flex-start',
++    gap: 10,
++    padding: 13,
++    borderRadius: 14,
++    backgroundColor: '#eeeeee',
++  },
++  privacyText: {
++    flex: 1,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++    lineHeight: 17,
++  },
++  searchBox: {
++    minHeight: 43,
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 8,
++    marginTop: 13,
++    paddingHorizontal: 12,
++    borderRadius: 12,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  searchInput: {
++    flex: 1,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 14,
++  },
++  selectedList: {
++    paddingTop: 13,
++    paddingBottom: 3,
++  },
++  selectedPerson: {
++    width: 66,
++    alignItems: 'center',
++    marginRight: 5,
++  },
++  selectedName: {
++    width: 64,
++    marginTop: 4,
++    color: COLORS.text,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 9,
++    textAlign: 'center',
++  },
++  removeBadge: {
++    position: 'absolute',
++    right: -2,
++    top: -2,
++    width: 18,
++    height: 18,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 9,
++    borderWidth: 2,
++    borderColor: '#f7f7f7',
++    backgroundColor: '#707070',
++  },
++  listContent: {
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++    paddingHorizontal: 14,
++    paddingTop: 14,
++    paddingBottom: 24,
++    flexGrow: 1,
++  },
++  rowWrap: {
++    overflow: 'hidden',
++    borderLeftWidth: StyleSheet.hairlineWidth,
++    borderRightWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  firstRow: {
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderTopLeftRadius: 14,
++    borderTopRightRadius: 14,
++  },
++  lastRow: {
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomLeftRadius: 14,
++    borderBottomRightRadius: 14,
++  },
++  personRow: {
++    minHeight: 70,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 13,
++    paddingVertical: 10,
++  },
++  personCopy: {
++    flex: 1,
++    marginLeft: 12,
++  },
++  personName: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 14,
++  },
++  personSubtitle: {
++    marginTop: 3,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 11,
++  },
++  checkbox: {
++    width: 26,
++    height: 26,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 13,
++    borderWidth: 1,
++    borderColor: '#bdbdbd',
++    backgroundColor: COLORS.bg,
++  },
++  checkboxSelected: {
++    borderColor: COLORS.primary,
++    backgroundColor: COLORS.primary,
++  },
++  separator: {
++    height: StyleSheet.hairlineWidth,
++    marginLeft: 74,
++    backgroundColor: COLORS.border,
++  },
++  emptyState: {
++    flex: 1,
++    minHeight: 250,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 28,
++  },
++  emptyTitle: {
++    marginTop: 10,
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 16,
++  },
++  emptyBody: {
++    marginTop: 5,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 18,
++    textAlign: 'center',
++  },
++  bottomBar: {
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++    paddingHorizontal: 14,
++    paddingTop: 10,
++    paddingBottom: 10,
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderTopColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  sendButton: {
++    minHeight: 47,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 12,
++    backgroundColor: COLORS.primary,
++  },
++  sendButtonDisabled: {
++    backgroundColor: '#c9c9c9',
++  },
++  sendText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 14,
++  },
++  pressed: {
++    opacity: 0.68,
++  },
++});
+--- a/src/services/circlePeopleService.js
++++ b/src/services/circlePeopleService.js
+@@ -0,0 +1,145 @@
++import { supabase } from '../lib/supabase';
++import { ensureAuthed } from './authService';
++import { createConversationMediaSignedUrl } from './conversationMediaService';
++
++function mapMember(row) {
++  return {
++    userId: row.user_id,
++    displayName: row.display_name || 'Member',
++    avatarUri: row.avatar_url || null,
++    role: row.role || 'member',
++    joinedAt: row.joined_at || null,
++    isMe: Boolean(row.is_me),
++  };
++}
++
++function mapPendingInvitation(row) {
++  return {
++    id: row.invitation_id,
++    userId: row.user_id,
++    displayName: row.display_name || 'Connection',
++    avatarUri: row.avatar_url || null,
++    invitedBy: row.invited_by || null,
++    invitedByName: row.invited_by_name || 'A Circle manager',
++    createdAt: row.created_at || null,
++  };
++}
++
++export async function getCirclePeople(conversationId) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('get_circle_people', {
++    p_conversation_id: conversationId,
++  });
++  if (error) throw error;
++
++  const raw = data || {};
++  const conversation = raw.conversation || {};
++  let avatarUri = conversation.avatar_url || null;
++
++  if (conversation.avatar_path) {
++    try {
++      avatarUri = await createConversationMediaSignedUrl(
++        conversation.avatar_path
++      );
++    } catch {
++      // Initials remain available when a private avatar cannot be signed.
++    }
++  }
++
++  return {
++    conversation: {
++      id: conversation.id,
++      title: conversation.title || 'Circle',
++      avatarUri,
++      memberCount: Number(conversation.member_count || 0),
++      pendingCount: Number(conversation.pending_count || 0),
++    },
++    viewerRole: raw.viewer_role || 'member',
++    permissions: {
++      canInvite: Boolean(raw.permissions?.can_invite),
++      canCancelInvitations: Boolean(
++        raw.permissions?.can_cancel_invitations
++      ),
++      canManageRoles: Boolean(raw.permissions?.can_manage_roles),
++      canRemoveMembers: Boolean(raw.permissions?.can_remove_members),
++      canLeave: Boolean(raw.permissions?.can_leave),
++    },
++    members: (raw.members || []).map(mapMember),
++    pendingInvitations: (raw.pending_invitations || []).map(
++      mapPendingInvitation
++    ),
++  };
++}
++
++export async function listCircleInviteCandidates(conversationId) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc(
++    'get_circle_invite_candidates',
++    { p_conversation_id: conversationId }
++  );
++  if (error) throw error;
++
++  return (data || []).map((row) => ({
++    userId: row.user_id,
++    displayName: row.display_name || 'Connection',
++    avatarUri: row.avatar_url || null,
++  }));
++}
++
++export async function invitePeopleToCircle(conversationId, userIds) {
++  await ensureAuthed();
++  const { data, error } = await supabase.rpc('invite_people_to_circle', {
++    p_conversation_id: conversationId,
++    p_user_ids: userIds,
++  });
++  if (error) throw error;
++  return Number(data || 0);
++}
++
++export async function cancelCircleInvitation(invitationId) {
++  await ensureAuthed();
++  const { error } = await supabase.rpc('cancel_circle_invitation', {
++    p_invitation_id: invitationId,
++  });
++  if (error) throw error;
++}
++
++export async function updateCircleMemberRole(
++  conversationId,
++  userId,
++  role
++) {
++  await ensureAuthed();
++  const { error } = await supabase.rpc('update_circle_member_role', {
++    p_conversation_id: conversationId,
++    p_user_id: userId,
++    p_role: role,
++  });
++  if (error) throw error;
++}
++
++export async function transferCircleOwnership(conversationId, userId) {
++  await ensureAuthed();
++  const { error } = await supabase.rpc('transfer_circle_ownership', {
++    p_conversation_id: conversationId,
++    p_new_owner_id: userId,
++  });
++  if (error) throw error;
++}
++
++export async function removeCircleMember(conversationId, userId) {
++  await ensureAuthed();
++  const { error } = await supabase.rpc('remove_circle_member', {
++    p_conversation_id: conversationId,
++    p_user_id: userId,
++  });
++  if (error) throw error;
++}
++
++export async function leaveCircle(conversationId) {
++  await ensureAuthed();
++  const { error } = await supabase.rpc('leave_circle', {
++    p_conversation_id: conversationId,
++  });
++  if (error) throw error;
++}
+--- a/supabase/migrations/20260722_015_circle_people_membership.sql
++++ b/supabase/migrations/20260722_015_circle_people_membership.sql
+@@ -0,0 +1,629 @@
++-- Circles Step 9D — Circle People, invitations, roles, and membership
++--
++-- Product rules enforced by the database:
++--   * Only accepted Circle members can view the People page.
++--   * Owners and admins may invite their own accepted connections.
++--   * Pending invitees receive no Circle access until they accept.
++--   * Only the owner may promote/demote admins or transfer ownership.
++--   * Admins may remove regular members; owners may remove admins or members.
++--   * The owner must transfer ownership before leaving.
++--   * Leaving/removal revokes access but preserves prior authored history.
++
++create or replace function public.circle_group_member_role(
++  p_conversation_id uuid,
++  p_user_id uuid
++)
++returns text
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select member_row.role
++  from public.conversation_members member_row
++  join public.conversations conversation
++    on conversation.id = member_row.conversation_id
++   and conversation.kind = 'group'
++  where member_row.conversation_id = p_conversation_id
++    and member_row.user_id = p_user_id;
++$$;
++
++revoke all on function public.circle_group_member_role(uuid, uuid) from public;
++
++create or replace function public.get_circle_people(
++  p_conversation_id uuid
++)
++returns jsonb
++language plpgsql
++stable
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_viewer_role text;
++  v_result jsonb;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  v_viewer_role := public.circle_group_member_role(
++    p_conversation_id,
++    v_viewer_id
++  );
++
++  if v_viewer_role is null then
++    raise exception 'You are not a member of this private Circle';
++  end if;
++
++  select jsonb_build_object(
++    'conversation', jsonb_build_object(
++      'id', conversation.id,
++      'title', coalesce(nullif(trim(conversation.title), ''), 'Private Circle'),
++      'avatar_url', conversation.avatar_url,
++      'avatar_path', conversation.avatar_path,
++      'member_count', (
++        select count(*)
++        from public.conversation_members member_count_row
++        where member_count_row.conversation_id = conversation.id
++      ),
++      'pending_count', (
++        select count(*)
++        from public.conversation_invitations pending_count_row
++        where pending_count_row.conversation_id = conversation.id
++          and pending_count_row.status = 'pending'
++      )
++    ),
++    'viewer_role', v_viewer_role,
++    'permissions', jsonb_build_object(
++      'can_invite', v_viewer_role in ('owner', 'admin'),
++      'can_cancel_invitations', v_viewer_role in ('owner', 'admin'),
++      'can_manage_roles', v_viewer_role = 'owner',
++      'can_remove_members', v_viewer_role in ('owner', 'admin'),
++      'can_leave', v_viewer_role <> 'owner'
++    ),
++    'members', coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'user_id', member_user.id,
++          'display_name', member_user.display_name,
++          'avatar_url', member_user.avatar_url,
++          'role', member_row.role,
++          'joined_at', member_row.joined_at,
++          'is_me', member_user.id = v_viewer_id
++        )
++        order by
++          case member_row.role
++            when 'owner' then 0
++            when 'admin' then 1
++            else 2
++          end,
++          member_user.display_name nulls last,
++          member_row.joined_at
++      )
++      from public.conversation_members member_row
++      join public.users member_user
++        on member_user.id = member_row.user_id
++      where member_row.conversation_id = conversation.id
++    ), '[]'::jsonb),
++    'pending_invitations', coalesce((
++      select jsonb_agg(
++        jsonb_build_object(
++          'invitation_id', invitation.id,
++          'user_id', invited_user.id,
++          'display_name', invited_user.display_name,
++          'avatar_url', invited_user.avatar_url,
++          'invited_by', invitation.invited_by,
++          'invited_by_name', inviter.display_name,
++          'created_at', invitation.created_at
++        )
++        order by invitation.created_at desc
++      )
++      from public.conversation_invitations invitation
++      join public.users invited_user
++        on invited_user.id = invitation.invited_user_id
++      left join public.users inviter
++        on inviter.id = invitation.invited_by
++      where invitation.conversation_id = conversation.id
++        and invitation.status = 'pending'
++    ), '[]'::jsonb)
++  )
++  into v_result
++  from public.conversations conversation
++  where conversation.id = p_conversation_id
++    and conversation.kind = 'group';
++
++  if v_result is null then
++    raise exception 'This conversation is not a group Circle';
++  end if;
++
++  return v_result;
++end;
++$$;
++
++revoke all on function public.get_circle_people(uuid) from public;
++grant execute on function public.get_circle_people(uuid) to authenticated;
++
++create or replace function public.get_circle_invite_candidates(
++  p_conversation_id uuid
++)
++returns table (
++  user_id uuid,
++  display_name text,
++  avatar_url text
++)
++language plpgsql
++stable
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_viewer_role text;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  v_viewer_role := public.circle_group_member_role(
++    p_conversation_id,
++    v_viewer_id
++  );
++
++  if v_viewer_role is null or v_viewer_role not in ('owner', 'admin') then
++    raise exception 'Only the owner or an admin can invite people';
++  end if;
++
++  return query
++  select distinct
++    connected_user.id as user_id,
++    connected_user.display_name,
++    connected_user.avatar_url
++  from public.connections connection_row
++  join public.users connected_user
++    on connected_user.id = connection_row.other_user_id
++  where connection_row.user_id = v_viewer_id
++    and connection_row.other_user_id <> v_viewer_id
++    and not exists (
++      select 1
++      from public.conversation_members existing_member
++      where existing_member.conversation_id = p_conversation_id
++        and existing_member.user_id = connected_user.id
++    )
++    and not exists (
++      select 1
++      from public.conversation_invitations pending_invitation
++      where pending_invitation.conversation_id = p_conversation_id
++        and pending_invitation.invited_user_id = connected_user.id
++        and pending_invitation.status = 'pending'
++    )
++  order by connected_user.display_name nulls last, connected_user.id;
++end;
++$$;
++
++revoke all on function public.get_circle_invite_candidates(uuid) from public;
++grant execute on function public.get_circle_invite_candidates(uuid) to authenticated;
++
++create or replace function public.invite_people_to_circle(
++  p_conversation_id uuid,
++  p_user_ids uuid[]
++)
++returns integer
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_viewer_role text;
++  v_user_ids uuid[];
++  v_user_id uuid;
++  v_member_count integer;
++  v_pending_count integer;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  v_viewer_role := public.circle_group_member_role(
++    p_conversation_id,
++    v_viewer_id
++  );
++
++  if v_viewer_role is null or v_viewer_role not in ('owner', 'admin') then
++    raise exception 'Only the owner or an admin can invite people';
++  end if;
++
++  select coalesce(
++    array_agg(distinct candidate.user_id),
++    array[]::uuid[]
++  )
++  into v_user_ids
++  from unnest(coalesce(p_user_ids, array[]::uuid[])) as candidate(user_id)
++  where candidate.user_id is not null
++    and candidate.user_id <> v_viewer_id;
++
++  if cardinality(v_user_ids) < 1 then
++    raise exception 'Choose at least one person to invite';
++  end if;
++
++  foreach v_user_id in array v_user_ids loop
++    if not exists (
++      select 1
++      from public.connections connection_row
++      where connection_row.user_id = v_viewer_id
++        and connection_row.other_user_id = v_user_id
++    ) then
++      raise exception 'Every invited person must be your accepted connection';
++    end if;
++
++    if exists (
++      select 1
++      from public.conversation_members existing_member
++      where existing_member.conversation_id = p_conversation_id
++        and existing_member.user_id = v_user_id
++    ) then
++      raise exception 'One of the selected people is already a Circle member';
++    end if;
++
++    if exists (
++      select 1
++      from public.conversation_invitations pending_invitation
++      where pending_invitation.conversation_id = p_conversation_id
++        and pending_invitation.invited_user_id = v_user_id
++        and pending_invitation.status = 'pending'
++    ) then
++      raise exception 'One of the selected people already has a pending invitation';
++    end if;
++  end loop;
++
++  select count(*)
++  into v_member_count
++  from public.conversation_members member_row
++  where member_row.conversation_id = p_conversation_id;
++
++  select count(*)
++  into v_pending_count
++  from public.conversation_invitations invitation_row
++  where invitation_row.conversation_id = p_conversation_id
++    and invitation_row.status = 'pending';
++
++  if v_member_count + v_pending_count + cardinality(v_user_ids) > 21 then
++    raise exception 'Circles are currently limited to 21 people including pending invitations';
++  end if;
++
++  foreach v_user_id in array v_user_ids loop
++    insert into public.conversation_invitations (
++      conversation_id,
++      invited_user_id,
++      invited_by,
++      status,
++      created_at,
++      responded_at
++    )
++    values (
++      p_conversation_id,
++      v_user_id,
++      v_viewer_id,
++      'pending',
++      now(),
++      null
++    )
++    on conflict (conversation_id, invited_user_id)
++    do update set
++      invited_by = excluded.invited_by,
++      status = 'pending',
++      created_at = excluded.created_at,
++      responded_at = null;
++  end loop;
++
++  update public.conversations conversation
++  set updated_at = now()
++  where conversation.id = p_conversation_id;
++
++  return cardinality(v_user_ids);
++end;
++$$;
++
++revoke all on function public.invite_people_to_circle(uuid, uuid[]) from public;
++grant execute on function public.invite_people_to_circle(uuid, uuid[]) to authenticated;
++
++create or replace function public.cancel_circle_invitation(
++  p_invitation_id uuid
++)
++returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_invitation public.conversation_invitations%rowtype;
++  v_viewer_role text;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  select invitation.*
++  into v_invitation
++  from public.conversation_invitations invitation
++  where invitation.id = p_invitation_id
++    and invitation.status = 'pending'
++  for update;
++
++  if not found then
++    raise exception 'This invitation is no longer pending';
++  end if;
++
++  v_viewer_role := public.circle_group_member_role(
++    v_invitation.conversation_id,
++    v_viewer_id
++  );
++
++  if v_viewer_role is null or v_viewer_role not in ('owner', 'admin') then
++    raise exception 'Only the owner or an admin can cancel invitations';
++  end if;
++
++  update public.conversation_invitations invitation
++  set
++    status = 'cancelled',
++    responded_at = now()
++  where invitation.id = v_invitation.id;
++
++  update public.conversations conversation
++  set updated_at = now()
++  where conversation.id = v_invitation.conversation_id;
++end;
++$$;
++
++revoke all on function public.cancel_circle_invitation(uuid) from public;
++grant execute on function public.cancel_circle_invitation(uuid) to authenticated;
++
++create or replace function public.update_circle_member_role(
++  p_conversation_id uuid,
++  p_user_id uuid,
++  p_role text
++)
++returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_viewer_role text;
++  v_target_role text;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if p_role not in ('admin', 'member') then
++    raise exception 'Role must be admin or member';
++  end if;
++
++  v_viewer_role := public.circle_group_member_role(
++    p_conversation_id,
++    v_viewer_id
++  );
++
++  if v_viewer_role is distinct from 'owner' then
++    raise exception 'Only the Circle owner can change admin roles';
++  end if;
++
++  select member_row.role
++  into v_target_role
++  from public.conversation_members member_row
++  where member_row.conversation_id = p_conversation_id
++    and member_row.user_id = p_user_id
++  for update;
++
++  if not found then
++    raise exception 'This person is no longer a Circle member';
++  end if;
++
++  if v_target_role = 'owner' then
++    raise exception 'Transfer ownership instead of changing the owner role';
++  end if;
++
++  update public.conversation_members member_row
++  set role = p_role
++  where member_row.conversation_id = p_conversation_id
++    and member_row.user_id = p_user_id;
++
++  update public.conversations conversation
++  set updated_at = now()
++  where conversation.id = p_conversation_id;
++end;
++$$;
++
++revoke all on function public.update_circle_member_role(uuid, uuid, text) from public;
++grant execute on function public.update_circle_member_role(uuid, uuid, text) to authenticated;
++
++create or replace function public.transfer_circle_ownership(
++  p_conversation_id uuid,
++  p_new_owner_id uuid
++)
++returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_viewer_role text;
++  v_target_role text;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if p_new_owner_id is null or p_new_owner_id = v_viewer_id then
++    raise exception 'Choose another Circle member as the new owner';
++  end if;
++
++  v_viewer_role := public.circle_group_member_role(
++    p_conversation_id,
++    v_viewer_id
++  );
++
++  if v_viewer_role is distinct from 'owner' then
++    raise exception 'Only the current owner can transfer ownership';
++  end if;
++
++  perform 1
++  from public.conversation_members member_row
++  where member_row.conversation_id = p_conversation_id
++    and member_row.user_id in (v_viewer_id, p_new_owner_id)
++  for update;
++
++  select member_row.role
++  into v_target_role
++  from public.conversation_members member_row
++  where member_row.conversation_id = p_conversation_id
++    and member_row.user_id = p_new_owner_id;
++
++  if v_target_role is null then
++    raise exception 'The new owner must already be a Circle member';
++  end if;
++
++  update public.conversation_members member_row
++  set role = case
++    when member_row.user_id = v_viewer_id then 'admin'
++    when member_row.user_id = p_new_owner_id then 'owner'
++    else member_row.role
++  end
++  where member_row.conversation_id = p_conversation_id
++    and member_row.user_id in (v_viewer_id, p_new_owner_id);
++
++  update public.conversations conversation
++  set updated_at = now()
++  where conversation.id = p_conversation_id;
++end;
++$$;
++
++revoke all on function public.transfer_circle_ownership(uuid, uuid) from public;
++grant execute on function public.transfer_circle_ownership(uuid, uuid) to authenticated;
++
++create or replace function public.remove_circle_member(
++  p_conversation_id uuid,
++  p_user_id uuid
++)
++returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_viewer_role text;
++  v_target_role text;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if p_user_id = v_viewer_id then
++    raise exception 'Use Leave Circle to remove yourself';
++  end if;
++
++  v_viewer_role := public.circle_group_member_role(
++    p_conversation_id,
++    v_viewer_id
++  );
++
++  if v_viewer_role is null or v_viewer_role not in ('owner', 'admin') then
++    raise exception 'Only the owner or an admin can remove members';
++  end if;
++
++  select member_row.role
++  into v_target_role
++  from public.conversation_members member_row
++  where member_row.conversation_id = p_conversation_id
++    and member_row.user_id = p_user_id
++  for update;
++
++  if not found then
++    raise exception 'This person is no longer a Circle member';
++  end if;
++
++  if v_target_role = 'owner' then
++    raise exception 'The Circle owner cannot be removed';
++  end if;
++
++  if v_viewer_role = 'admin' and v_target_role <> 'member' then
++    raise exception 'Admins can remove regular members, but not other admins';
++  end if;
++
++  delete from public.conversation_members member_row
++  where member_row.conversation_id = p_conversation_id
++    and member_row.user_id = p_user_id;
++
++  update public.conversation_invitations invitation
++  set
++    status = 'cancelled',
++    responded_at = now()
++  where invitation.conversation_id = p_conversation_id
++    and invitation.invited_user_id = p_user_id
++    and invitation.status in ('pending', 'accepted');
++
++  update public.conversations conversation
++  set updated_at = now()
++  where conversation.id = p_conversation_id;
++end;
++$$;
++
++revoke all on function public.remove_circle_member(uuid, uuid) from public;
++grant execute on function public.remove_circle_member(uuid, uuid) to authenticated;
++
++create or replace function public.leave_circle(
++  p_conversation_id uuid
++)
++returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_viewer_role text;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  v_viewer_role := public.circle_group_member_role(
++    p_conversation_id,
++    v_viewer_id
++  );
++
++  if v_viewer_role is null then
++    raise exception 'You are no longer a member of this Circle';
++  end if;
++
++  if v_viewer_role = 'owner' then
++    raise exception 'Transfer ownership before leaving the Circle';
++  end if;
++
++  delete from public.conversation_members member_row
++  where member_row.conversation_id = p_conversation_id
++    and member_row.user_id = v_viewer_id;
++
++  update public.conversation_invitations invitation
++  set
++    status = 'cancelled',
++    responded_at = now()
++  where invitation.conversation_id = p_conversation_id
++    and invitation.invited_user_id = v_viewer_id
++    and invitation.status in ('pending', 'accepted');
++
++  update public.conversations conversation
++  set updated_at = now()
++  where conversation.id = p_conversation_id;
++end;
++$$;
++
++revoke all on function public.leave_circle(uuid) from public;
++grant execute on function public.leave_circle(uuid) to authenticated;
+--- a/README_CIRCLE_PEOPLE_STEP_9D.md
++++ b/README_CIRCLE_PEOPLE_STEP_9D.md
+@@ -0,0 +1,144 @@
++# Circles Step 9D — Circle People and Invitations
++
++This checkpoint turns the member strip on each group Circle into a complete,
++private People-management experience.
++
++## Product behavior
++
++### Every accepted Circle member can
++
++- Open the full People page.
++- See accepted members and their Owner/Admin roles.
++- See pending invitations.
++- Open another member's normal user profile.
++- Leave the Circle, unless they are the current owner.
++
++### Owners and admins can
++
++- Invite their own accepted connections.
++- Cancel pending invitations.
++- See changes update through the existing membership Realtime subscription.
++
++### Owner-only controls
++
++- Promote a member to Admin.
++- Remove an Admin role.
++- Transfer ownership to another accepted Circle member.
++- Remove an Admin or regular member.
++
++### Admin controls
++
++- Remove regular members.
++- Admins cannot remove the owner or another admin.
++- Admins cannot change roles or ownership.
++
++### Authentic shared-history rule
++
++Removing someone or leaving immediately revokes future access to Chat, Posts,
++Timeline, comments, and member information. It does not erase or anonymously
++rewrite contributions already made while that person was a member.
++
++Pending invitees still receive no Circle access until they explicitly accept.
++
++## Included files
++
++- `App.js`
++- `src/screens/conversations/CircleProfileScreen.js`
++- `src/screens/conversations/CirclePeopleScreen.js`
++- `src/screens/conversations/InviteCirclePeopleScreen.js`
++- `src/services/circlePeopleService.js`
++- `supabase/migrations/20260722_015_circle_people_membership.sql`
++- `circle-people-step9d.patch`
++
++## Apply Step 9D
++
++### 1. Run the Supabase migration
++
++Open Supabase, select the Circles project, and open **SQL Editor**.
++
++Create a new query and paste the complete contents of:
++
++```text
++supabase/migrations/20260722_015_circle_people_membership.sql
++```
++
++Run it once. The migration does not delete messages, media, posts, comments, or
++existing members.
++
++### 2. Copy the app files
++
++Extract the ZIP. Copy the contents of the extracted
++`circles_circle_people_step9d_package` folder into:
++
++```text
++C:\Users\honge\Dev\circles-app
++```
++
++Choose **Replace the files in the destination** when Windows asks. Do not copy
++a parent folder around the project root; merge the included `src` and
++`supabase` folders into the existing ones.
++
++### 3. Restart Expo
++
++```powershell
++cd C:\Users\honge\Dev\circles-app
++npx expo start --tunnel --clear
++```
++
++## Recommended multi-account test
++
++Use the Hongy/Alex/Sam development accounts.
++
++### Owner test
++
++1. Open an existing three-person Circle as its owner.
++2. Tap the **People** statistic, the **People** button, or **See all** above the
++   member strip.
++3. Confirm all accepted members and pending invitations appear.
++4. Tap **Invite people** and invite another accepted connection.
++5. Confirm the new person remains pending and cannot access the Circle.
++6. Cancel the invitation and confirm it disappears.
++7. Promote a regular member to Admin, then remove the Admin role again.
++
++### Admin boundary test
++
++1. Promote Alex to Admin.
++2. Switch to Alex.
++3. Confirm Alex can invite accepted connections and remove a regular member.
++4. Confirm Alex cannot change roles, remove the owner, or remove another Admin.
++
++### Ownership and leaving test
++
++1. As the owner, transfer ownership to Alex.
++2. Confirm Alex becomes Owner and the former owner becomes Admin.
++3. Confirm the former owner now sees **Leave Circle**.
++4. Leave the Circle and confirm the app returns to the inbox.
++5. Confirm the departed account can no longer reopen Chat, Posts, Timeline, or
++   People.
++6. From another member's account, confirm the departed person's prior content
++   remains attributed to them.
++
++### Invitation acceptance test
++
++1. Send a fresh invitation to Sam.
++2. Switch to Sam and accept it from the Circles inbox.
++3. Confirm Sam appears as a regular member and can now access all private Circle
++   areas.
++
++## Commit after phone testing
++
++```powershell
++cd C:\Users\honge\Dev\circles-app
++git status
++git add App.js src supabase/migrations README_CIRCLE_PEOPLE_STEP_9D.md
++git commit -m "Add Circle people and invitation management"
++git push
++```
++
++## Validation performed before packaging
++
++The five included JavaScript files were passed through the installed TypeScript
++JSX transpiler without syntax errors. The SQL was reviewed for role and
++membership boundaries, but it still requires execution against the live
++Supabase schema. Physical-device navigation, Realtime refresh, and all
++multi-account permission boundaries require the test matrix above.

@@ -1,0 +1,2618 @@
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/App.js b/App.js
+--- a/App.js	2026-07-20 19:53:47.898938939 +0000
++++ b/App.js	2026-07-20 20:02:57.688863034 +0000
+@@ -2,7 +2,7 @@
+ import 'react-native-reanimated';
+ import React, { useEffect, useMemo, useRef, useState } from 'react';
+ import {
+-  ActivityIndicator, Alert, Dimensions, FlatList, Image, KeyboardAvoidingView,
++  ActivityIndicator, Alert, Dimensions, FlatList, KeyboardAvoidingView,
+   Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View
+ } from 'react-native';
+ import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+@@ -12,7 +12,6 @@
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { MotiView } from 'moti';
+ import * as Haptics from 'expo-haptics';
+-import * as ImagePicker from 'expo-image-picker';
+ import {
+   useFonts,
+   Manrope_400Regular,
+@@ -23,7 +22,6 @@
+ import { IS_DEVELOPMENT } from './src/config/env';
+ import { supabase } from './src/lib/supabase';
+ import { ensureAuthed } from './src/services/authService';
+-import { uploadToBucket } from './src/services/uploadService';
+ import { Avatar } from './src/components/Avatar';
+ import { DevBanner } from './src/components/DevBanner';
+ import { MonoRingWithRipples } from './src/components/MonoRingWithRipples';
+@@ -33,6 +31,10 @@
+ import { CreatePostScreen } from './src/screens/posts/CreatePostScreen';
+ import { PostDetailScreen } from './src/screens/posts/PostDetailScreen';
+ import { StoryComposerScreen } from './src/screens/stories/StoryComposerScreen';
++import { MeScreen } from './src/screens/profile/MeScreen';
++import { ProfileScreen } from './src/screens/profile/ProfileScreen';
++import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
++import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
+ 
+ /* ---------------- Layout & helpers ---------------- */
+ const { width: W, height: H } = Dimensions.get('window');
+@@ -76,6 +78,7 @@
+           <RootStack.Screen name="CreateStory" component={StoryComposerScreen} />
+           <RootStack.Screen name="Profile" component={ProfileScreen} />
+           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
++          <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
+           <RootStack.Screen name="PostDetail" component={PostDetailScreen} />
+         </RootStack.Navigator>
+       </NavigationContainer>
+@@ -217,7 +220,7 @@
+   { id: 'r1', from_user: 'uZ', display_name: 'Taylor Brooks', avatar_url: 'https://i.pravatar.cc/150?img=47', note: null, created_at: new Date().toISOString() },
+ ];
+ 
+-function MutualsScreen() {
++function MutualsScreen({ navigation }) {
+   const [loading, setLoading] = useState(true);
+   const [candidates, setCandidates] = useState([]);
+   const [incoming, setIncoming] = useState([]);
+@@ -310,11 +313,16 @@
+             </Text>
+           ) : candidates.map(u => (
+             <View key={u.id} style={{ flexDirection:'row', alignItems:'center', padding:12, borderWidth:StyleSheet.hairlineWidth, borderColor:COLORS.divider, borderRadius:12 }}>
+-              <Avatar size={48} name={u.display_name || 'Unknown'} uri={u.avatar_url} />
+-              <View style={{ flex:1, marginHorizontal:12 }}>
+-                <Text style={{ fontFamily:'Manrope_700Bold', color:COLORS.text }} numberOfLines={1}>{u.display_name || 'Unknown'}</Text>
+-                <Text style={{ fontFamily:'Manrope_400Regular', color:COLORS.subtext, fontSize:12 }}>Mutual contact</Text>
+-              </View>
++              <Pressable
++                onPress={() => navigation.navigate('Profile', { userId: u.id })}
++                style={{ flex:1, flexDirection:'row', alignItems:'center' }}
++              >
++                <Avatar size={48} name={u.display_name || 'Unknown'} uri={u.avatar_url} />
++                <View style={{ flex:1, marginHorizontal:12 }}>
++                  <Text style={{ fontFamily:'Manrope_700Bold', color:COLORS.text }} numberOfLines={1}>{u.display_name || 'Unknown'}</Text>
++                  <Text style={{ fontFamily:'Manrope_400Regular', color:COLORS.subtext, fontSize:12 }}>Mutual contact</Text>
++                </View>
++              </Pressable>
+               <Pressable onPress={() => sendRequest(u.id)} disabled={!!sending[u.id]} style={({pressed}) => ({
+                 paddingHorizontal:14, paddingVertical:8, borderRadius:10,
+                 backgroundColor:COLORS.primary, opacity: pressed||sending[u.id] ? 0.7 : 1
+@@ -330,13 +338,17 @@
+             <Text style={{ textAlign:'center', color:COLORS.subtext, fontFamily:'Manrope_400Regular' }}>No requests right now.</Text>
+           ) : incoming.map(r => (
+             <View key={r.id} style={{ padding:12, borderWidth:StyleSheet.hairlineWidth, borderColor:COLORS.divider, borderRadius:12 }}>
+-              <View style={{ flexDirection:'row', alignItems:'center' }}>
++              <Pressable
++                onPress={() => navigation.navigate('Profile', { userId: r.from_user })}
++                style={{ flexDirection:'row', alignItems:'center' }}
++              >
+                 <Avatar size={48} name={r.display_name || 'Unknown'} uri={r.avatar_url} />
+                 <View style={{ flex:1, marginHorizontal:12 }}>
+                   <Text style={{ fontFamily:'Manrope_700Bold', color:COLORS.text }} numberOfLines={1}>{r.display_name || 'Unknown'}</Text>
+                   <Text style={{ fontFamily:'Manrope_400Regular', color:COLORS.subtext, fontSize:12 }}>wants to connect</Text>
+                 </View>
+-              </View>
++                <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
++              </Pressable>
+               <View style={{ flexDirection:'row', gap:10, marginTop:10 }}>
+                 <Pressable onPress={() => respond(r.id,'accept')} disabled={!!responding[r.id]} style={({pressed}) => ({
+                   flex:1, paddingVertical:10, borderRadius:10, backgroundColor:COLORS.primary, alignItems:'center',
+@@ -622,190 +634,6 @@
+       </ScrollView>
+     </SafeAreaView>
+   );
+-}
+-
+-/* ---------------- Me / Profile / Edit / PostDetail ---------------- */
+-function MeScreen({ navigation }) {
+-  const [profile, setProfile] = useState(null);
+-  const [myPosts, setMyPosts] = useState([]);
+-  const [loading, setLoading] = useState(true);
+-
+-  const load = async () => {
+-    setLoading(true);
+-    try {
+-      const session = await ensureAuthed();
+-      const uid = session.user.id;
+-
+-      const { data: u } = await supabase.from('users').select('id, display_name, avatar_url, bio').eq('id', uid).single();
+-      setProfile(u || { id: uid, display_name: 'You', avatar_url: null, bio: '' });
+-
+-      const { data: posts } = await supabase
+-        .from('posts')
+-        .select('id, image_url, caption, created_at')
+-        .eq('user_id', uid)
+-        .order('created_at', { ascending: false });
+-      setMyPosts(posts || []);
+-    } catch (e) { alert(e.message || 'Failed to load profile'); }
+-    finally { setLoading(false); }
+-  };
+-
+-  useEffect(() => { const unsub = navigation.addListener('focus', load); return unsub; }, [navigation]);
+-
+-  if (loading) {
+-    return (<SafeAreaView edges={['top']} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator /></SafeAreaView>);
+-  }
+-
+-  return (
+-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
+-      <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
+-        <Avatar size={84} name={profile?.display_name || 'You'} uri={profile?.avatar_url} />
+-        <View style={{ marginLeft: 14, flex: 1 }}>
+-          <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 20, color: COLORS.text }} numberOfLines={1}>{profile?.display_name || 'You'}</Text>
+-          {!!profile?.bio && <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, marginTop: 4 }} numberOfLines={2}>{profile.bio}</Text>}
+-        </View>
+-        <Pressable onPress={() => navigation.navigate('Profile', { userId: profile.id, name: profile.display_name })} style={{ paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, marginRight: 8 }}>
+-          <Text style={{ fontFamily: 'Manrope_600SemiBold', color: COLORS.text }}>View</Text>
+-        </Pressable>
+-        <Pressable onPress={() => navigation.navigate('EditProfile', { userId: profile.id })} style={{ paddingHorizontal: 10, paddingVertical: 8, backgroundColor: COLORS.primary, borderRadius: 10 }}>
+-          <Text style={{ fontFamily: 'Manrope_700Bold', color: '#fff' }}>Edit</Text>
+-        </Pressable>
+-      </View>
+-
+-      {myPosts.length === 0 ? (
+-        <View style={{ padding: 20 }}>
+-          <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext }}>
+-            You haven’t posted yet. Tap the + button on the Feed to create your first post.
+-          </Text>
+-        </View>
+-      ) : (
+-        <FlatList
+-          data={myPosts}
+-          keyExtractor={(x) => x.id}
+-          numColumns={3}
+-          renderItem={({ item }) => (
+-            <Pressable onPress={() => navigation.navigate('PostDetail', { postId: item.id })}>
+-              <Image source={{ uri: item.image_url }} style={{ width: W / 3, height: W / 3 }} />
+-            </Pressable>
+-          )}
+-        />
+-      )}
+-    </SafeAreaView>
+-  );
+-}
+-
+-function ProfileScreen({ route }) {
+-  const { userId } = route?.params || {};
+-  const [profile, setProfile] = useState(null);
+-  const [posts, setPosts] = useState([]);
+-  const [loading, setLoading] = useState(true);
+-
+-  const load = async () => {
+-    setLoading(true);
+-    try {
+-      const session = await ensureAuthed();
+-      const uid = userId || session.user.id;
+-
+-      const { data: u } = await supabase.from('users').select('id, display_name, avatar_url, bio').eq('id', uid).single();
+-      setProfile(u || { id: uid, display_name: 'User', avatar_url: null, bio: '' });
+-
+-      const { data: rows } = await supabase
+-        .from('posts')
+-        .select('id, image_url, caption, created_at')
+-        .eq('user_id', uid)
+-        .order('created_at', { ascending: false });
+-      setPosts(rows || []);
+-    } catch (e) { alert(e.message || 'Failed to load profile'); }
+-    finally { setLoading(false); }
+-  };
+-
+-  useEffect(() => { load(); }, [userId]);
+-
+-  if (loading) return (<SafeAreaView edges={['top']} style={{ flex:1, alignItems:'center', justifyContent:'center' }}><ActivityIndicator /></SafeAreaView>);
+-
+-  return (
+-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
+-      <View style={{ alignItems: 'center', paddingTop: 16, paddingBottom: 12 }}>
+-        <Avatar size={96} name={profile?.display_name || 'User'} uri={profile?.avatar_url} />
+-        <Text style={{ fontFamily: 'Manrope_700Bold', fontSize: 20, marginTop: 10, color: COLORS.text }}>{profile?.display_name || 'User'}</Text>
+-        {!!profile?.bio && <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, marginTop: 6, paddingHorizontal: 24, textAlign: 'center' }}>{profile.bio}</Text>}
+-      </View>
+-      <FlatList
+-        data={posts}
+-        keyExtractor={(x) => x.id}
+-        numColumns={3}
+-        renderItem={({ item }) => (
+-          <Pressable onPress={() => {}}>
+-            <Image source={{ uri: item.image_url }} style={{ width: W / 3, height: W / 3 }} />
+-          </Pressable>
+-        )}
+-      />
+-    </SafeAreaView>
+-  );
+-}
+-
+-function EditProfileScreen({ navigation }) {
+-  const [displayName, setDisplayName] = useState('');
+-  const [bio, setBio] = useState('');
+-  const [avatarUri, setAvatarUri] = useState(null);
+-  const [saving, setSaving] = useState(false);
+-
+-  useEffect(() => {
+-    (async () => {
+-      try {
+-        const session = await ensureAuthed();
+-        const { data: u } = await supabase.from('users').select('display_name, avatar_url, bio').eq('id', session.user.id).maybeSingle();
+-        setDisplayName(u?.display_name || '');
+-        setBio(u?.bio || '');
+-        setAvatarUri(u?.avatar_url || null);
+-      } catch (e) {
+-        Alert.alert('Profile unavailable', e?.message || 'Please sign in again.');
+-      }
+-    })();
+-  }, []);
+-
+-  const onPickAvatar = async () => {
+-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+-    if (status !== 'granted') return alert('Permission needed');
+-    const pick = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsMultipleSelection: false, quality: 0.9 });
+-    if (pick.canceled) return;
+-    setAvatarUri(pick.assets[0].uri);
+-  };
+-
+-  const onSave = async () => {
+-    setSaving(true);
+-    try {
+-      const { user } = await ensureAuthed();
+-      let avatarUrl = avatarUri;
+-      if (avatarUri && avatarUri.startsWith('file:')) avatarUrl = await uploadToBucket(avatarUri, 'avatars', 'image/jpeg');
+-      const updates = { display_name: displayName || null, avatar_url: avatarUrl || null };
+-      const { error } = await supabase.from('users').update(updates).eq('id', user.id);
+-      if (error) throw error;
+-      try { await supabase.from('users').update({ bio: bio || null }).eq('id', user.id); } catch {}
+-      navigation.goBack();
+-    } catch (e) { alert(e.message || 'Failed to save profile'); }
+-    finally { setSaving(false); }
+-  };
+-
+-  return (
+-    <SafeAreaView edges={['top']} style={{ flex:1, backgroundColor: COLORS.bg }}>
+-      <ScrollView contentContainerStyle={{ padding: 16 }}>
+-        <View style={{ alignItems:'center', marginBottom: 16 }}>
+-          <Pressable onPress={onPickAvatar}><Avatar size={100} name={displayName || 'You'} uri={avatarUri} /></Pressable>
+-          <Pressable onPress={onPickAvatar} style={{ marginTop: 10 }}><Text style={{ fontFamily:'Manrope_600SemiBold', color: COLORS.primary }}>Change Photo</Text></Pressable>
+-        </View>
+-
+-        <Text style={{ fontFamily:'Manrope_700Bold', color: COLORS.text, marginBottom: 6 }}>Name</Text>
+-        <TextInput value={displayName} onChangeText={setDisplayName} placeholder="Your name" style={{ borderWidth:1, borderColor:COLORS.border, borderRadius:10, padding:12, fontFamily:'Manrope_400Regular', marginBottom: 14 }} />
+-
+-        <Text style={{ fontFamily:'Manrope_700Bold', color: COLORS.text, marginBottom: 6 }}>Bio</Text>
+-        <TextInput value={bio} onChangeText={setBio} placeholder="Write a short bio" multiline style={{ minHeight:90, borderWidth:1, borderColor:COLORS.border, borderRadius:10, padding:12, textAlignVertical:'top', fontFamily:'Manrope_400Regular' }} />
+-
+-        <Pressable onPress={onSave} disabled={saving} style={({pressed})=>({ marginTop:18, backgroundColor: COLORS.primary, paddingVertical:12, borderRadius:12, alignItems:'center', opacity: pressed||saving ? 0.7 : 1 })}>
+-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color:'#fff', fontFamily:'Manrope_700Bold' }}>Save</Text>}
+-        </Pressable>
+-      </ScrollView>
+-    </SafeAreaView>
+-  );
+ }
+ 
+ /* ---------------- Small UI components ---------------- */
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/README_PROFILE_ACCOUNTS_STEP_5.md b/README_PROFILE_ACCOUNTS_STEP_5.md
+--- a/README_PROFILE_ACCOUNTS_STEP_5.md	1970-01-01 00:00:00.000000000 +0000
++++ b/README_PROFILE_ACCOUNTS_STEP_5.md	2026-07-20 20:08:53.106623008 +0000
+@@ -0,0 +1,128 @@
++# Circles — Profile & Account Polish (Step 5)
++
++This checkpoint turns the basic `Me`, `Profile`, and `Edit Profile` views into a connected account experience while preserving Circles' private, mutual-first design.
++
++## 1. Run the database migration first
++
++Open the Supabase SQL Editor and run:
++
++```text
++supabase/migrations/20260720_002_profile_accounts.sql
++```
++
++The migration:
++
++- adds an optional, unique lowercase `username` to `public.users`;
++- adds `get_profile_overview(uuid)` for privacy-aware profile loading;
++- adds `update_my_profile(...)` so name, username, bio, and avatar save together;
++- changes `is_connected(...)` so a mutual contact is only a candidate, not an accepted connection;
++- makes the security-definer Feed and Stories RPCs return only the signed-in user's content and accepted connections' content.
++
++After this migration, the Feed may show fewer test posts. That is intentional: posts and stories from mutual candidates remain private until their connection request is accepted.
++
++## 2. Copy the app files
++
++Copy this package into the Circles project root and allow Windows to merge `src` and `supabase`, and replace `App.js` and `src/services/uploadService.js`.
++
++New structure:
++
++```text
++src/
++  components/profile/
++    ProfileHeader.js
++    ProfilePostGridItem.js
++
++  screens/profile/
++    AccountSettingsScreen.js
++    EditProfileScreen.js
++    MeScreen.js
++    ProfileScreen.js
++    ProfileViewScreen.js
++
++  services/
++    profileService.js
++```
++
++## What changed
++
++### Me / profile page
++
++- one reusable profile experience for your account and another person's account;
++- polished identity header with avatar, display name, optional `@username`, bio, post count, and connection count;
++- pull-to-refresh;
++- responsive three-column post grid;
++- photo, video, and multi-media indicators;
++- post-grid items open Post Detail;
++- self empty state links directly to Create Post;
++- private-post state for profiles that are not connected;
++- settings button on your profile.
++
++### Connection-aware profiles
++
++- mutual candidate → **Connect**;
++- outgoing request → **Requested**;
++- incoming request → **Accept / Decline**;
++- accepted connection → **Connected**;
++- Mutuals cards and incoming requests can open the person's profile.
++
++### Edit Profile
++
++- display-name validation and 40-character limit;
++- optional unique username with normalization and friendly duplicate errors;
++- 160-character bio limit;
++- square photo picker and upload/save progress;
++- Android/content URIs and other non-HTTP selected-photo URIs are treated as local uploads;
++- name, username, bio, and avatar save in one RPC instead of silently ignoring bio errors;
++- new avatar files are stored under `avatars/<user-id>/...` for future ownership policies.
++
++### Settings
++
++- account identity;
++- Edit Profile shortcut;
++- privacy explanation;
++- development/production build label;
++- working sign-out flow on mobile and web.
++
++## 3. Test web
++
++```powershell
++cd C:\Users\honge\Dev\circles-app
++npx expo start --web --clear
++```
++
++Test:
++
++1. Open **Me**.
++2. Add a username, update the name and bio, and change the profile picture.
++3. Refresh and confirm every field persists.
++4. Open a post from the profile grid and go back.
++5. Open **Settings**, then return.
++6. Open an author profile from the Feed.
++7. Open a mutual/request profile from Mutuals.
++8. Test Sign Out, then sign back in with the development flow.
++
++## 4. Test phone
++
++```powershell
++npx expo start --tunnel --clear
++```
++
++Pay special attention to:
++
++- avatar cropping and upload;
++- keyboard behavior on Edit Profile;
++- pull-to-refresh;
++- three-column grid sizing;
++- Accept, Decline, Connect, and Requested states;
++- sign out and return to the welcome portal.
++
++## 5. Commit after testing
++
++```powershell
++git status
++git add App.js src supabase/migrations README_PROFILE_ACCOUNTS_STEP_5.md
++git commit -m "Polish profiles and account settings"
++git push
++```
++
++Keep `.env.local` untracked.
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/src/components/profile/ProfileHeader.js b/src/components/profile/ProfileHeader.js
+--- a/src/components/profile/ProfileHeader.js	1970-01-01 00:00:00.000000000 +0000
++++ b/src/components/profile/ProfileHeader.js	2026-07-20 20:00:09.798419533 +0000
+@@ -0,0 +1,301 @@
++import React from 'react';
++import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { Avatar } from '../Avatar';
++import { COLORS } from '../../theme/colors';
++
++function Stat({ value, label }) {
++  return (
++    <View style={styles.stat}>
++      <Text style={styles.statValue}>{value}</Text>
++      <Text style={styles.statLabel}>{label}</Text>
++    </View>
++  );
++}
++
++function RelationshipActions({
++  profile,
++  busy,
++  onConnect,
++  onAccept,
++  onDecline,
++}) {
++  const relationship = profile.relationship_status;
++
++  if (relationship === 'self') return null;
++
++  if (relationship === 'connected') {
++    return (
++      <View style={styles.actionsRow}>
++        <View style={styles.connectedButton}>
++          <Ionicons name="checkmark-circle" size={18} color={COLORS.text} />
++          <Text style={styles.connectedButtonText}>Connected</Text>
++        </View>
++      </View>
++    );
++  }
++
++  if (relationship === 'outgoing') {
++    return (
++      <View style={styles.actionsRow}>
++        <View style={styles.connectedButton}>
++          <Ionicons name="time-outline" size={18} color={COLORS.subtext} />
++          <Text style={styles.connectedButtonText}>Requested</Text>
++        </View>
++      </View>
++    );
++  }
++
++  if (relationship === 'incoming') {
++    return (
++      <View style={styles.actionsRow}>
++        <Pressable
++          disabled={busy}
++          onPress={onAccept}
++          style={({ pressed }) => [
++            styles.primaryButton,
++            (pressed || busy) && styles.buttonPressed,
++          ]}
++        >
++          {busy ? (
++            <ActivityIndicator color="#fff" size="small" />
++          ) : (
++            <Text style={styles.primaryButtonText}>Accept</Text>
++          )}
++        </Pressable>
++
++        <Pressable
++          disabled={busy}
++          onPress={onDecline}
++          style={({ pressed }) => [
++            styles.secondaryButton,
++            (pressed || busy) && styles.buttonPressed,
++          ]}
++        >
++          <Text style={styles.secondaryButtonText}>Decline</Text>
++        </Pressable>
++      </View>
++    );
++  }
++
++  if (relationship === 'mutual') {
++    return (
++      <View style={styles.actionsRow}>
++        <Pressable
++          disabled={busy}
++          onPress={onConnect}
++          style={({ pressed }) => [
++            styles.primaryButton,
++            (pressed || busy) && styles.buttonPressed,
++          ]}
++        >
++          {busy ? (
++            <ActivityIndicator color="#fff" size="small" />
++          ) : (
++            <Text style={styles.primaryButtonText}>Connect</Text>
++          )}
++        </Pressable>
++      </View>
++    );
++  }
++
++  return null;
++}
++
++export function ProfileHeader({
++  profile,
++  isSelf,
++  busy = false,
++  onEdit,
++  onConnect,
++  onAccept,
++  onDecline,
++}) {
++  const displayName = profile.display_name || (isSelf ? 'You' : 'User');
++  const username = profile.username ? `@${profile.username}` : null;
++
++  return (
++    <View style={styles.root}>
++      <View style={styles.identityRow}>
++        <Avatar
++          size={88}
++          name={displayName}
++          uri={profile.avatar_url}
++        />
++
++        <View style={styles.identityText}>
++          <Text style={styles.name} numberOfLines={1}>
++            {displayName}
++          </Text>
++
++          {username ? (
++            <Text style={styles.username} numberOfLines={1}>
++              {username}
++            </Text>
++          ) : isSelf ? (
++            <Text style={styles.usernameHint}>Add a username</Text>
++          ) : null}
++        </View>
++      </View>
++
++      {profile.bio ? (
++        <Text style={styles.bio}>{profile.bio}</Text>
++      ) : isSelf ? (
++        <Text style={styles.bioHint}>Add a short bio so your circle knows it’s you.</Text>
++      ) : null}
++
++      <View style={styles.statsRow}>
++        <Stat value={profile.post_count || 0} label="Posts" />
++        <View style={styles.statDivider} />
++        <Stat value={profile.connection_count || 0} label="Connections" />
++      </View>
++
++      {isSelf ? (
++        <View style={styles.actionsRow}>
++          <Pressable
++            onPress={onEdit}
++            style={({ pressed }) => [
++              styles.secondaryButton,
++              pressed && styles.buttonPressed,
++            ]}
++          >
++            <Text style={styles.secondaryButtonText}>Edit profile</Text>
++          </Pressable>
++        </View>
++      ) : (
++        <RelationshipActions
++          profile={profile}
++          busy={busy}
++          onConnect={onConnect}
++          onAccept={onAccept}
++          onDecline={onDecline}
++        />
++      )}
++    </View>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    paddingHorizontal: 18,
++    paddingTop: 14,
++    paddingBottom: 16,
++  },
++  identityRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++  },
++  identityText: {
++    flex: 1,
++    marginLeft: 16,
++  },
++  name: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 22,
++  },
++  username: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    marginTop: 3,
++  },
++  usernameHint: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    marginTop: 3,
++  },
++  bio: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    marginTop: 14,
++    lineHeight: 21,
++  },
++  bioHint: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    marginTop: 14,
++    lineHeight: 21,
++  },
++  statsRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    marginTop: 18,
++    paddingVertical: 12,
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++  },
++  stat: {
++    flex: 1,
++    alignItems: 'center',
++  },
++  statValue: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 17,
++  },
++  statLabel: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    marginTop: 2,
++  },
++  statDivider: {
++    width: StyleSheet.hairlineWidth,
++    height: 32,
++    backgroundColor: COLORS.border,
++  },
++  actionsRow: {
++    flexDirection: 'row',
++    gap: 10,
++    marginTop: 14,
++  },
++  primaryButton: {
++    flex: 1,
++    minHeight: 44,
++    borderRadius: 12,
++    backgroundColor: COLORS.primary,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 14,
++  },
++  primaryButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  secondaryButton: {
++    flex: 1,
++    minHeight: 44,
++    borderRadius: 12,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 14,
++  },
++  secondaryButtonText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  connectedButton: {
++    flex: 1,
++    minHeight: 44,
++    borderRadius: 12,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    backgroundColor: '#f7f7f7',
++    alignItems: 'center',
++    justifyContent: 'center',
++    flexDirection: 'row',
++    gap: 7,
++    paddingHorizontal: 14,
++  },
++  connectedButtonText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  buttonPressed: {
++    opacity: 0.7,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/src/components/profile/ProfilePostGridItem.js b/src/components/profile/ProfilePostGridItem.js
+--- a/src/components/profile/ProfilePostGridItem.js	1970-01-01 00:00:00.000000000 +0000
++++ b/src/components/profile/ProfilePostGridItem.js	2026-07-20 20:00:09.804923401 +0000
+@@ -0,0 +1,99 @@
++import React from 'react';
++import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { COLORS } from '../../theme/colors';
++
++export function ProfilePostGridItem({ post, onPress }) {
++  const isVideo = post.mediaType === 'video';
++
++  return (
++    <Pressable
++      onPress={onPress}
++      style={({ pressed }) => [
++        styles.root,
++        pressed && styles.pressed,
++      ]}
++    >
++      {post.previewUrl && !isVideo ? (
++        <Image
++          source={{ uri: post.previewUrl }}
++          style={StyleSheet.absoluteFillObject}
++          resizeMode="cover"
++        />
++      ) : (
++        <View style={styles.videoFallback}>
++          <Ionicons name="play" size={30} color="#fff" />
++          <Text style={styles.videoLabel}>Video</Text>
++        </View>
++      )}
++
++      {isVideo ? (
++        <View style={styles.videoBadge}>
++          <Ionicons name="videocam" size={14} color="#fff" />
++        </View>
++      ) : null}
++
++      {post.mediaCount > 1 ? (
++        <View style={styles.mediaCountBadge}>
++          <Ionicons name="copy-outline" size={14} color="#fff" />
++          <Text style={styles.mediaCountText}>{post.mediaCount}</Text>
++        </View>
++      ) : null}
++    </Pressable>
++  );
++}
++
++const styles = StyleSheet.create({
++  root: {
++    flex: 1 / 3,
++    maxWidth: '33.333333%',
++    aspectRatio: 1,
++    backgroundColor: '#efefef',
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.bg,
++    overflow: 'hidden',
++  },
++  pressed: {
++    opacity: 0.82,
++  },
++  videoFallback: {
++    ...StyleSheet.absoluteFillObject,
++    backgroundColor: '#222',
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  videoLabel: {
++    color: '#fff',
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 11,
++    marginTop: 3,
++  },
++  videoBadge: {
++    position: 'absolute',
++    top: 7,
++    right: 7,
++    width: 25,
++    height: 25,
++    borderRadius: 13,
++    backgroundColor: 'rgba(0,0,0,0.62)',
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  mediaCountBadge: {
++    position: 'absolute',
++    left: 7,
++    bottom: 7,
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 4,
++    borderRadius: 10,
++    backgroundColor: 'rgba(0,0,0,0.62)',
++    paddingHorizontal: 7,
++    paddingVertical: 4,
++  },
++  mediaCountText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 11,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/src/screens/profile/AccountSettingsScreen.js b/src/screens/profile/AccountSettingsScreen.js
+--- a/src/screens/profile/AccountSettingsScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ b/src/screens/profile/AccountSettingsScreen.js	2026-07-20 20:04:17.902271451 +0000
+@@ -0,0 +1,304 @@
++import React, { useEffect, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Platform,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { COLORS } from '../../theme/colors';
++import { IS_DEVELOPMENT } from '../../config/env';
++import { getAccountSession, signOut } from '../../services/profileService';
++
++function SettingRow({ icon, title, subtitle, onPress, destructive = false }) {
++  const content = (
++    <>
++      <View style={[styles.rowIcon, destructive && styles.rowIconDestructive]}>
++        <Ionicons
++          name={icon}
++          size={19}
++          color={destructive ? '#b42318' : COLORS.text}
++        />
++      </View>
++      <View style={styles.rowText}>
++        <Text style={[styles.rowTitle, destructive && styles.destructiveText]}>
++          {title}
++        </Text>
++        {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
++      </View>
++      {onPress ? (
++        <Ionicons name="chevron-forward" size={18} color="#9a9a9a" />
++      ) : null}
++    </>
++  );
++
++  if (!onPress) {
++    return <View style={styles.row}>{content}</View>;
++  }
++
++  return (
++    <Pressable
++      onPress={onPress}
++      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
++    >
++      {content}
++    </Pressable>
++  );
++}
++
++export function AccountSettingsScreen({ navigation }) {
++  const [session, setSession] = useState(null);
++  const [loading, setLoading] = useState(true);
++  const [signingOut, setSigningOut] = useState(false);
++
++  useEffect(() => {
++    let mounted = true;
++
++    getAccountSession()
++      .then((result) => {
++        if (mounted) setSession(result);
++      })
++      .catch((error) => {
++        Alert.alert('Account unavailable', error?.message || 'Please sign in again.');
++      })
++      .finally(() => {
++        if (mounted) setLoading(false);
++      });
++
++    return () => {
++      mounted = false;
++    };
++  }, []);
++
++  const accountIdentifier =
++    session?.user?.phone || session?.user?.email || 'Signed-in account';
++
++  const performSignOut = async () => {
++    setSigningOut(true);
++    try {
++      await signOut();
++      navigation.reset({
++        index: 0,
++        routes: [{ name: 'Gate' }],
++      });
++    } catch (error) {
++      Alert.alert(
++        'Could not sign out',
++        error?.message || 'Please try again.'
++      );
++    } finally {
++      setSigningOut(false);
++    }
++  };
++
++  const confirmSignOut = () => {
++    if (Platform.OS === 'web') {
++      const confirmed = globalThis.confirm?.(
++        'Sign out of Circles? You will need to verify your account again to return.'
++      );
++      if (confirmed) performSignOut();
++      return;
++    }
++
++    Alert.alert(
++      'Sign out of Circles?',
++      'You will need to verify your account again to return.',
++      [
++        { text: 'Cancel', style: 'cancel' },
++        {
++          text: 'Sign out',
++          style: 'destructive',
++          onPress: performSignOut,
++        },
++      ]
++    );
++  };
++
++  return (
++    <SafeAreaView edges={['top']} style={styles.screen}>
++      <View style={styles.topBar}>
++        <Pressable
++          onPress={() => navigation.goBack()}
++          hitSlop={10}
++          style={styles.topBarSide}
++        >
++          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
++        </Pressable>
++        <Text style={styles.topBarTitle}>Settings</Text>
++        <View style={styles.topBarSide} />
++      </View>
++
++      {loading ? (
++        <View style={styles.loadingRoot}>
++          <ActivityIndicator />
++        </View>
++      ) : (
++        <ScrollView contentContainerStyle={styles.content}>
++          <Text style={styles.sectionLabel}>PROFILE</Text>
++          <View style={styles.section}>
++            <SettingRow
++              icon="person-outline"
++              title="Edit profile"
++              subtitle="Name, username, photo, and bio"
++              onPress={() => navigation.navigate('EditProfile')}
++            />
++          </View>
++
++          <Text style={styles.sectionLabel}>ACCOUNT</Text>
++          <View style={styles.section}>
++            <SettingRow
++              icon="shield-checkmark-outline"
++              title="Signed in"
++              subtitle={accountIdentifier}
++            />
++            <View style={styles.separator} />
++            <SettingRow
++              icon="lock-closed-outline"
++              title="Private by design"
++              subtitle="Profiles and posts are intended for mutuals and accepted connections."
++            />
++          </View>
++
++          <Text style={styles.sectionLabel}>APP</Text>
++          <View style={styles.section}>
++            <SettingRow
++              icon="information-circle-outline"
++              title="Circles"
++              subtitle={IS_DEVELOPMENT ? 'Development build' : 'Production build'}
++            />
++          </View>
++
++          <View style={styles.section}>
++            <SettingRow
++              icon="log-out-outline"
++              title={signingOut ? 'Signing out…' : 'Sign out'}
++              destructive
++              onPress={signingOut ? undefined : confirmSignOut}
++            />
++          </View>
++
++          <Text style={styles.footerText}>
++            Circles is built for the people you actually know—not public discovery.
++          </Text>
++        </ScrollView>
++      )}
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: '#f7f7f7',
++  },
++  topBar: {
++    minHeight: 52,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 10,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++  },
++  topBarSide: {
++    width: 52,
++    height: 42,
++    alignItems: 'flex-start',
++    justifyContent: 'center',
++  },
++  topBarTitle: {
++    flex: 1,
++    textAlign: 'center',
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 16,
++  },
++  loadingRoot: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  content: {
++    width: '100%',
++    maxWidth: 680,
++    alignSelf: 'center',
++    paddingHorizontal: 16,
++    paddingTop: 18,
++    paddingBottom: 44,
++  },
++  sectionLabel: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 11,
++    letterSpacing: 0.6,
++    marginLeft: 4,
++    marginBottom: 7,
++    marginTop: 6,
++  },
++  section: {
++    borderRadius: 14,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++    backgroundColor: COLORS.bg,
++    overflow: 'hidden',
++    marginBottom: 20,
++  },
++  row: {
++    minHeight: 66,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 14,
++    paddingVertical: 11,
++  },
++  rowPressed: {
++    backgroundColor: '#f5f5f5',
++  },
++  rowIcon: {
++    width: 36,
++    height: 36,
++    borderRadius: 10,
++    backgroundColor: '#f1f1f1',
++    alignItems: 'center',
++    justifyContent: 'center',
++    marginRight: 12,
++  },
++  rowIconDestructive: {
++    backgroundColor: '#fff1f0',
++  },
++  rowText: {
++    flex: 1,
++    paddingRight: 8,
++  },
++  rowTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  rowSubtitle: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 17,
++    marginTop: 2,
++  },
++  destructiveText: {
++    color: '#b42318',
++  },
++  separator: {
++    height: StyleSheet.hairlineWidth,
++    backgroundColor: COLORS.border,
++    marginLeft: 62,
++  },
++  footerText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 18,
++    textAlign: 'center',
++    paddingHorizontal: 20,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/src/screens/profile/EditProfileScreen.js b/src/screens/profile/EditProfileScreen.js
+--- a/src/screens/profile/EditProfileScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ b/src/screens/profile/EditProfileScreen.js	2026-07-20 20:02:22.271716409 +0000
+@@ -0,0 +1,443 @@
++import React, { useEffect, useMemo, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  KeyboardAvoidingView,
++  Platform,
++  Pressable,
++  ScrollView,
++  StyleSheet,
++  Text,
++  TextInput,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import * as ImagePicker from 'expo-image-picker';
++import { Avatar } from '../../components/Avatar';
++import { COLORS } from '../../theme/colors';
++import {
++  fetchMyEditableProfile,
++  normalizeUsername,
++  saveMyProfile,
++  validateProfileInput,
++} from '../../services/profileService';
++
++const BIO_LIMIT = 160;
++const NAME_LIMIT = 40;
++const USERNAME_LIMIT = 24;
++
++export function EditProfileScreen({ navigation }) {
++  const [displayName, setDisplayName] = useState('');
++  const [username, setUsername] = useState('');
++  const [bio, setBio] = useState('');
++  const [avatarUri, setAvatarUri] = useState(null);
++  const [avatarMimeType, setAvatarMimeType] = useState('image/jpeg');
++  const [loading, setLoading] = useState(true);
++  const [saving, setSaving] = useState(false);
++  const [savePhase, setSavePhase] = useState('');
++
++  useEffect(() => {
++    let mounted = true;
++
++    (async () => {
++      try {
++        const profile = await fetchMyEditableProfile();
++        if (!mounted) return;
++
++        setDisplayName(profile.display_name || '');
++        setUsername(profile.username || '');
++        setBio(profile.bio || '');
++        setAvatarUri(profile.avatar_url || null);
++      } catch (error) {
++        Alert.alert(
++          'Profile unavailable',
++          error?.message || 'Please sign in again.'
++        );
++      } finally {
++        if (mounted) setLoading(false);
++      }
++    })();
++
++    return () => {
++      mounted = false;
++    };
++  }, []);
++
++  const normalizedUsername = useMemo(
++    () => normalizeUsername(username),
++    [username]
++  );
++
++  const onPickAvatar = async () => {
++    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
++
++    if (status !== 'granted') {
++      Alert.alert(
++        'Photo access needed',
++        'Allow photo access to choose a profile picture.'
++      );
++      return;
++    }
++
++    const result = await ImagePicker.launchImageLibraryAsync({
++      mediaTypes: ImagePicker.MediaTypeOptions.Images,
++      allowsMultipleSelection: false,
++      allowsEditing: true,
++      aspect: [1, 1],
++      quality: 0.9,
++    });
++
++    if (result.canceled) return;
++
++    const asset = result.assets[0];
++    setAvatarUri(asset.uri);
++    setAvatarMimeType(asset.mimeType || 'image/jpeg');
++  };
++
++  const onSave = async () => {
++    if (saving) return;
++
++    try {
++      validateProfileInput({ displayName, username, bio });
++    } catch (validationError) {
++      Alert.alert('Check your profile', validationError.message);
++      return;
++    }
++
++    setSaving(true);
++    setSavePhase('Saving profile…');
++
++    try {
++      await saveMyProfile({
++        displayName,
++        username,
++        bio,
++        avatarUri,
++        avatarMimeType,
++        onPhaseChange: setSavePhase,
++      });
++
++      navigation.goBack();
++    } catch (error) {
++      Alert.alert(
++        'Could not save profile',
++        error?.message || 'Please try again.'
++      );
++    } finally {
++      setSaving(false);
++      setSavePhase('');
++    }
++  };
++
++  if (loading) {
++    return (
++      <SafeAreaView edges={['top']} style={styles.centeredRoot}>
++        <ActivityIndicator />
++        <Text style={styles.loadingText}>Loading profile…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  return (
++    <SafeAreaView edges={['top']} style={styles.screen}>
++      <View style={styles.topBar}>
++        <Pressable
++          onPress={() => navigation.goBack()}
++          hitSlop={10}
++          style={styles.topBarSide}
++        >
++          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
++        </Pressable>
++
++        <Text style={styles.topBarTitle}>Edit profile</Text>
++
++        <Pressable
++          onPress={onSave}
++          disabled={saving}
++          hitSlop={10}
++          style={[styles.topBarSide, styles.topBarSave]}
++        >
++          {saving ? (
++            <ActivityIndicator size="small" color={COLORS.text} />
++          ) : (
++            <Text style={styles.topBarSaveText}>Save</Text>
++          )}
++        </Pressable>
++      </View>
++
++      <KeyboardAvoidingView
++        style={styles.flex}
++        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
++      >
++        <ScrollView
++          keyboardShouldPersistTaps="handled"
++          contentContainerStyle={styles.content}
++        >
++          <View style={styles.avatarSection}>
++            <Pressable onPress={onPickAvatar} style={styles.avatarButton}>
++              <Avatar
++                size={108}
++                name={displayName || 'You'}
++                uri={avatarUri}
++              />
++              <View style={styles.cameraBadge}>
++                <Ionicons name="camera" size={17} color="#fff" />
++              </View>
++            </Pressable>
++
++            <Pressable onPress={onPickAvatar} style={styles.changePhotoButton}>
++              <Text style={styles.changePhotoText}>Change profile photo</Text>
++            </Pressable>
++          </View>
++
++          <View style={styles.fieldGroup}>
++            <View style={styles.fieldLabelRow}>
++              <Text style={styles.label}>Display name</Text>
++              <Text style={styles.counter}>{displayName.length}/{NAME_LIMIT}</Text>
++            </View>
++            <TextInput
++              value={displayName}
++              onChangeText={(value) => setDisplayName(value.slice(0, NAME_LIMIT))}
++              placeholder="Your name"
++              placeholderTextColor="#9a9a9a"
++              autoCapitalize="words"
++              style={styles.input}
++            />
++          </View>
++
++          <View style={styles.fieldGroup}>
++            <View style={styles.fieldLabelRow}>
++              <Text style={styles.label}>Username</Text>
++              <Text style={styles.counter}>{normalizedUsername.length}/{USERNAME_LIMIT}</Text>
++            </View>
++            <View style={styles.usernameInputWrap}>
++              <Text style={styles.atSign}>@</Text>
++              <TextInput
++                value={username}
++                onChangeText={(value) => setUsername(value.slice(0, USERNAME_LIMIT + 1))}
++                onBlur={() => setUsername(normalizedUsername)}
++                placeholder="yourname"
++                placeholderTextColor="#9a9a9a"
++                autoCapitalize="none"
++                autoCorrect={false}
++                style={styles.usernameInput}
++              />
++            </View>
++            <Text style={styles.helperText}>
++              Lowercase letters, numbers, periods, and underscores. Usernames are optional and unique.
++            </Text>
++          </View>
++
++          <View style={styles.fieldGroup}>
++            <View style={styles.fieldLabelRow}>
++              <Text style={styles.label}>Bio</Text>
++              <Text style={styles.counter}>{bio.length}/{BIO_LIMIT}</Text>
++            </View>
++            <TextInput
++              value={bio}
++              onChangeText={(value) => setBio(value.slice(0, BIO_LIMIT))}
++              placeholder="A little about you"
++              placeholderTextColor="#9a9a9a"
++              multiline
++              textAlignVertical="top"
++              style={[styles.input, styles.bioInput]}
++            />
++          </View>
++
++          {saving ? (
++            <View style={styles.savingStatus}>
++              <ActivityIndicator size="small" />
++              <Text style={styles.savingStatusText}>{savePhase}</Text>
++            </View>
++          ) : null}
++
++          <Pressable
++            onPress={onSave}
++            disabled={saving}
++            style={({ pressed }) => [
++              styles.saveButton,
++              (pressed || saving) && styles.pressed,
++            ]}
++          >
++            {saving ? (
++              <ActivityIndicator color="#fff" />
++            ) : (
++              <Text style={styles.saveButtonText}>Save changes</Text>
++            )}
++          </Pressable>
++        </ScrollView>
++      </KeyboardAvoidingView>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  flex: { flex: 1 },
++  screen: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  centeredRoot: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: COLORS.bg,
++  },
++  loadingText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    marginTop: 10,
++  },
++  topBar: {
++    minHeight: 52,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 10,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.border,
++  },
++  topBarSide: {
++    width: 54,
++    height: 42,
++    alignItems: 'flex-start',
++    justifyContent: 'center',
++  },
++  topBarTitle: {
++    flex: 1,
++    textAlign: 'center',
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 16,
++  },
++  topBarSave: {
++    alignItems: 'flex-end',
++  },
++  topBarSaveText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  content: {
++    width: '100%',
++    maxWidth: 620,
++    alignSelf: 'center',
++    paddingHorizontal: 18,
++    paddingTop: 18,
++    paddingBottom: 50,
++  },
++  avatarSection: {
++    alignItems: 'center',
++    marginBottom: 26,
++  },
++  avatarButton: {
++    position: 'relative',
++  },
++  cameraBadge: {
++    position: 'absolute',
++    right: 2,
++    bottom: 4,
++    width: 34,
++    height: 34,
++    borderRadius: 17,
++    backgroundColor: COLORS.primary,
++    borderWidth: 3,
++    borderColor: COLORS.bg,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  changePhotoButton: {
++    marginTop: 11,
++    paddingHorizontal: 12,
++    paddingVertical: 7,
++  },
++  changePhotoText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  fieldGroup: {
++    marginBottom: 18,
++  },
++  fieldLabelRow: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    marginBottom: 7,
++  },
++  label: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++  },
++  counter: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++  },
++  input: {
++    minHeight: 48,
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    borderRadius: 12,
++    paddingHorizontal: 13,
++    paddingVertical: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++    backgroundColor: COLORS.bg,
++  },
++  usernameInputWrap: {
++    minHeight: 48,
++    flexDirection: 'row',
++    alignItems: 'center',
++    borderWidth: 1,
++    borderColor: COLORS.border,
++    borderRadius: 12,
++    paddingHorizontal: 13,
++    backgroundColor: COLORS.bg,
++  },
++  atSign: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_600SemiBold',
++    fontSize: 16,
++    marginRight: 3,
++  },
++  usernameInput: {
++    flex: 1,
++    paddingVertical: 12,
++    color: COLORS.text,
++    fontFamily: 'Manrope_400Regular',
++  },
++  helperText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    fontSize: 12,
++    lineHeight: 17,
++    marginTop: 7,
++  },
++  bioInput: {
++    minHeight: 110,
++  },
++  savingStatus: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    gap: 8,
++    marginBottom: 12,
++  },
++  savingStatusText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  saveButton: {
++    minHeight: 48,
++    alignItems: 'center',
++    justifyContent: 'center',
++    borderRadius: 12,
++    backgroundColor: COLORS.primary,
++  },
++  saveButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  pressed: {
++    opacity: 0.72,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/src/screens/profile/MeScreen.js b/src/screens/profile/MeScreen.js
+--- a/src/screens/profile/MeScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ b/src/screens/profile/MeScreen.js	2026-07-20 20:00:59.476009178 +0000
+@@ -0,0 +1,11 @@
++import React from 'react';
++import { ProfileViewScreen } from './ProfileViewScreen';
++
++export function MeScreen({ navigation }) {
++  return (
++    <ProfileViewScreen
++      navigation={navigation}
++      isSelf
++    />
++  );
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/src/screens/profile/ProfileScreen.js b/src/screens/profile/ProfileScreen.js
+--- a/src/screens/profile/ProfileScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ b/src/screens/profile/ProfileScreen.js	2026-07-20 20:00:59.486381187 +0000
+@@ -0,0 +1,11 @@
++import React from 'react';
++import { ProfileViewScreen } from './ProfileViewScreen';
++
++export function ProfileScreen({ navigation, route }) {
++  return (
++    <ProfileViewScreen
++      navigation={navigation}
++      userId={route?.params?.userId}
++    />
++  );
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/src/screens/profile/ProfileViewScreen.js b/src/screens/profile/ProfileViewScreen.js
+--- a/src/screens/profile/ProfileViewScreen.js	1970-01-01 00:00:00.000000000 +0000
++++ b/src/screens/profile/ProfileViewScreen.js	2026-07-20 20:08:08.058481774 +0000
+@@ -0,0 +1,399 @@
++import React, { useCallback, useEffect, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  FlatList,
++  Platform,
++  Pressable,
++  RefreshControl,
++  StyleSheet,
++  Text,
++  View,
++} from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { COLORS } from '../../theme/colors';
++import { ProfileHeader } from '../../components/profile/ProfileHeader';
++import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
++import {
++  fetchProfilePage,
++  respondToProfileRequest,
++  sendProfileConnectionRequest,
++} from '../../services/profileService';
++
++function TopBar({ isSelf, profile, navigation }) {
++  const title = isSelf
++    ? profile?.username
++      ? `@${profile.username}`
++      : 'Your profile'
++    : profile?.username
++      ? `@${profile.username}`
++      : profile?.display_name || 'Profile';
++
++  return (
++    <View style={styles.topBar}>
++      <View style={styles.topBarSide}>
++        {!isSelf ? (
++          <Pressable
++            onPress={() => navigation.goBack()}
++            hitSlop={10}
++            style={styles.iconButton}
++          >
++            <Ionicons name="chevron-back" size={24} color={COLORS.text} />
++          </Pressable>
++        ) : null}
++      </View>
++
++      <Text style={styles.topBarTitle} numberOfLines={1}>
++        {title}
++      </Text>
++
++      <View style={[styles.topBarSide, styles.topBarRight]}>
++        {isSelf ? (
++          <Pressable
++            onPress={() => navigation.navigate('AccountSettings')}
++            hitSlop={10}
++            style={styles.iconButton}
++          >
++            <Ionicons name="settings-outline" size={22} color={COLORS.text} />
++          </Pressable>
++        ) : null}
++      </View>
++    </View>
++  );
++}
++
++function EmptyPosts({ isSelf, canViewPosts, onCreatePost }) {
++  if (!canViewPosts) {
++    return (
++      <View style={styles.emptyRoot}>
++        <Ionicons name="lock-closed-outline" size={34} color={COLORS.subtext} />
++        <Text style={styles.emptyTitle}>Private posts</Text>
++        <Text style={styles.emptyText}>
++          Connect with this person to see what they share with their circles.
++        </Text>
++      </View>
++    );
++  }
++
++  return (
++    <View style={styles.emptyRoot}>
++      <Ionicons
++        name={isSelf ? 'images-outline' : 'camera-outline'}
++        size={36}
++        color={COLORS.subtext}
++      />
++      <Text style={styles.emptyTitle}>
++        {isSelf ? 'Share your first moment' : 'No posts yet'}
++      </Text>
++      <Text style={styles.emptyText}>
++        {isSelf
++          ? 'Your posts will appear here for the people in your circles.'
++          : 'Their posts will appear here when they share something.'}
++      </Text>
++
++      {isSelf ? (
++        <Pressable
++          onPress={onCreatePost}
++          style={({ pressed }) => [
++            styles.emptyButton,
++            pressed && styles.pressed,
++          ]}
++        >
++          <Text style={styles.emptyButtonText}>Create a post</Text>
++        </Pressable>
++      ) : null}
++    </View>
++  );
++}
++
++export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
++  const [profile, setProfile] = useState(null);
++  const [posts, setPosts] = useState([]);
++  const [loading, setLoading] = useState(true);
++  const [refreshing, setRefreshing] = useState(false);
++  const [error, setError] = useState('');
++  const [actionBusy, setActionBusy] = useState(false);
++
++  const load = useCallback(async ({ refresh = false } = {}) => {
++    if (refresh) setRefreshing(true);
++    else setLoading(true);
++
++    setError('');
++
++    try {
++      const result = await fetchProfilePage(userId);
++      setProfile(result.profile);
++      setPosts(result.posts);
++    } catch (loadError) {
++      setError(loadError?.message || 'Failed to load profile.');
++    } finally {
++      setLoading(false);
++      setRefreshing(false);
++    }
++  }, [userId]);
++
++  useEffect(() => {
++    load();
++  }, [load]);
++
++  useEffect(() => {
++    const unsubscribe = navigation.addListener('focus', () => {
++      load({ refresh: true });
++    });
++
++    return unsubscribe;
++  }, [navigation, load]);
++
++  const resolvedIsSelf = isSelf || profile?.relationship_status === 'self';
++
++  const handleConnect = async () => {
++    if (!profile?.id || actionBusy) return;
++
++    setActionBusy(true);
++    try {
++      await sendProfileConnectionRequest(profile.id);
++      await load({ refresh: true });
++    } catch (actionError) {
++      Alert.alert(
++        'Could not send request',
++        actionError?.message || 'Please try again.'
++      );
++    } finally {
++      setActionBusy(false);
++    }
++  };
++
++  const handleRespond = async (action) => {
++    if (!profile?.request_id || actionBusy) return;
++
++    setActionBusy(true);
++    try {
++      await respondToProfileRequest(profile.request_id, action);
++      await load({ refresh: true });
++    } catch (actionError) {
++      Alert.alert(
++        'Could not update request',
++        actionError?.message || 'Please try again.'
++      );
++    } finally {
++      setActionBusy(false);
++    }
++  };
++
++  const header = profile ? (
++    <>
++      <TopBar
++        isSelf={resolvedIsSelf}
++        profile={profile}
++        navigation={navigation}
++      />
++
++      <ProfileHeader
++        profile={profile}
++        isSelf={resolvedIsSelf}
++        busy={actionBusy}
++        onEdit={() => navigation.navigate('EditProfile')}
++        onConnect={handleConnect}
++        onAccept={() => handleRespond('accept')}
++        onDecline={() => handleRespond('decline')}
++      />
++
++      <View style={styles.gridHeading}>
++        <Ionicons name="grid-outline" size={18} color={COLORS.text} />
++        <Text style={styles.gridHeadingText}>Posts</Text>
++      </View>
++    </>
++  ) : null;
++
++  if (loading && !profile) {
++    return (
++      <SafeAreaView edges={['top']} style={styles.centeredRoot}>
++        <ActivityIndicator />
++        <Text style={styles.loadingText}>Loading profile…</Text>
++      </SafeAreaView>
++    );
++  }
++
++  if (error && !profile) {
++    return (
++      <SafeAreaView edges={['top']} style={styles.centeredRoot}>
++        {!isSelf ? (
++          <Pressable
++            onPress={() => navigation.goBack()}
++            style={styles.errorBack}
++            hitSlop={10}
++          >
++            <Ionicons name="chevron-back" size={24} color={COLORS.text} />
++          </Pressable>
++        ) : null}
++        <Ionicons name="alert-circle-outline" size={38} color={COLORS.subtext} />
++        <Text style={styles.emptyTitle}>Profile unavailable</Text>
++        <Text style={styles.emptyText}>{error}</Text>
++        <Pressable
++          onPress={() => load()}
++          style={({ pressed }) => [styles.emptyButton, pressed && styles.pressed]}
++        >
++          <Text style={styles.emptyButtonText}>Try again</Text>
++        </Pressable>
++      </SafeAreaView>
++    );
++  }
++
++  return (
++    <SafeAreaView edges={['top']} style={styles.screen}>
++      <View style={styles.contentWidth}>
++        <FlatList
++          data={posts}
++          keyExtractor={(item) => item.id}
++          numColumns={3}
++          ListHeaderComponent={header}
++          renderItem={({ item }) => (
++            <ProfilePostGridItem
++              post={item}
++              onPress={() => navigation.navigate('PostDetail', { postId: item.id })}
++            />
++          )}
++          ListEmptyComponent={(
++            <EmptyPosts
++              isSelf={resolvedIsSelf}
++              canViewPosts={Boolean(profile?.can_view_posts)}
++              onCreatePost={() => navigation.navigate('CreatePost')}
++            />
++          )}
++          refreshControl={(
++            <RefreshControl
++              refreshing={refreshing}
++              onRefresh={() => load({ refresh: true })}
++              tintColor={COLORS.text}
++            />
++          )}
++          contentContainerStyle={styles.listContent}
++          showsVerticalScrollIndicator={false}
++        />
++      </View>
++    </SafeAreaView>
++  );
++}
++
++const styles = StyleSheet.create({
++  screen: {
++    flex: 1,
++    backgroundColor: COLORS.bg,
++  },
++  contentWidth: {
++    flex: 1,
++    width: '100%',
++    maxWidth: 720,
++    alignSelf: 'center',
++    borderLeftWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
++    borderRightWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
++    borderColor: COLORS.border,
++  },
++  listContent: {
++    flexGrow: 1,
++    paddingBottom: 42,
++  },
++  topBar: {
++    minHeight: 52,
++    flexDirection: 'row',
++    alignItems: 'center',
++    paddingHorizontal: 10,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderBottomColor: COLORS.border,
++  },
++  topBarSide: {
++    width: 46,
++    alignItems: 'flex-start',
++  },
++  topBarRight: {
++    alignItems: 'flex-end',
++  },
++  topBarTitle: {
++    flex: 1,
++    textAlign: 'center',
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 16,
++  },
++  iconButton: {
++    width: 40,
++    height: 40,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  gridHeading: {
++    height: 46,
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'center',
++    gap: 7,
++    borderTopWidth: StyleSheet.hairlineWidth,
++    borderBottomWidth: StyleSheet.hairlineWidth,
++    borderColor: COLORS.border,
++  },
++  gridHeadingText: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 13,
++  },
++  centeredRoot: {
++    flex: 1,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: COLORS.bg,
++    paddingHorizontal: 28,
++  },
++  loadingText: {
++    marginTop: 10,
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++  },
++  errorBack: {
++    position: 'absolute',
++    top: 8,
++    left: 10,
++    width: 42,
++    height: 42,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  emptyRoot: {
++    minHeight: 250,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 34,
++    paddingVertical: 34,
++  },
++  emptyTitle: {
++    color: COLORS.text,
++    fontFamily: 'Manrope_700Bold',
++    fontSize: 18,
++    marginTop: 12,
++    textAlign: 'center',
++  },
++  emptyText: {
++    color: COLORS.subtext,
++    fontFamily: 'Manrope_400Regular',
++    lineHeight: 21,
++    textAlign: 'center',
++    marginTop: 7,
++    maxWidth: 360,
++  },
++  emptyButton: {
++    minHeight: 42,
++    marginTop: 16,
++    paddingHorizontal: 18,
++    borderRadius: 12,
++    backgroundColor: COLORS.primary,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  emptyButtonText: {
++    color: '#fff',
++    fontFamily: 'Manrope_700Bold',
++  },
++  pressed: {
++    opacity: 0.72,
++  },
++});
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/src/services/profileService.js b/src/services/profileService.js
+--- a/src/services/profileService.js	1970-01-01 00:00:00.000000000 +0000
++++ b/src/services/profileService.js	2026-07-20 19:59:16.375439276 +0000
+@@ -0,0 +1,220 @@
++import { supabase } from '../lib/supabase';
++import { ensureAuthed } from './authService';
++import { uploadToBucket } from './uploadService';
++
++const REMOTE_URI_PATTERN = /^https?:\/\//i;
++
++export function normalizeUsername(value = '') {
++  return value
++    .trim()
++    .replace(/^@+/, '')
++    .toLowerCase();
++}
++
++export function validateProfileInput({ displayName, username, bio }) {
++  const cleanName = displayName.trim();
++  const cleanUsername = normalizeUsername(username);
++  const cleanBio = bio.trim();
++
++  if (!cleanName) {
++    throw new Error('Enter a display name.');
++  }
++
++  if (cleanName.length > 40) {
++    throw new Error('Display name must be 40 characters or fewer.');
++  }
++
++  if (cleanUsername) {
++    if (cleanUsername.length < 3 || cleanUsername.length > 24) {
++      throw new Error('Username must be between 3 and 24 characters.');
++    }
++
++    if (!/^[a-z0-9][a-z0-9._]{1,22}[a-z0-9]$/.test(cleanUsername)) {
++      throw new Error(
++        'Username can use lowercase letters, numbers, periods, and underscores. It must start and end with a letter or number.'
++      );
++    }
++  }
++
++  if (cleanBio.length > 160) {
++    throw new Error('Bio must be 160 characters or fewer.');
++  }
++
++  return {
++    displayName: cleanName,
++    username: cleanUsername,
++    bio: cleanBio,
++  };
++}
++
++function isVideoUrl(url = '') {
++  return /\.(mp4|mov|m4v)(?:$|\?)/i.test(url);
++}
++
++function mapPostPreviews(posts, mediaRows) {
++  const mediaByPost = new Map();
++
++  (mediaRows || []).forEach((media) => {
++    const current = mediaByPost.get(media.post_id) || [];
++    current.push(media);
++    mediaByPost.set(media.post_id, current);
++  });
++
++  return (posts || []).map((post) => {
++    const media = mediaByPost.get(post.id) || [];
++    const first = media[0] || null;
++    const previewUrl = first?.url || post.image_url || null;
++    const mediaType = first?.media_type || (isVideoUrl(previewUrl) ? 'video' : 'image');
++
++    return {
++      ...post,
++      previewUrl,
++      mediaType,
++      mediaCount: media.length || (previewUrl ? 1 : 0),
++    };
++  });
++}
++
++export async function fetchProfileOverview(userId) {
++  const session = await ensureAuthed();
++  const targetUserId = userId || session.user.id;
++
++  const { data, error } = await supabase
++    .rpc('get_profile_overview', {
++      profile_user_id: targetUserId,
++    })
++    .maybeSingle();
++
++  if (error) throw error;
++
++  if (!data) {
++    throw new Error('This profile is private or unavailable.');
++  }
++
++  return data;
++}
++
++export async function fetchProfilePosts(userId) {
++  const { data: posts, error: postsError } = await supabase
++    .from('posts')
++    .select('id, user_id, image_url, caption, created_at')
++    .eq('user_id', userId)
++    .order('created_at', { ascending: false });
++
++  if (postsError) throw postsError;
++
++  const postIds = (posts || []).map((post) => post.id);
++
++  if (!postIds.length) return [];
++
++  const { data: mediaRows, error: mediaError } = await supabase
++    .from('post_media')
++    .select('id, post_id, url, media_type, created_at')
++    .in('post_id', postIds)
++    .order('created_at', { ascending: true });
++
++  if (mediaError) throw mediaError;
++
++  return mapPostPreviews(posts, mediaRows);
++}
++
++export async function fetchProfilePage(userId) {
++  const profile = await fetchProfileOverview(userId);
++  const posts = profile.can_view_posts
++    ? await fetchProfilePosts(profile.id)
++    : [];
++
++  return { profile, posts };
++}
++
++export async function fetchMyEditableProfile() {
++  const session = await ensureAuthed();
++
++  const { data, error } = await supabase
++    .from('users')
++    .select('id, display_name, username, avatar_url, bio')
++    .eq('id', session.user.id)
++    .maybeSingle();
++
++  if (error) throw error;
++
++  return {
++    id: session.user.id,
++    display_name: data?.display_name || '',
++    username: data?.username || '',
++    avatar_url: data?.avatar_url || null,
++    bio: data?.bio || '',
++  };
++}
++
++export async function saveMyProfile({
++  displayName,
++  username,
++  bio,
++  avatarUri,
++  avatarMimeType = 'image/jpeg',
++  onPhaseChange,
++}) {
++  const clean = validateProfileInput({ displayName, username, bio });
++  const session = await ensureAuthed();
++  let avatarUrl = avatarUri || null;
++
++  if (avatarUri && !REMOTE_URI_PATTERN.test(avatarUri)) {
++    onPhaseChange?.('Uploading photo…');
++    avatarUrl = await uploadToBucket(
++      avatarUri,
++      'avatars',
++      avatarMimeType,
++      { folder: session.user.id }
++    );
++  }
++
++  onPhaseChange?.('Saving profile…');
++
++  const { data, error } = await supabase
++    .rpc('update_my_profile', {
++      p_display_name: clean.displayName,
++      p_username: clean.username || null,
++      p_bio: clean.bio || null,
++      p_avatar_url: avatarUrl,
++    })
++    .single();
++
++  if (error) {
++    if (error.code === '23505' || /username.*taken/i.test(error.message || '')) {
++      throw new Error('That username is already taken.');
++    }
++
++    throw error;
++  }
++
++  return data;
++}
++
++export async function sendProfileConnectionRequest(userId) {
++  const { error } = await supabase.rpc('send_connection_request', {
++    to_user_id: userId,
++    note: null,
++  });
++
++  if (error) throw error;
++}
++
++export async function respondToProfileRequest(requestId, action) {
++  const { error } = await supabase.rpc('respond_connection_request', {
++    req_id: requestId,
++    action,
++  });
++
++  if (error) throw error;
++}
++
++export async function getAccountSession() {
++  const session = await ensureAuthed();
++  return session;
++}
++
++export async function signOut() {
++  const { error } = await supabase.auth.signOut();
++  if (error) throw error;
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/src/services/uploadService.js b/src/services/uploadService.js
+--- a/src/services/uploadService.js	2026-07-20 19:53:23.493833827 +0000
++++ b/src/services/uploadService.js	2026-07-20 19:59:29.113391918 +0000
+@@ -32,10 +32,18 @@
+   };
+ }
+ 
++function sanitizeFolder(folder) {
++  return String(folder || '')
++    .trim()
++    .replace(/^\/+|\/+$/g, '')
++    .replace(/[^a-zA-Z0-9/_-]/g, '');
++}
++
+ export async function uploadToBucket(
+   uri,
+   bucket,
+-  mimeHint = 'image/jpeg'
++  mimeHint = 'image/jpeg',
++  options = {}
+ ) {
+   await ensureAuthed();
+ 
+@@ -46,7 +54,9 @@
+ 
+   const mime = normalizeMime(rawMime);
+   const extension = mime.startsWith('video/') ? 'mp4' : 'jpg';
+-  const path = `${Date.now()}_${Math.floor(Math.random() * 1e6)}.${extension}`;
++  const folder = sanitizeFolder(options.folder);
++  const filename = `${Date.now()}_${Math.floor(Math.random() * 1e6)}.${extension}`;
++  const path = folder ? `${folder}/${filename}` : filename;
+ 
+   const base64 = await FileSystem.readAsStringAsync(uploadUri, {
+     encoding: 'base64',
+diff -ruN '--exclude=node_modules' '--exclude=dist-test' '--exclude=*.patch' a/supabase/migrations/20260720_002_profile_accounts.sql b/supabase/migrations/20260720_002_profile_accounts.sql
+--- a/supabase/migrations/20260720_002_profile_accounts.sql	1970-01-01 00:00:00.000000000 +0000
++++ b/supabase/migrations/20260720_002_profile_accounts.sql	2026-07-20 20:05:17.759703354 +0000
+@@ -0,0 +1,339 @@
++-- Circles profile/account foundation
++-- Adds optional unique usernames and privacy-aware profile RPCs.
++
++alter table public.users
++  add column if not exists username text;
++
++
++-- A mutual contact is only a candidate. Content access begins after the
++-- connection request is accepted and the symmetric connections rows exist.
++create or replace function public.is_connected(a uuid, b uuid)
++returns boolean
++language sql
++stable
++set search_path = public
++as $$
++  select
++    a = b
++    or exists (
++      select 1
++      from public.connections c
++      where c.user_id = a
++        and c.other_user_id = b
++    )
++    or exists (
++      select 1
++      from public.connection_requests r
++      where r.status = 'accepted'
++        and (
++          (r.from_user = a and r.to_user = b)
++          or
++          (r.from_user = b and r.to_user = a)
++        )
++    );
++$$;
++
++-- These RPCs are security definer functions, so they must explicitly enforce
++-- Circles privacy instead of relying on table RLS underneath them.
++create or replace function public.get_active_stories()
++returns table (
++  id uuid,
++  user_id uuid,
++  url text,
++  media_type text,
++  created_at timestamptz,
++  display_name text,
++  avatar_url text
++)
++language sql
++security definer
++set search_path = public
++as $$
++  select
++    s.id,
++    s.user_id,
++    s.url,
++    s.media_type,
++    s.created_at,
++    u.display_name,
++    u.avatar_url
++  from public.stories s
++  join public.users u on u.id = s.user_id
++  where s.expire_at > now()
++    and (
++      s.user_id = auth.uid()
++      or public.is_connected(auth.uid(), s.user_id)
++    )
++  order by s.created_at desc;
++$$;
++
++create or replace function public.get_feed(
++  limit_count integer default 10,
++  before timestamptz default now()
++)
++returns table (
++  id uuid,
++  author_name text,
++  author_avatar text,
++  image_url text,
++  caption text,
++  created_at timestamptz,
++  likes_count integer,
++  liked_by_me boolean
++)
++language sql
++security definer
++set search_path = public
++as $$
++  with base as (
++    select
++      p.id,
++      p.user_id,
++      p.caption,
++      p.created_at,
++      coalesce(
++        (
++          select m.url
++          from public.post_media m
++          where m.post_id = p.id
++          order by m.created_at asc
++          limit 1
++        ),
++        p.image_url
++      ) as image_url
++    from public.posts p
++    where p.created_at < coalesce(before, now())
++      and (
++        p.user_id = auth.uid()
++        or public.is_connected(auth.uid(), p.user_id)
++      )
++    order by p.created_at desc
++    limit greatest(limit_count, 1)
++  ),
++  likes as (
++    select pl.post_id, count(*)::integer as cnt
++    from public.post_likes pl
++    where pl.post_id in (select b.id from base b)
++    group by pl.post_id
++  ),
++  me_like as (
++    select pl.post_id
++    from public.post_likes pl
++    where pl.user_id = auth.uid()
++  )
++  select
++    b.id,
++    u.display_name as author_name,
++    u.avatar_url as author_avatar,
++    b.image_url,
++    b.caption,
++    b.created_at,
++    coalesce(l.cnt, 0) as likes_count,
++    exists (
++      select 1
++      from me_like ml
++      where ml.post_id = b.id
++    ) as liked_by_me
++  from base b
++  left join public.users u on u.id = b.user_id
++  left join likes l on l.post_id = b.id
++  order by b.created_at desc;
++$$;
++
++create unique index if not exists users_username_lower_unique
++  on public.users (lower(username))
++  where username is not null;
++
++alter table public.users
++  drop constraint if exists users_username_format_check;
++
++alter table public.users
++  add constraint users_username_format_check
++  check (
++    username is null
++    or username ~ '^[a-z0-9][a-z0-9._]{1,22}[a-z0-9]$'
++  );
++
++create or replace function public.get_profile_overview(profile_user_id uuid)
++returns table (
++  id uuid,
++  display_name text,
++  username text,
++  avatar_url text,
++  bio text,
++  post_count bigint,
++  connection_count bigint,
++  relationship_status text,
++  request_id uuid,
++  can_view_posts boolean
++)
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  viewer_id uuid := auth.uid();
++  pending_request public.connection_requests%rowtype;
++  relationship text;
++  permitted boolean := false;
++  may_view_posts boolean := false;
++begin
++  if viewer_id is null or profile_user_id is null then
++    return;
++  end if;
++
++  if viewer_id = profile_user_id then
++    relationship := 'self';
++    permitted := true;
++    may_view_posts := true;
++  elsif exists (
++    select 1
++    from public.connections c
++    where c.user_id = viewer_id
++      and c.other_user_id = profile_user_id
++  ) then
++    relationship := 'connected';
++    permitted := true;
++    may_view_posts := true;
++  else
++    select r.*
++      into pending_request
++    from public.connection_requests r
++    where r.status = 'pending'
++      and (
++        (r.from_user = viewer_id and r.to_user = profile_user_id)
++        or
++        (r.from_user = profile_user_id and r.to_user = viewer_id)
++      )
++    order by r.created_at desc
++    limit 1;
++
++    if found then
++      relationship := case
++        when pending_request.from_user = viewer_id then 'outgoing'
++        else 'incoming'
++      end;
++      permitted := true;
++    elsif exists (
++      select 1
++      from public.contact_edges e
++      where e.from_user = viewer_id
++        and e.to_user = profile_user_id
++    ) then
++      relationship := 'mutual';
++      permitted := true;
++    else
++      relationship := 'none';
++    end if;
++  end if;
++
++  if not permitted then
++    return;
++  end if;
++
++  return query
++  select
++    u.id,
++    u.display_name,
++    u.username,
++    u.avatar_url,
++    u.bio,
++    case
++      when may_view_posts then (
++        select count(*)
++        from public.posts p
++        where p.user_id = u.id
++      )
++      else 0
++    end as post_count,
++    (
++      select count(*)
++      from public.connections c
++      where c.user_id = u.id
++    ) as connection_count,
++    relationship,
++    case when pending_request.id is not null then pending_request.id else null end,
++    may_view_posts
++  from public.users u
++  where u.id = profile_user_id;
++end;
++$$;
++
++revoke all on function public.get_profile_overview(uuid) from public;
++grant execute on function public.get_profile_overview(uuid) to authenticated;
++
++create or replace function public.update_my_profile(
++  p_display_name text,
++  p_username text,
++  p_bio text,
++  p_avatar_url text
++)
++returns table (
++  id uuid,
++  display_name text,
++  username text,
++  avatar_url text,
++  bio text
++)
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  viewer_id uuid := auth.uid();
++  clean_name text := nullif(btrim(p_display_name), '');
++  clean_username text := lower(nullif(regexp_replace(btrim(coalesce(p_username, '')), '^@', ''), ''));
++  clean_bio text := nullif(btrim(p_bio), '');
++begin
++  if viewer_id is null then
++    raise exception 'Please sign in first';
++  end if;
++
++  if clean_name is null then
++    raise exception 'Display name is required';
++  end if;
++
++  if char_length(clean_name) > 40 then
++    raise exception 'Display name must be 40 characters or fewer';
++  end if;
++
++  if clean_username is not null then
++    if char_length(clean_username) < 3 or char_length(clean_username) > 24 then
++      raise exception 'Username must be between 3 and 24 characters';
++    end if;
++
++    if clean_username !~ '^[a-z0-9][a-z0-9._]{1,22}[a-z0-9]$' then
++      raise exception 'Username can use lowercase letters, numbers, periods, and underscores';
++    end if;
++  end if;
++
++  if clean_bio is not null and char_length(clean_bio) > 160 then
++    raise exception 'Bio must be 160 characters or fewer';
++  end if;
++
++  update public.users u
++  set
++    display_name = clean_name,
++    username = clean_username,
++    bio = clean_bio,
++    avatar_url = nullif(btrim(p_avatar_url), '')
++  where u.id = viewer_id;
++
++  if not found then
++    raise exception 'Profile record not found';
++  end if;
++
++  return query
++  select u.id, u.display_name, u.username, u.avatar_url, u.bio
++  from public.users u
++  where u.id = viewer_id;
++exception
++  when unique_violation then
++    raise exception using
++      errcode = '23505',
++      message = 'That username is already taken';
++end;
++$$;
++
++revoke all on function public.update_my_profile(text, text, text, text) from public;
++grant execute on function public.update_my_profile(text, text, text, text) to authenticated;

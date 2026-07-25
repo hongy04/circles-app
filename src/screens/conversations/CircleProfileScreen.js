@@ -208,6 +208,12 @@ export function CircleProfileScreen({ route, navigation }) {
     });
   };
 
+  const openNotificationSettings = () => {
+    navigation.navigate('ConversationNotificationSettings', {
+      conversationId,
+    });
+  };
+
   const header = conversation ? (
     <>
       <View style={styles.profileHeader}>
@@ -288,6 +294,25 @@ export function CircleProfileScreen({ route, navigation }) {
             </Pressable>
           ) : null}
         </View>
+
+        <Pressable
+          onPress={openNotificationSettings}
+          style={({ pressed }) => [
+            styles.notificationSettingsRow,
+            pressed && styles.pressed,
+          ]}
+        >
+          <View style={styles.notificationSettingsIcon}>
+            <Ionicons name="notifications-outline" size={18} color={COLORS.text} />
+          </View>
+          <View style={styles.notificationSettingsText}>
+            <Text style={styles.notificationSettingsTitle}>Notifications</Text>
+            <Text style={styles.notificationSettingsBody}>
+              Mute this Circle or choose which private activity alerts you.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
+        </Pressable>
       </View>
 
       <View style={styles.membersStrip}>
@@ -589,6 +614,43 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
+  },
+  notificationSettingsRow: {
+    width: '100%',
+    maxWidth: 520,
+    minHeight: 62,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingHorizontal: 13,
+    borderRadius: 13,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: '#f7f7f7',
+  },
+  notificationSettingsIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 19,
+    backgroundColor: '#ececec',
+  },
+  notificationSettingsText: {
+    flex: 1,
+    marginHorizontal: 11,
+  },
+  notificationSettingsTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+  },
+  notificationSettingsBody: {
+    marginTop: 2,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 10,
+    lineHeight: 15,
   },
   membersStrip: {
     borderTopWidth: StyleSheet.hairlineWidth,

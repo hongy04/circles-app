@@ -31,6 +31,7 @@ import {
   getCirclePost,
   listCirclePostComments,
   subscribeToCirclePostChanges,
+  toggleCirclePostLike,
 } from '../../services/circlePostService';
 
 function formatTimestamp(timestamp) {
@@ -82,6 +83,7 @@ export function CirclePostDetailScreen({ route, navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [commenting, setCommenting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [togglingLike, setTogglingLike] = useState(false);
   const [error, setError] = useState('');
   const stageWidth = Math.min(width, 720);
 
@@ -131,6 +133,40 @@ export function CirclePostDetailScreen({ route, navigation }) {
       createdAt: post.createdAt,
     }))
   ), [post]);
+
+  const toggleLike = async () => {
+    if (!post?.id || togglingLike) return;
+
+    const previousLiked = Boolean(post.likedByMe);
+    const previousCount = Number(post.likeCount || 0);
+    setTogglingLike(true);
+    setPost((current) => ({
+      ...current,
+      likedByMe: !previousLiked,
+      likeCount: Math.max(0, previousCount + (previousLiked ? -1 : 1)),
+    }));
+
+    try {
+      const result = await toggleCirclePostLike(post.id);
+      setPost((current) => ({
+        ...current,
+        likedByMe: result.liked,
+        likeCount: result.likeCount,
+      }));
+    } catch (likeError) {
+      setPost((current) => ({
+        ...current,
+        likedByMe: previousLiked,
+        likeCount: previousCount,
+      }));
+      Alert.alert(
+        'Like not updated',
+        likeError?.message || 'Please try again.'
+      );
+    } finally {
+      setTogglingLike(false);
+    }
+  };
 
   const addComment = async () => {
     const body = commentText.trim();
@@ -308,6 +344,24 @@ export function CirclePostDetailScreen({ route, navigation }) {
       ) : null}
 
       <View style={styles.engagementRow}>
+        <Pressable
+          onPress={toggleLike}
+          disabled={togglingLike}
+          style={({ pressed }) => [
+            styles.engagementButton,
+            (pressed || togglingLike) && styles.pressed,
+          ]}
+        >
+          <Ionicons
+            name={post.likedByMe ? 'heart' : 'heart-outline'}
+            size={23}
+            color={post.likedByMe ? '#ff3b30' : COLORS.text}
+          />
+          <Text style={styles.engagementText}>
+            {post.likeCount} {post.likeCount === 1 ? 'like' : 'likes'}
+          </Text>
+        </Pressable>
+
         <View style={styles.engagementButton}>
           <Ionicons name="chatbubble-outline" size={22} color={COLORS.text} />
           <Text style={styles.engagementText}>
@@ -329,7 +383,7 @@ export function CirclePostDetailScreen({ route, navigation }) {
 
   if (loading && !post) {
     return (
-      <SafeAreaView edges={[]} style={styles.centerState}>
+      <SafeAreaView edges={['bottom']} style={styles.centerState}>
         <ActivityIndicator />
         <Text style={styles.stateText}>Opening private Circle post…</Text>
       </SafeAreaView>
@@ -338,7 +392,7 @@ export function CirclePostDetailScreen({ route, navigation }) {
 
   if (error && !post) {
     return (
-      <SafeAreaView edges={[]} style={styles.centerState}>
+      <SafeAreaView edges={['bottom']} style={styles.centerState}>
         <Ionicons name="lock-closed-outline" size={36} color={COLORS.text} />
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
@@ -349,11 +403,11 @@ export function CirclePostDetailScreen({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView edges={[]} style={styles.screen}>
+    <SafeAreaView edges={['bottom']} style={styles.screen}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
       >
         <View style={styles.contentWidth}>
           <FlatList
@@ -367,7 +421,6 @@ export function CirclePostDetailScreen({ route, navigation }) {
             }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-            style={styles.commentsList}
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={(
               <InstagramCommentsEmpty
@@ -421,9 +474,6 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
-  },
-  commentsList: {
-    flex: 1,
   },
   listContent: {
     flexGrow: 1,

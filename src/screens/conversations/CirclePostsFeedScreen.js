@@ -24,6 +24,7 @@ import {
   listCirclePostComments,
   listCirclePosts,
   subscribeToCirclePostChanges,
+  toggleCirclePostLike,
 } from '../../services/circlePostService';
 
 function mapCircleComment(comment) {
@@ -45,6 +46,8 @@ function CirclePostFeedCard({
   navigation,
   conversationId,
   onOpenComments,
+  onToggleLike,
+  likeBusy,
 }) {
   const viewerItems = useMemo(() => (
     (post.media || []).map((item) => ({
@@ -109,10 +112,33 @@ function CirclePostFeedCard({
       />
 
       <View style={styles.actionRow}>
-        <Pressable onPress={onOpenComments} hitSlop={10} style={styles.actionButton}>
-          <Ionicons name="chatbubble-outline" size={25} color={COLORS.text} />
+        <Pressable
+          onPress={onToggleLike}
+          disabled={likeBusy}
+          hitSlop={10}
+          style={({ pressed }) => [
+            styles.actionButton,
+            (pressed || likeBusy) && styles.pressed,
+          ]}
+        >
+          <Ionicons
+            name={post.likedByMe ? 'heart' : 'heart-outline'}
+            size={26}
+            color={post.likedByMe ? '#ff3b30' : COLORS.text}
+          />
         </Pressable>
-        <Text style={styles.commentCount}>
+        <Text style={styles.engagementCount}>
+          {post.likeCount} {post.likeCount === 1 ? 'like' : 'likes'}
+        </Text>
+
+        <Pressable
+          onPress={onOpenComments}
+          hitSlop={10}
+          style={styles.commentActionButton}
+        >
+          <Ionicons name="chatbubble-outline" size={24} color={COLORS.text} />
+        </Pressable>
+        <Text style={styles.engagementCount}>
           {post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}
         </Text>
         {post.media.length > 1 ? (
@@ -154,6 +180,7 @@ export function CirclePostsFeedScreen({ route, navigation }) {
   const [comments, setComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState('');
+  const [togglingLikes, setTogglingLikes] = useState({});
 
   const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -215,6 +242,50 @@ export function CirclePostsFeedScreen({ route, navigation }) {
     const index = posts.findIndex((post) => post.id === initialPostId);
     return index >= 0 ? index : 0;
   }, [initialPostId, posts]);
+
+  const toggleLike = async (post) => {
+    if (!post?.id || togglingLikes[post.id]) return;
+
+    const previousLiked = Boolean(post.likedByMe);
+    const previousCount = Number(post.likeCount || 0);
+    const optimistic = {
+      ...post,
+      likedByMe: !previousLiked,
+      likeCount: Math.max(0, previousCount + (previousLiked ? -1 : 1)),
+    };
+
+    setTogglingLikes((current) => ({ ...current, [post.id]: true }));
+    setPosts((current) => current.map((item) => (
+      item.id === post.id ? optimistic : item
+    )));
+    setCommentsPost((current) => (
+      current?.id === post.id ? { ...current, ...optimistic } : current
+    ));
+
+    try {
+      const result = await toggleCirclePostLike(post.id);
+      setPosts((current) => current.map((item) => (
+        item.id === post.id
+          ? { ...item, likedByMe: result.liked, likeCount: result.likeCount }
+          : item
+      )));
+      setCommentsPost((current) => current?.id === post.id
+        ? { ...current, likedByMe: result.liked, likeCount: result.likeCount }
+        : current);
+    } catch (likeError) {
+      setPosts((current) => current.map((item) => (
+        item.id === post.id
+          ? { ...item, likedByMe: previousLiked, likeCount: previousCount }
+          : item
+      )));
+      Alert.alert(
+        'Like not updated',
+        likeError?.message || 'Please try again.'
+      );
+    } finally {
+      setTogglingLikes((current) => ({ ...current, [post.id]: false }));
+    }
+  };
 
   const openComments = (post) => {
     setCommentsPost(post);
@@ -327,6 +398,8 @@ export function CirclePostsFeedScreen({ route, navigation }) {
               navigation={navigation}
               conversationId={conversationId}
               onOpenComments={() => openComments(item)}
+              onToggleLike={() => toggleLike(item)}
+              likeBusy={Boolean(togglingLikes[item.id])}
             />
           )}
           refreshControl={(
@@ -399,8 +472,9 @@ const styles = StyleSheet.create({
   media: { width: '100%', height: '100%' },
   videoPage: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1c1c1e' },
   actionRow: { height: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
-  actionButton: { marginRight: 7 },
-  commentCount: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+  actionButton: { marginRight: 6 },
+  commentActionButton: { marginLeft: 15, marginRight: 6 },
+  engagementCount: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },
   mediaCount: { marginLeft: 'auto', color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
   details: { paddingHorizontal: 12, paddingBottom: 16 },
   caption: { color: COLORS.text, fontFamily: 'Manrope_400Regular', lineHeight: 19 },
@@ -412,4 +486,5 @@ const styles = StyleSheet.create({
   errorText: { marginTop: 12, color: COLORS.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
   retryButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: COLORS.primary },
   retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
+  pressed: { opacity: 0.7 },
 });

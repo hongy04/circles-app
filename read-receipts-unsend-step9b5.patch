@@ -1,0 +1,683 @@
+diff -ruN a/README_CONVERSATIONS_STEP_9B_5.md b/README_CONVERSATIONS_STEP_9B_5.md
+--- a/README_CONVERSATIONS_STEP_9B_5.md	1970-01-01 00:00:00.000000000 +0000
++++ b/README_CONVERSATIONS_STEP_9B_5.md	2026-07-22 04:42:40.828607524 +0000
+@@ -0,0 +1,119 @@
++# Circles Step 9B.5 — Authentic Read Receipts + Unread-Only Unsend
++
++This checkpoint fixes media-message unsend and changes unsend into a privacy-safe,
++server-enforced rule:
++
++- Text and media messages can be unsent only before another eligible member reads them.
++- Long-pressing an owned media tile now opens the same message actions as text.
++- Direct chats show `Not read` or `Read`.
++- Group Circles show `Not read`, `Read by N`, or `Read by all`.
++- Read receipts are created automatically only while the chat is focused and the app is active in the foreground.
++- The database enforces the unread-only rule, so an outdated client cannot bypass it.
++- Unsent media disappears from Chat and from Shared Media or the Circle Timeline.
++
++## Files in this package
++
++- `App.js` — complete current app entry file.
++- `src/screens/conversations/ChatScreen.js` — media long-press, receipt labels, foreground/focus-aware reading, and unread-only message actions.
++- `src/services/conversationService.js` — loads exact receipt state and subscribes to receipt changes.
++- `supabase/migrations/20260722_013_authentic_read_receipts_unread_unsend.sql` — exact read table, automatic marking, read-state RPC, strict unsend enforcement, and Realtime publication.
++- `docs/CONVERSATION_SPACES_ARCHITECTURE.md` — updated architecture rule.
++- `read-receipts-unsend-step9b5.patch` — exact source diff from Step 9B.4.
++
++## 1. Run the Supabase migration
++
++Open Supabase → SQL Editor. Paste the entire contents of:
++
++```text
++supabase/migrations/20260722_013_authentic_read_receipts_unread_unsend.sql
++```
++
++Press **Run**.
++
++The migration creates:
++
++```text
++conversation_message_reads
++```
++
++It also replaces the existing `mark_conversation_read` and
++`delete_own_conversation_message` RPC implementations without changing the RPC
++names used by the app.
++
++The migration does not delete any existing messages or media. It conservatively
++backfills prior read knowledge from `conversation_members.last_read_at` so a
++message that was probably already opened does not suddenly become unsendable in
++reverse.
++
++## 2. Apply the files
++
++Extract the package and copy its contents into:
++
++```text
++C:\Users\honge\Dev\circles-app
++```
++
++Allow Windows to merge folders and replace files.
++
++Restart Expo:
++
++```powershell
++cd C:\Users\honge\Dev\circles-app
++npx expo start --tunnel --clear
++```
++
++## 3. Test a direct chat
++
++Use Hongy and Alex.
++
++1. As Hongy, send a text message.
++2. Before Alex opens the chat, confirm Hongy sees `Not read`.
++3. Long-press the message and confirm **Unsend Message** appears.
++4. Cancel, then switch to Alex and open the chat.
++5. Switch back to Hongy and confirm the message changes to `Read` automatically.
++6. Long-press it and confirm the app says it has already been read rather than offering unsend.
++7. Repeat with a photo-only message.
++8. Before Alex opens it, long-press directly on the photo and unsend it.
++9. Confirm it disappears for both accounts and from Shared Media.
++
++## 4. Test a group Circle
++
++1. As Hongy, send a text or photo to a three-person Circle.
++2. Confirm it begins as `Not read`.
++3. Open the Circle as Alex.
++4. Switch back to Hongy and confirm `Read by 1` appears.
++5. Confirm unsend is no longer available.
++6. Open it as Sam and confirm the status becomes `Read by all`.
++7. Send another media message and unsend it before Alex or Sam opens the Circle.
++8. Confirm the item disappears from Chat and Timeline.
++
++## 5. Foreground authenticity test
++
++1. Leave Alex signed in with the direct chat closed or the app in the background.
++2. Send a message from Hongy.
++3. Confirm it remains `Not read`.
++4. Bring Alex's app to the foreground and actually open the chat.
++5. Confirm the receipt changes only then.
++
++## Expected security behavior
++
++- Only the sender can request unsend.
++- A receipt from any other eligible member permanently closes the unsend window.
++- The server rechecks receipt state at deletion time, protecting against Realtime delay or two people acting simultaneously.
++- Read receipts cannot be manually turned off in this prototype because the feature represents whether the private chat was actually opened.
++
++## Validation completed
++
++The complete `App.js`, updated `ChatScreen.js`, and updated
++`conversationService.js` passed Expo Babel transformation using the project's
++installed Expo preset. Live Supabase migration behavior, Realtime receipt
++updates, and physical-device interaction still require the test steps above.
++
++## Commit after testing
++
++```powershell
++git status
++git add App.js src supabase/migrations docs README_CONVERSATIONS_STEP_9B_5.md
++git commit -m "Add authentic read receipts and unread-only unsend"
++git push
++```
+diff -ruN a/docs/CONVERSATION_SPACES_ARCHITECTURE.md b/docs/CONVERSATION_SPACES_ARCHITECTURE.md
+--- a/docs/CONVERSATION_SPACES_ARCHITECTURE.md	2026-07-22 04:43:16.004608328 +0000
++++ b/docs/CONVERSATION_SPACES_ARCHITECTURE.md	2026-07-22 04:39:58.584603819 +0000
+@@ -136,3 +136,20 @@
+ 
+ Roles, invite management, leaving/removal, notification controls, Storage
+ cleanup, and eventually mutually created two-person Circles.
++
++## Read receipts and unread-only unsend
++
++Circles treats reading as an automatic, truthful event rather than a cosmetic
++setting. A message receives a per-user read receipt only when that conversation
++is the focused screen and the app is active in the foreground.
++
++The sender may unsend a message only while no other eligible member has a read
++receipt for it. This rule is enforced by the database, not only hidden or shown
++by the client. Text and media messages follow the same rule. Unsent media is
++removed from Chat and from Shared Media or the Circle Timeline because those
++surfaces reference the same message-media record.
++
++Direct conversations display `Not read` or `Read`. Group Circles display
++`Not read`, `Read by N`, or `Read by all`. Exact receipt rows are stored in
++`conversation_message_reads`; `conversation_members.last_read_at` remains the
++conversation-level cursor used for inbox unread counts.
+diff -ruN a/src/screens/conversations/ChatScreen.js b/src/screens/conversations/ChatScreen.js
+--- a/src/screens/conversations/ChatScreen.js	2026-07-22 04:43:16.000608327 +0000
++++ b/src/screens/conversations/ChatScreen.js	2026-07-22 04:42:00.352606600 +0000
+@@ -2,6 +2,7 @@
+ import {
+   ActionSheetIOS,
+   ActivityIndicator,
++  AppState,
+   Alert,
+   FlatList,
+   Image,
+@@ -46,6 +47,16 @@
+   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+ }
+ 
++function formatReadStatus(message, isGroup) {
++  const readCount = Number(message?.readCount || 0);
++  const recipientCount = Number(message?.recipientCount || 0);
++
++  if (readCount <= 0) return 'Not read';
++  if (!isGroup) return 'Read';
++  if (recipientCount > 0 && readCount >= recipientCount) return 'Read by all';
++  return `Read by ${readCount}`;
++}
++
+ function normalizeAsset(asset) {
+   return {
+     id: asset.assetId || `${asset.uri}-${Date.now()}-${Math.random()}`,
+@@ -114,7 +125,9 @@
+   );
+ }
+ 
+-function MessageMediaGrid({ items, onOpen }) {
++function MessageMediaGrid({ items, onOpen, onLongPress }) {
++  const lastLongPressAtRef = useRef(0);
++
+   if (!items?.length) return null;
+ 
+   const displayItems = items.slice(0, 6);
+@@ -129,7 +142,15 @@
+       {displayItems.map((item, index) => (
+         <Pressable
+           key={item.id}
+-          onPress={() => onOpen(index)}
++          onPress={() => {
++            if (Date.now() - lastLongPressAtRef.current < 800) return;
++            onOpen(index);
++          }}
++          onLongPress={onLongPress ? () => {
++            lastLongPressAtRef.current = Date.now();
++            onLongPress();
++          } : undefined}
++          delayLongPress={360}
+           style={({ pressed }) => [
+             styles.messageMediaTile,
+             { width: tileWidth, height: tileHeight },
+@@ -161,6 +182,8 @@
+ 
+   const insets = useSafeAreaInsets();
+   const listRef = useRef(null);
++  const screenFocusedRef = useRef(false);
++  const appStateRef = useRef(AppState.currentState || 'active');
+   const [conversation, setConversation] = useState({
+     title: name,
+     kind,
+@@ -193,7 +216,13 @@
+       setCurrentUserId(user.id);
+       setMessages(rows);
+       if (details?.conversation) setConversation(details.conversation);
+-      await markConversationRead(conversationId);
++
++      if (
++        screenFocusedRef.current
++        && appStateRef.current === 'active'
++      ) {
++        await markConversationRead(conversationId);
++      }
+     } catch (loadError) {
+       setError(loadError?.message || 'Could not load this private conversation.');
+     } finally {
+@@ -203,11 +232,28 @@
+ 
+   useFocusEffect(
+     useCallback(() => {
++      screenFocusedRef.current = true;
+       load();
++
++      return () => {
++        screenFocusedRef.current = false;
++      };
+     }, [load])
+   );
+ 
+   useEffect(() => {
++    const subscription = AppState.addEventListener('change', (nextState) => {
++      appStateRef.current = nextState;
++
++      if (nextState === 'active' && screenFocusedRef.current) {
++        load({ quiet: true });
++      }
++    });
++
++    return () => subscription.remove();
++  }, [load]);
++
++  useEffect(() => {
+     if (!conversationId) return undefined;
+     return subscribeToConversationChanges({
+       conversationId,
+@@ -382,6 +428,14 @@
+   };
+ 
+   const confirmUnsend = (message) => {
++    if (Number(message.readCount || 0) > 0) {
++      Alert.alert(
++        'Already read',
++        'Messages can only be unsent before anyone else reads them.'
++      );
++      return;
++    }
++
+     const detail = message.media.length
+       ? (isCircle
+         ? 'This removes it for everyone and from the Circle Timeline.'
+@@ -405,6 +459,14 @@
+   const showMessageActions = (message) => {
+     if (message.senderId !== currentUserId || deletingMessageId) return;
+ 
++    if (Number(message.readCount || 0) > 0) {
++      Alert.alert(
++        'Already read',
++        'This message can no longer be unsent because someone has read it.'
++      );
++      return;
++    }
++
+     if (Platform.OS === 'ios') {
+       ActionSheetIOS.showActionSheetWithOptions(
+         {
+@@ -473,6 +535,10 @@
+     const mine = item.senderId === currentUserId;
+     const hasText = Boolean(item.body);
+     const hasMedia = item.media?.length > 0;
++    const readStatus = mine
++      ? formatReadStatus(item, conversation?.kind === 'group')
++      : '';
++    const canUnsend = mine && Number(item.readCount || 0) === 0;
+ 
+     return (
+       <Pressable
+@@ -481,7 +547,11 @@
+         disabled={!mine || deletingMessageId === item.id}
+         accessibilityRole="button"
+         accessibilityLabel={mine ? 'Your message' : `${item.senderName}'s message`}
+-        accessibilityHint={mine ? 'Press and hold for message options, including unsend.' : undefined}
++        accessibilityHint={mine
++          ? (canUnsend
++            ? 'Press and hold to unsend before anyone reads it.'
++            : 'This message has already been read and cannot be unsent.')
++          : undefined}
+         style={styles.messageWrap}
+       >
+         {!mine && conversation?.kind === 'group' ? (
+@@ -496,6 +566,7 @@
+             <MessageMediaGrid
+               items={item.media}
+               onOpen={(index) => openMedia(item, index)}
++              onLongPress={mine ? () => showMessageActions(item) : undefined}
+             />
+           ) : null}
+ 
+@@ -527,6 +598,7 @@
+           mine ? styles.mineTime : styles.otherTime,
+         ]}>
+           {formatTime(item.createdAt)}
++          {mine && readStatus ? ` · ${readStatus}` : ''}
+         </Text>
+       </Pressable>
+     );
+diff -ruN a/src/services/conversationService.js b/src/services/conversationService.js
+--- a/src/services/conversationService.js	2026-07-22 04:43:16.004608328 +0000
++++ b/src/services/conversationService.js	2026-07-22 04:38:28.364601759 +0000
+@@ -76,6 +76,16 @@
+     body: row.body || '',
+     media: (row.media || []).map(mapMedia),
+     createdAt: row.created_at,
++    readCount: Number(row.read_count || 0),
++    recipientCount: Number(row.recipient_count || 0),
++  };
++}
++
++function mapMessageReadState(row) {
++  return {
++    messageId: row.message_id,
++    readCount: Number(row.read_count || 0),
++    recipientCount: Number(row.recipient_count || 0),
+   };
+ }
+ 
+@@ -177,13 +187,45 @@
+ 
+ export async function listConversationMessages(conversationId) {
+   await ensureAuthed();
+-  const { data, error } = await supabase.rpc('get_conversation_messages', {
+-    p_conversation_id: conversationId,
+-    p_limit_count: 100,
+-    p_before: new Date().toISOString(),
++
++  const [{ data: messageRows, error: messageError }, {
++    data: readRows,
++    error: readError,
++  }] = await Promise.all([
++    supabase.rpc('get_conversation_messages', {
++      p_conversation_id: conversationId,
++      p_limit_count: 100,
++      p_before: new Date().toISOString(),
++    }),
++    supabase.rpc('get_conversation_message_read_states', {
++      p_conversation_id: conversationId,
++    }),
++  ]);
++
++  if (messageError) throw messageError;
++  if (readError) throw readError;
++
++  const readStates = new Map(
++    (readRows || []).map((row) => {
++      const state = mapMessageReadState(row);
++      return [state.messageId, state];
++    })
++  );
++
++  const mapped = (messageRows || []).map((row) => {
++    const message = mapMessage(row);
++    const state = readStates.get(message.id);
++
++    return state
++      ? {
++        ...message,
++        readCount: state.readCount,
++        recipientCount: state.recipientCount,
++      }
++      : message;
+   });
+-  if (error) throw error;
+-  return hydrateMessages((data || []).map(mapMessage));
++
++  return hydrateMessages(mapped);
+ }
+ 
+ export async function sendConversationMessage(
+@@ -340,6 +382,15 @@
+         },
+         onMediaChange || onMessage
+       )
++      .on(
++        'postgres_changes',
++        {
++          event: '*',
++          schema: 'public',
++          table: 'conversation_message_reads',
++        },
++        onMessage || onMediaChange
++      )
+       .subscribe();
+     channels.push(messageChannel);
+   }
+diff -ruN a/supabase/migrations/20260722_013_authentic_read_receipts_unread_unsend.sql b/supabase/migrations/20260722_013_authentic_read_receipts_unread_unsend.sql
+--- a/supabase/migrations/20260722_013_authentic_read_receipts_unread_unsend.sql	1970-01-01 00:00:00.000000000 +0000
++++ b/supabase/migrations/20260722_013_authentic_read_receipts_unread_unsend.sql	2026-07-22 04:39:47.152603558 +0000
+@@ -0,0 +1,265 @@
++-- Circles Step 9B.5 — automatic read receipts and unread-only unsend
++--
++-- Read state is recorded per message rather than inferred only from a
++-- conversation timestamp. A sender may unsend a message only while no other
++-- eligible member has a read receipt for it. The rule is enforced in Postgres,
++-- so an older client cannot bypass it.
++
++create table if not exists public.conversation_message_reads (
++  message_id uuid not null references public.messages(id) on delete cascade,
++  user_id uuid not null references public.users(id) on delete cascade,
++  read_at timestamptz not null default now(),
++  primary key (message_id, user_id)
++);
++
++create index if not exists conversation_message_reads_user_index
++  on public.conversation_message_reads (user_id, read_at desc);
++
++alter table public.conversation_message_reads enable row level security;
++
++drop policy if exists "Conversation members can view message reads"
++  on public.conversation_message_reads;
++create policy "Conversation members can view message reads"
++on public.conversation_message_reads
++for select
++to authenticated
++using (
++  exists (
++    select 1
++    from public.messages message
++    where message.id = conversation_message_reads.message_id
++      and public.conversation_is_member(message.conversation_id, auth.uid())
++  )
++);
++
++drop policy if exists "Members can record their own message reads"
++  on public.conversation_message_reads;
++create policy "Members can record their own message reads"
++on public.conversation_message_reads
++for insert
++to authenticated
++with check (
++  user_id = auth.uid()
++  and exists (
++    select 1
++    from public.messages message
++    where message.id = conversation_message_reads.message_id
++      and message.sender_id <> auth.uid()
++      and public.conversation_is_member(message.conversation_id, auth.uid())
++  )
++);
++
++-- Conservatively preserve the read knowledge that existed before exact receipt
++-- rows were introduced. This can disable unsend for a message that the old
++-- conversation timestamp indicates was already opened, which is safer than
++-- allowing a previously read message to disappear.
++insert into public.conversation_message_reads (message_id, user_id, read_at)
++select
++  message.id,
++  member.user_id,
++  member.last_read_at
++from public.messages message
++join public.conversation_members member
++  on member.conversation_id = message.conversation_id
++ and member.user_id <> message.sender_id
++ and member.joined_at <= message.created_at
++where member.last_read_at >= message.created_at
++on conflict (message_id, user_id) do nothing;
++
++create or replace function public.mark_conversation_read(
++  p_conversation_id uuid
++)
++returns void
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_previous_read_at timestamptz;
++  v_latest_incoming_at timestamptz;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  select member.last_read_at
++    into v_previous_read_at
++  from public.conversation_members member
++  where member.conversation_id = p_conversation_id
++    and member.user_id = v_viewer_id
++  for update;
++
++  if not found then
++    raise exception 'You are not a member of this private conversation';
++  end if;
++
++  select max(message.created_at)
++    into v_latest_incoming_at
++  from public.messages message
++  where message.conversation_id = p_conversation_id
++    and message.sender_id <> v_viewer_id
++    and message.created_at > v_previous_read_at;
++
++  if v_latest_incoming_at is null then
++    return;
++  end if;
++
++  insert into public.conversation_message_reads (
++    message_id,
++    user_id,
++    read_at
++  )
++  select
++    message.id,
++    v_viewer_id,
++    now()
++  from public.messages message
++  where message.conversation_id = p_conversation_id
++    and message.sender_id <> v_viewer_id
++    and message.created_at > v_previous_read_at
++  on conflict (message_id, user_id) do nothing;
++
++  update public.conversation_members member
++  set last_read_at = greatest(now(), v_latest_incoming_at)
++  where member.conversation_id = p_conversation_id
++    and member.user_id = v_viewer_id;
++end;
++$$;
++
++revoke all on function public.mark_conversation_read(uuid) from public;
++grant execute on function public.mark_conversation_read(uuid) to authenticated;
++
++create or replace function public.get_conversation_message_read_states(
++  p_conversation_id uuid
++)
++returns table (
++  message_id uuid,
++  read_count bigint,
++  recipient_count bigint
++)
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select
++    message.id as message_id,
++    (
++      select count(*)
++      from public.conversation_message_reads receipt
++      where receipt.message_id = message.id
++        and receipt.user_id <> message.sender_id
++    ) as read_count,
++    (
++      select count(*)
++      from public.conversation_members recipient
++      where recipient.conversation_id = message.conversation_id
++        and recipient.user_id <> message.sender_id
++        and recipient.joined_at <= message.created_at
++    ) as recipient_count
++  from public.messages message
++  where message.conversation_id = p_conversation_id
++    and public.conversation_is_member(p_conversation_id, auth.uid())
++  order by message.created_at desc;
++$$;
++
++revoke all on function public.get_conversation_message_read_states(uuid)
++  from public;
++grant execute on function public.get_conversation_message_read_states(uuid)
++  to authenticated;
++
++-- Keep the existing RPC name so every client receives the stricter rule.
++create or replace function public.delete_own_conversation_message(
++  p_message_id uuid
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = public
++as $$
++declare
++  v_viewer_id uuid := auth.uid();
++  v_paths text[];
++  v_conversation_id uuid;
++  v_created_at timestamptz;
++begin
++  if v_viewer_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  -- FOR UPDATE serializes deletion against a concurrent receipt insert that
++  -- must validate its foreign key against this message row.
++  select
++    message.conversation_id,
++    message.created_at
++  into
++    v_conversation_id,
++    v_created_at
++  from public.messages message
++  where message.id = p_message_id
++    and message.sender_id = v_viewer_id
++  for update;
++
++  if not found then
++    raise exception 'Message not found or not owned by you';
++  end if;
++
++  if exists (
++    select 1
++    from public.conversation_message_reads receipt
++    where receipt.message_id = p_message_id
++      and receipt.user_id <> v_viewer_id
++  ) then
++    raise exception 'This message has already been read and can no longer be unsent';
++  end if;
++
++  select coalesce(
++    array_agg(media.storage_path)
++      filter (where media.storage_path is not null),
++    array[]::text[]
++  )
++  into v_paths
++  from public.message_media media
++  where media.message_id = p_message_id;
++
++  delete from public.messages message
++  where message.id = p_message_id
++    and message.sender_id = v_viewer_id;
++
++  update public.conversations conversation
++  set updated_at = now()
++  where conversation.id = v_conversation_id;
++
++  return jsonb_build_object(
++    'conversation_id', v_conversation_id,
++    'storage_paths', to_jsonb(v_paths),
++    'created_at', v_created_at
++  );
++end;
++$$;
++
++revoke all on function public.delete_own_conversation_message(uuid)
++  from public;
++grant execute on function public.delete_own_conversation_message(uuid)
++  to authenticated;
++
++-- Realtime receipt inserts refresh the sender's visible status automatically.
++do $$
++begin
++  if exists (
++    select 1
++    from pg_publication
++    where pubname = 'supabase_realtime'
++  ) and not exists (
++    select 1
++    from pg_publication_tables
++    where pubname = 'supabase_realtime'
++      and schemaname = 'public'
++      and tablename = 'conversation_message_reads'
++  ) then
++    alter publication supabase_realtime
++      add table public.conversation_message_reads;
++  end if;
++end;
++$$;

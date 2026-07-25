@@ -11,13 +11,33 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { DEV_BYPASS_CODE, IS_DEVELOPMENT } from '../../config/env';
 import { supabase } from '../../lib/supabase';
 import { ensureDevSession } from '../../services/authService';
+import { redeemAppInvite } from '../../services/inviteService';
 import { authStyles } from './authStyles';
 
 export function AuthOtpScreen({ route, navigation }) {
-  const { phone } = route.params || {};
+  const { phone, inviteToken } = route.params || {};
 
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
+
+
+  const finishAfterAuthentication = async () => {
+    let inviteResult = null;
+    let inviteError = '';
+
+    if (inviteToken) {
+      try {
+        inviteResult = await redeemAppInvite(inviteToken);
+      } catch (error) {
+        inviteError = error?.message || 'The invitation could not be applied.';
+      }
+    }
+
+    navigation.replace('ContactsIntro', {
+      inviteResult,
+      inviteError,
+    });
+  };
 
   const onVerify = async () => {
     const token = code.trim();
@@ -39,7 +59,7 @@ export function AuthOtpScreen({ route, navigation }) {
           );
         }
 
-        navigation.replace('ContactsIntro');
+        await finishAfterAuthentication();
         return;
       }
 
@@ -61,7 +81,7 @@ export function AuthOtpScreen({ route, navigation }) {
 
       if (ensureError) throw ensureError;
 
-      navigation.replace('ContactsIntro');
+      await finishAfterAuthentication();
     } catch (error) {
       Alert.alert(
         'Verification failed',
@@ -106,7 +126,7 @@ export function AuthOtpScreen({ route, navigation }) {
 
       <Pressable
         style={{ marginTop: 12 }}
-        onPress={() => navigation.replace('AuthPhone')}
+        onPress={() => navigation.replace('AuthPhone', { inviteToken })}
       >
         <Text style={authStyles.linkText}>Use a different number</Text>
       </Pressable>

@@ -1,0 +1,40 @@
+--- /mnt/data/circles_step9b_work/src/services/conversationService.js	2026-07-21 19:25:03.978040075 +0000
++++ /mnt/data/circles_step9b1_work/src/services/conversationService.js	2026-07-21 19:54:41.449997491 +0000
+@@ -6,6 +6,14 @@
+   removeConversationMedia,
+ } from './conversationMediaService';
+ 
++
++let realtimeSubscriptionCounter = 0;
++
++function createRealtimeChannelName(prefix, scope = 'inbox') {
++  realtimeSubscriptionCounter += 1;
++  return `${prefix}_${scope}_${Date.now()}_${realtimeSubscriptionCounter}`;
++}
++
+ function mapConversation(row) {
+   return {
+     id: row.conversation_id,
+@@ -309,7 +317,7 @@
+ 
+   if (conversationId && (onMessage || onMediaChange)) {
+     const messageChannel = supabase
+-      .channel(`conversation_messages_${conversationId}`)
++      .channel(createRealtimeChannelName('conversation_messages', conversationId))
+       .on(
+         'postgres_changes',
+         {
+@@ -335,7 +343,12 @@
+ 
+   if (onConversationChange) {
+     const membershipChannel = supabase
+-      .channel(`conversation_membership_${conversationId || 'inbox'}`)
++      .channel(
++        createRealtimeChannelName(
++          'conversation_membership',
++          conversationId || 'inbox'
++        )
++      )
+       .on(
+         'postgres_changes',
+         { event: '*', schema: 'public', table: 'conversation_members' },
