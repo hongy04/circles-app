@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,6 +16,11 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { COLORS } from '../../theme/colors';
 import { createCircleEvent } from '../../services/eventService';
+import { listMyConversations } from '../../services/conversationService';
+import {
+  FEATURE_FLAGS,
+  isFeatureEnabled,
+} from '../../services/featureFlagService';
 
 function formatDateInput(date) {
   const year = date.getFullYear();
@@ -77,6 +82,38 @@ function Field({ label, hint, children }) {
   );
 }
 
+function CircleSelectorRow({ title, subtitle, selected, locked = false, onPress }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={locked}
+      style={({ pressed }) => [
+        styles.circleSelectorRow,
+        selected && styles.circleSelectorRowSelected,
+        pressed && !locked && styles.pressed,
+      ]}
+    >
+      <View style={styles.circleSelectorIcon}>
+        <Ionicons name="people-outline" size={19} color={COLORS.text} />
+      </View>
+      <View style={styles.circleSelectorCopy}>
+        <Text style={styles.circleSelectorTitle} numberOfLines={1}>{title}</Text>
+        <Text style={styles.circleSelectorSubtitle}>{subtitle}</Text>
+      </View>
+      <View style={[
+        styles.circleCheckbox,
+        selected && styles.circleCheckboxSelected,
+      ]}>
+        <Ionicons
+          name={locked ? 'lock-closed' : selected ? 'checkmark' : 'add'}
+          size={14}
+          color={selected ? '#fff' : COLORS.subtext}
+        />
+      </View>
+    </Pressable>
+  );
+}
+
 export function CreateEventScreen({ route, navigation }) {
   const { conversationId, circleName = 'Circle' } = route.params || {};
   const defaults = useMemo(() => {
@@ -96,6 +133,58 @@ export function CreateEventScreen({ route, navigation }) {
   const [endInput, setEndInput] = useState(defaults.end);
   const [location, setLocation] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [multiCircleEnabled, setMultiCircleEnabled] = useState(false);
+  const [availableCircles, setAvailableCircles] = useState([]);
+  const [selectedAdditionalCircleIds, setSelectedAdditionalCircleIds] = useState([]);
+  const [loadingCircles, setLoadingCircles] = useState(true);
+  const [circleLoadError, setCircleLoadError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      const enabled = await isFeatureEnabled(FEATURE_FLAGS.MULTI_CIRCLE_EVENTS);
+      if (!active) return;
+      setMultiCircleEnabled(enabled);
+
+      if (!enabled) {
+        setLoadingCircles(false);
+        return;
+      }
+
+      try {
+        const conversations = await listMyConversations();
+        if (!active) return;
+        setAvailableCircles(
+          conversations
+            .filter((conversation) => (
+              conversation.kind === 'group'
+              && conversation.id !== conversationId
+            ))
+            .sort((a, b) => a.title.localeCompare(b.title))
+        );
+      } catch (error) {
+        if (!active) return;
+        setCircleLoadError(error?.message || 'Other Circles could not load.');
+      } finally {
+        if (active) setLoadingCircles(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [conversationId]);
+
+  const selectedCircleCount = 1 + selectedAdditionalCircleIds.length;
+
+  const toggleAdditionalCircle = (circleId) => {
+    setSelectedAdditionalCircleIds((current) => (
+      current.includes(circleId)
+        ? current.filter((id) => id !== circleId)
+        : [...current, circleId]
+    ));
+  };
 
   const submit = async () => {
     if (submitting) return;
@@ -133,7 +222,7 @@ export function CreateEventScreen({ route, navigation }) {
     setSubmitting(true);
     try {
       const eventId = await createCircleEvent({
-        conversationId,
+        conversationIds: [conversationId, ...selectedAdditionalCircleIds],
         title: cleanTitle,
         description,
         startsAt,
@@ -171,11 +260,60 @@ export function CreateEventScreen({ route, navigation }) {
             <View style={styles.contextCopy}>
               <Text style={styles.contextTitle}>{circleName}</Text>
               <Text style={styles.contextBody}>
-                This event is private to current Circle members. Creating it does
-                not invite anyone outside the Circle.
+                {selectedCircleCount === 1
+                  ? 'This event is private to current members of this Circle.'
+                  : `This event will be shared privately across ${selectedCircleCount} Circles.`}
+                {' '}No one outside the selected Circles is invited.
               </Text>
             </View>
           </View>
+
+          {multiCircleEnabled ? (
+            <View style={styles.circleSection}>
+              <View style={styles.circleSectionHeader}>
+                <View>
+                  <Text style={styles.circleSectionTitle}>Invite Circles</Text>
+                  <Text style={styles.circleSectionBody}>
+                    Everyone in each selected Circle can view the event and RSVP.
+                  </Text>
+                </View>
+                <Text style={styles.circleSelectionCount}>{selectedCircleCount} selected</Text>
+              </View>
+
+              <CircleSelectorRow
+                title={circleName}
+                subtitle="Starting Circle · always included"
+                selected
+                locked
+              />
+
+              {loadingCircles ? (
+                <View style={styles.circleLoadState}>
+                  <ActivityIndicator size="small" />
+                  <Text style={styles.circleLoadText}>Loading your other Circles…</Text>
+                </View>
+              ) : circleLoadError ? (
+                <View style={styles.circleLoadState}>
+                  <Ionicons name="alert-circle-outline" size={18} color={COLORS.subtext} />
+                  <Text style={styles.circleLoadText}>{circleLoadError}</Text>
+                </View>
+              ) : availableCircles.length > 0 ? (
+                availableCircles.map((circle) => (
+                  <CircleSelectorRow
+                    key={circle.id}
+                    title={circle.title}
+                    subtitle={`${circle.memberCount || 0} members`}
+                    selected={selectedAdditionalCircleIds.includes(circle.id)}
+                    onPress={() => toggleAdditionalCircle(circle.id)}
+                  />
+                ))
+              ) : (
+                <Text style={styles.noOtherCircles}>
+                  Join another group Circle to combine groups in one event.
+                </Text>
+              )}
+            </View>
+          ) : null}
 
           <Field label="Event title">
             <TextInput
@@ -185,7 +323,6 @@ export function CreateEventScreen({ route, navigation }) {
               placeholderTextColor="#a4a4a4"
               maxLength={120}
               style={styles.input}
-              autoFocus
               returnKeyType="next"
             />
           </Field>
@@ -320,6 +457,113 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 17,
+  },
+  circleSection: {
+    marginBottom: 20,
+    padding: 15,
+    borderRadius: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
+  circleSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+  },
+  circleSectionTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 15,
+  },
+  circleSectionBody: {
+    maxWidth: 420,
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  circleSelectionCount: {
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 10,
+  },
+  circleSelectorRow: {
+    minHeight: 60,
+    marginTop: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: '#fafafa',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  circleSelectorRowSelected: {
+    borderColor: COLORS.text,
+    backgroundColor: '#f1f1f1',
+  },
+  circleSelectorIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.bg,
+  },
+  circleSelectorCopy: { flex: 1 },
+  circleSelectorTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+  },
+  circleSelectorSubtitle: {
+    marginTop: 2,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 10,
+  },
+  circleCheckbox: {
+    width: 27,
+    height: 27,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.bg,
+  },
+  circleCheckboxSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary,
+  },
+  circleLoadState: {
+    minHeight: 54,
+    marginTop: 8,
+    paddingHorizontal: 11,
+    borderRadius: 11,
+    backgroundColor: '#f7f7f7',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  circleLoadText: {
+    flex: 1,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+  },
+  noOtherCircles: {
+    marginTop: 10,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
   },
   field: { marginBottom: 17 },
   label: {

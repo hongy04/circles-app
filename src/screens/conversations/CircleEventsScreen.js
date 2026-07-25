@@ -83,6 +83,15 @@ function EventCard({ event, onPress }) {
           {formatEventDate(event.startsAt, event.endsAt)}
         </Text>
 
+        {event.circleCount > 1 ? (
+          <View style={styles.metaRow}>
+            <Ionicons name="people-outline" size={14} color={COLORS.subtext} />
+            <Text style={styles.metaText} numberOfLines={1}>
+              Shared across {event.circleCount} Circles
+            </Text>
+          </View>
+        ) : null}
+
         {event.locationName ? (
           <View style={styles.metaRow}>
             <Ionicons name="location-outline" size={14} color={COLORS.subtext} />
@@ -207,6 +216,7 @@ export function CircleEventsScreen({ route, navigation }) {
     void trackAppEvent('event_opened', {
       surface: 'circle_events',
       rsvp_status: event.viewerRsvpStatus,
+      circle_count: event.circleCount,
     });
     navigation.navigate('EventDetail', { eventId: event.id });
   };

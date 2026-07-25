@@ -65,6 +65,14 @@ function formatEventDate(startsAt, endsAt) {
   return `${date} at ${startTime} – ${endDate} at ${endTime}`;
 }
 
+function formatCircleContext(event) {
+  const circles = event?.circles || [];
+  if (circles.length === 0) return event?.circleName || 'Circle';
+  if (circles.length === 1) return circles[0].name;
+  if (circles.length === 2) return `${circles[0].name} + ${circles[1].name}`;
+  return `${circles[0].name} + ${circles.length - 1} more Circles`;
+}
+
 function CountCard({ value, label }) {
   return (
     <View style={styles.countCard}>
@@ -175,10 +183,21 @@ export function EventDetailScreen({ route }) {
       <View style={styles.heroCard}>
         <View style={styles.privacyRow}>
           <Ionicons name="lock-closed" size={12} color={COLORS.subtext} />
-          <Text style={styles.privacyText}>{event.circleName}</Text>
+          <Text style={styles.privacyText}>{formatCircleContext(event)}</Text>
         </View>
 
         <Text style={styles.title}>{event.title}</Text>
+
+        {event.circleCount > 1 ? (
+          <View style={styles.circleChips}>
+            {event.circles.map((circle) => (
+              <View key={circle.id} style={styles.circleChip}>
+                <Ionicons name="people-outline" size={13} color={COLORS.text} />
+                <Text style={styles.circleChipText} numberOfLines={1}>{circle.name}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <View style={styles.detailRow}>
           <View style={styles.detailIcon}>
@@ -202,7 +221,11 @@ export function EventDetailScreen({ route }) {
           <Avatar size={40} name={event.hostName} uri={event.hostAvatar} />
           <View style={styles.hostCopy}>
             <Text style={styles.hostName}>{event.hostName}</Text>
-            <Text style={styles.hostBody}>Hosting for this Circle</Text>
+            <Text style={styles.hostBody}>
+              {event.circleCount > 1
+                ? `Hosting across ${event.circleCount} Circles`
+                : 'Hosting for this Circle'}
+            </Text>
           </View>
         </View>
 
@@ -214,7 +237,7 @@ export function EventDetailScreen({ route }) {
       <View style={styles.rsvpCard}>
         <Text style={styles.rsvpTitle}>Are you going?</Text>
         <Text style={styles.rsvpBody}>
-          Your answer is visible only to current members of this event’s Circle.
+          Your answer is visible only to members of the Circles invited to this event.
         </Text>
 
         <View style={styles.rsvpButtons}>
@@ -260,7 +283,7 @@ export function EventDetailScreen({ route }) {
       </View>
 
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Circle responses</Text>
+        <Text style={styles.sectionTitle}>Responses</Text>
         <Text style={styles.sectionCount}>{counts?.attendeeCount || 0} people</Text>
       </View>
     </View>
@@ -311,6 +334,28 @@ const styles = StyleSheet.create({
     color: COLORS.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 11,
+  },
+  circleChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginBottom: 7,
+  },
+  circleChip: {
+    maxWidth: '100%',
+    minHeight: 30,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    backgroundColor: '#f1f1f1',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  circleChipText: {
+    maxWidth: 210,
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 10,
   },
   title: {
     marginTop: 10,

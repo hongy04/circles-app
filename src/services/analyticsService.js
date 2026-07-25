@@ -47,6 +47,7 @@ const ALLOWED_PROPERTY_KEYS = new Set([
   'selected_count',
   'none_available',
   'poll_status',
+  'circle_count',
 ]);
 
 function sanitizeProperties(properties = {}) {

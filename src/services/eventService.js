@@ -21,6 +21,7 @@ function mapEventSummary(row) {
     maybeCount: Number(row.maybe_count || 0),
     notGoingCount: Number(row.not_going_count || 0),
     pendingCount: Number(row.pending_count || 0),
+    circleCount: Math.max(1, Number(row.circle_count || 1)),
   };
 }
 
@@ -42,6 +43,11 @@ function mapEventDetails(data) {
       hostAvatar: rawEvent.host_avatar || null,
       circleId: rawEvent.circle_id,
       circleName: rawEvent.circle_name || 'Circle',
+      circleCount: Math.max(1, Number(rawEvent.circle_count || 1)),
+      circles: (rawEvent.circles || []).map((circle) => ({
+        id: circle.conversation_id,
+        name: circle.name || 'Circle',
+      })),
       viewerRsvpStatus: rawEvent.viewer_rsvp_status || 'pending',
       canManage: Boolean(rawEvent.can_manage),
       createdAt: rawEvent.created_at || null,
@@ -84,6 +90,7 @@ export async function listCircleEvents(conversationId) {
 
 export async function createCircleEvent({
   conversationId,
+  conversationIds,
   title,
   description = '',
   startsAt,
@@ -96,7 +103,12 @@ export async function createCircleEvent({
     'Creating Circle events is temporarily unavailable.'
   );
 
-  if (!conversationId) throw new Error('Circle is missing.');
+  const selectedConversationIds = Array.from(new Set(
+    (Array.isArray(conversationIds) ? conversationIds : [conversationId])
+      .filter(Boolean)
+  ));
+
+  if (selectedConversationIds.length === 0) throw new Error('Circle is missing.');
   if (!(startsAt instanceof Date) || Number.isNaN(startsAt.getTime())) {
     throw new Error('Event start time is invalid.');
   }
@@ -104,14 +116,33 @@ export async function createCircleEvent({
     throw new Error('Event end time is invalid.');
   }
 
-  const { data, error } = await supabase.rpc('create_circle_event', {
-    p_conversation_id: conversationId,
-    p_title: String(title || '').trim(),
-    p_description: String(description || '').trim(),
-    p_starts_at: startsAt.toISOString(),
-    p_ends_at: endsAt ? endsAt.toISOString() : null,
-    p_location_name: String(locationName || '').trim(),
-  });
+  let data;
+  let error;
+
+  if (selectedConversationIds.length > 1) {
+    await requireFeature(
+      FEATURE_FLAGS.MULTI_CIRCLE_EVENTS,
+      'Multi-Circle events are temporarily unavailable.'
+    );
+
+    ({ data, error } = await supabase.rpc('create_multi_circle_event', {
+      p_conversation_ids: selectedConversationIds,
+      p_title: String(title || '').trim(),
+      p_description: String(description || '').trim(),
+      p_starts_at: startsAt.toISOString(),
+      p_ends_at: endsAt ? endsAt.toISOString() : null,
+      p_location_name: String(locationName || '').trim(),
+    }));
+  } else {
+    ({ data, error } = await supabase.rpc('create_circle_event', {
+      p_conversation_id: selectedConversationIds[0],
+      p_title: String(title || '').trim(),
+      p_description: String(description || '').trim(),
+      p_starts_at: startsAt.toISOString(),
+      p_ends_at: endsAt ? endsAt.toISOString() : null,
+      p_location_name: String(locationName || '').trim(),
+    }));
+  }
 
   if (error) throw error;
   if (!data?.event_id) throw new Error('Circles could not create the event.');
@@ -120,6 +151,7 @@ export async function createCircleEvent({
     surface: 'create_event',
     has_location: Boolean(String(locationName || '').trim()),
     has_description: Boolean(String(description || '').trim()),
+    circle_count: selectedConversationIds.length,
   });
 
   return data.event_id;
