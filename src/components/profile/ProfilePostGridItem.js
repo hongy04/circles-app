@@ -3,7 +3,13 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS } from '../../theme/colors';
 
-export function ProfilePostGridItem({ post, onPress, onMenuPress, size }) {
+export function ProfilePostGridItem({
+  post,
+  onPress,
+  onMenuPress,
+  isMutualPreview = false,
+  size,
+}) {
   const [imageFailed, setImageFailed] = useState(false);
   const isVideo = post.mediaType === 'video';
   const canShowImage = Boolean(post.previewUrl) && !isVideo && !imageFailed;
@@ -67,6 +73,13 @@ export function ProfilePostGridItem({ post, onPress, onMenuPress, size }) {
         <View style={styles.mediaCountBadge}>
           <Ionicons name="copy-outline" size={14} color="#fff" />
           <Text style={styles.mediaCountText}>{post.mediaCount}</Text>
+        </View>
+      ) : null}
+
+      {isMutualPreview ? (
+        <View style={styles.previewBadge}>
+          <Ionicons name="eye" size={13} color="#fff" />
+          <Text style={styles.previewBadgeText}>Preview</Text>
         </View>
       ) : null}
     </Pressable>
@@ -139,5 +152,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontFamily: 'Manrope_700Bold',
     fontSize: 11,
+  },
+  previewBadge: {
+    position: 'absolute',
+    right: 7,
+    bottom: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+  },
+  previewBadgeText: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 10,
   },
 });

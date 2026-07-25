@@ -18,8 +18,10 @@ import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridIte
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import { deleteOwnPost } from '../../services/postService';
 import {
+  fetchMyMutualPreviewPostId,
   fetchProfilePage,
   respondToProfileRequest,
+  setMyMutualPreviewPost,
   sendProfileConnectionRequest,
 } from '../../services/profileService';
 
@@ -119,6 +121,8 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
   const [gridWidth, setGridWidth] = useState(0);
   const [managedPost, setManagedPost] = useState(null);
   const [deletingPostId, setDeletingPostId] = useState(null);
+  const [mutualPreviewPostId, setMutualPreviewPostId] = useState(null);
+  const [previewSaving, setPreviewSaving] = useState(false);
 
   const load = useCallback(async ({ refresh = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -128,15 +132,22 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
 
     try {
       const result = await fetchProfilePage(userId);
+      const isOwnProfile =
+        isSelf || result.profile?.relationship_status === 'self';
+      const previewPostId = isOwnProfile
+        ? await fetchMyMutualPreviewPostId()
+        : null;
+
       setProfile(result.profile);
       setPosts(result.posts);
+      setMutualPreviewPostId(previewPostId);
     } catch (loadError) {
       setError(loadError?.message || 'Failed to load profile.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userId]);
+  }, [isSelf, userId]);
 
   useEffect(() => {
     load();
@@ -171,6 +182,9 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
       setPosts((currentPosts) =>
         currentPosts.filter((post) => post.id !== postId)
       );
+      if (mutualPreviewPostId === postId) {
+        setMutualPreviewPostId(null);
+      }
       setProfile((currentProfile) =>
         currentProfile
           ? {
@@ -191,6 +205,45 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
     } finally {
       setDeletingPostId(null);
     }
+  };
+
+  const saveMutualPreview = async (nextPostId) => {
+    if (previewSaving) return;
+
+    setPreviewSaving(true);
+    try {
+      const savedPostId = await setMyMutualPreviewPost(nextPostId);
+      setMutualPreviewPostId(savedPostId);
+      setManagedPost(null);
+    } catch (previewError) {
+      Alert.alert(
+        'Preview not updated',
+        previewError?.message || 'Please try again.'
+      );
+    } finally {
+      setPreviewSaving(false);
+    }
+  };
+
+  const toggleManagedPostPreview = () => {
+    if (!managedPost?.id || previewSaving) return;
+
+    if (managedPost.id === mutualPreviewPostId) {
+      saveMutualPreview(null);
+      return;
+    }
+
+    Alert.alert(
+      'Show this post to mutuals?',
+      'People who share trusted contact context with you will be able to see this one preview before you connect. Your full profile and other posts stay private.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Show post',
+          onPress: () => saveMutualPreview(managedPost.id),
+        },
+      ]
+    );
   };
 
   const handleConnect = async () => {
@@ -305,6 +358,7 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
           renderItem={({ item }) => (
             <ProfilePostGridItem
               post={item}
+              isMutualPreview={item.id === mutualPreviewPostId}
               size={gridWidth > 0 ? Math.floor(gridWidth / 3) : undefined}
               onPress={() => navigation.navigate('ProfilePostsFeed', {
                 userId: profile?.id,
@@ -338,7 +392,12 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
         <PostOwnerMenu
           visible={Boolean(managedPost)}
           busy={Boolean(deletingPostId)}
-          onClose={() => !deletingPostId && setManagedPost(null)}
+          previewBusy={previewSaving}
+          isMutualPreview={managedPost?.id === mutualPreviewPostId}
+          onClose={() => {
+            if (!deletingPostId && !previewSaving) setManagedPost(null);
+          }}
+          onToggleMutualPreview={toggleManagedPostPreview}
           onEdit={editManagedPost}
           onDelete={removeManagedPost}
         />

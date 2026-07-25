@@ -16,12 +16,17 @@ import { COLORS } from '../../theme/colors';
 export function PostOwnerMenu({
   visible,
   busy = false,
+  previewBusy = false,
+  isMutualPreview = false,
   onClose,
   onEdit,
   onDelete,
+  onToggleMutualPreview,
 }) {
+  const interactionBusy = busy || previewBusy;
+
   const confirmDelete = () => {
-    if (busy) return;
+    if (interactionBusy) return;
 
     Alert.alert(
       'Delete this post?',
@@ -43,13 +48,13 @@ export function PostOwnerMenu({
       transparent
       animationType="fade"
       presentationStyle="overFullScreen"
-      onRequestClose={busy ? undefined : onClose}
+      onRequestClose={interactionBusy ? undefined : onClose}
     >
       <SafeAreaProvider>
         <View style={styles.root}>
           <Pressable
             style={StyleSheet.absoluteFillObject}
-            onPress={busy ? undefined : onClose}
+            onPress={interactionBusy ? undefined : onClose}
             accessibilityRole="button"
             accessibilityLabel="Close post options"
           />
@@ -62,9 +67,49 @@ export function PostOwnerMenu({
               <View style={styles.handle} />
               <Text style={styles.title}>Manage post</Text>
 
+              {onToggleMutualPreview ? (
+                <Pressable
+                  onPress={onToggleMutualPreview}
+                  disabled={interactionBusy}
+                  style={({ pressed }) => [
+                    styles.action,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <View style={styles.iconCircle}>
+                    {previewBusy ? (
+                      <ActivityIndicator size="small" color={COLORS.text} />
+                    ) : (
+                      <Ionicons
+                        name={isMutualPreview ? 'eye-off-outline' : 'eye-outline'}
+                        size={21}
+                        color={COLORS.text}
+                      />
+                    )}
+                  </View>
+                  <View style={styles.actionTextWrap}>
+                    <Text style={styles.actionTitle}>
+                      {isMutualPreview
+                        ? 'Remove Mutuals preview'
+                        : 'Show as Mutuals preview'}
+                    </Text>
+                    <Text style={styles.actionSubtitle}>
+                      {isMutualPreview
+                        ? 'Mutuals will see only your private profile card.'
+                        : 'Let mutuals see this one post before connecting.'}
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={19}
+                    color={COLORS.subtext}
+                  />
+                </Pressable>
+              ) : null}
+
               <Pressable
                 onPress={onEdit}
-                disabled={busy}
+                disabled={interactionBusy}
                 style={({ pressed }) => [
                   styles.action,
                   pressed && styles.pressed,
@@ -84,7 +129,7 @@ export function PostOwnerMenu({
 
               <Pressable
                 onPress={confirmDelete}
-                disabled={busy}
+                disabled={interactionBusy}
                 style={({ pressed }) => [
                   styles.action,
                   pressed && styles.pressed,
@@ -109,11 +154,11 @@ export function PostOwnerMenu({
 
               <Pressable
                 onPress={onClose}
-                disabled={busy}
+                disabled={interactionBusy}
                 style={({ pressed }) => [
                   styles.cancelButton,
                   pressed && styles.pressed,
-                  busy && styles.disabled,
+                  interactionBusy && styles.disabled,
                 ]}
               >
                 <Text style={styles.cancelText}>Cancel</Text>

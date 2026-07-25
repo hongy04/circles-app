@@ -2,7 +2,7 @@ import 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Dimensions, Pressable, ScrollView, StyleSheet, Text, View
+  ActivityIndicator, Alert, Dimensions, Image, Pressable, ScrollView, StyleSheet, Text, View
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -59,6 +59,7 @@ import { CirclePostsFeedScreen } from './src/screens/conversations/CirclePostsFe
 import { CircleTimelineFeedScreen } from './src/screens/conversations/CircleTimelineFeedScreen';
 import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
 import { getInviteLinkingPrefixes } from './src/services/inviteService';
+import { timeAgo } from './src/utils/timeAgo';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W, height: H } = Dimensions.get('window');
@@ -343,7 +344,18 @@ function CirclesStack() {
 
 /* ---------------- Mutuals ---------------- */
 const MOCK_CANDIDATES = [
-  { id: 'm1', display_name: 'Jordan Kim', avatar_url: 'https://i.pravatar.cc/150?img=11', since: new Date().toISOString() },
+  {
+    id: 'm1',
+    display_name: 'Jordan Kim',
+    avatar_url: 'https://i.pravatar.cc/150?img=11',
+    since: new Date().toISOString(),
+    preview_post_id: 'mock-preview-1',
+    preview_caption: 'A quiet afternoon with people I care about.',
+    preview_url: 'https://picsum.photos/seed/circles-mutual-preview/900/700',
+    preview_media_type: 'image',
+    preview_created_at: new Date().toISOString(),
+    preview_media_count: 1,
+  },
 ];
 const MOCK_INCOMING = [
   { id: 'r1', from_user: 'uZ', display_name: 'Taylor Brooks', avatar_url: 'https://i.pravatar.cc/150?img=47', note: null, created_at: new Date().toISOString() },
@@ -351,6 +363,143 @@ const MOCK_INCOMING = [
 const MOCK_CONNECTIONS = [
   { user_id: 'c1', display_name: 'Alex Rivera', username: 'alex', avatar_url: 'https://i.pravatar.cc/150?img=12' },
 ];
+
+function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const hasPreview = Boolean(user.preview_post_id);
+  const isVideo = user.preview_media_type === 'video';
+  const canShowImage = Boolean(user.preview_url) && !isVideo && !imageFailed;
+  const previewHeight = Math.min(Math.max(Math.round((W - 48) * 0.72), 210), 360);
+  const previewTime = user.preview_created_at
+    ? timeAgo(user.preview_created_at)
+    : '';
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [user.preview_url]);
+
+  if (!hasPreview) {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider, borderRadius: 12 }}>
+        <Pressable
+          onPress={onOpenProfile}
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+        >
+          <Avatar size={48} name={user.display_name || 'Unknown'} uri={user.avatar_url} />
+          <View style={{ flex: 1, marginHorizontal: 12 }}>
+            <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>{user.display_name || 'Unknown'}</Text>
+            <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }}>Mutual contact</Text>
+          </View>
+        </Pressable>
+        <Pressable
+          onPress={onRequest}
+          disabled={sending}
+          style={({ pressed }) => ({
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+            borderRadius: 10,
+            backgroundColor: COLORS.primary,
+            opacity: pressed || sending ? 0.7 : 1,
+          })}
+        >
+          {sending ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Request</Text>}
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider, borderRadius: 16, overflow: 'hidden', backgroundColor: COLORS.bg }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12 }}>
+        <Pressable
+          onPress={onOpenProfile}
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+        >
+          <Avatar size={46} name={user.display_name || 'Unknown'} uri={user.avatar_url} />
+          <View style={{ flex: 1, marginHorizontal: 11 }}>
+            <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>
+              {user.display_name || 'Unknown'}
+            </Text>
+            <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }} numberOfLines={1}>
+              Mutual contact{previewTime ? ` · ${previewTime}` : ''}
+            </Text>
+          </View>
+        </Pressable>
+
+        <Pressable
+          onPress={onRequest}
+          disabled={sending}
+          style={({ pressed }) => ({
+            minWidth: 82,
+            minHeight: 36,
+            paddingHorizontal: 12,
+            borderRadius: 10,
+            backgroundColor: COLORS.primary,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: pressed || sending ? 0.7 : 1,
+          })}
+        >
+          {sending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 12 }}>Request</Text>}
+        </Pressable>
+      </View>
+
+      <Pressable
+        onPress={onOpenProfile}
+        style={({ pressed }) => ({
+          height: previewHeight,
+          backgroundColor: '#313131',
+          opacity: pressed ? 0.92 : 1,
+        })}
+      >
+        <View style={{ ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons
+            name={isVideo ? 'play-circle-outline' : 'image-outline'}
+            size={48}
+            color="#fff"
+          />
+          <Text style={{ color: '#fff', fontFamily: 'Manrope_600SemiBold', marginTop: 7 }}>
+            {isVideo ? 'Video preview' : 'Post preview'}
+          </Text>
+        </View>
+
+        {canShowImage ? (
+          <Image
+            source={{ uri: user.preview_url }}
+            style={StyleSheet.absoluteFillObject}
+            resizeMode="cover"
+            onError={() => setImageFailed(true)}
+          />
+        ) : null}
+
+        <View style={{ position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.66)' }}>
+          <Ionicons name="eye" size={13} color="#fff" />
+          <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 11 }}>Mutuals preview</Text>
+        </View>
+
+        {Number(user.preview_media_count || 0) > 1 ? (
+          <View style={{ position: 'absolute', top: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.66)' }}>
+            <Ionicons name="copy-outline" size={13} color="#fff" />
+            <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 11 }}>{user.preview_media_count}</Text>
+          </View>
+        ) : null}
+      </Pressable>
+
+      <Pressable onPress={onOpenProfile} style={({ pressed }) => ({ paddingHorizontal: 13, paddingVertical: 12, opacity: pressed ? 0.65 : 1 })}>
+        {user.preview_caption ? (
+          <Text style={{ color: COLORS.text, fontFamily: 'Manrope_400Regular', lineHeight: 20 }} numberOfLines={3}>
+            <Text style={{ fontFamily: 'Manrope_700Bold' }}>{user.display_name || 'Unknown'} </Text>
+            {user.preview_caption}
+          </Text>
+        ) : (
+          <Text style={{ color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12 }}>
+            Open their private profile to request a connection.
+          </Text>
+        )}
+      </Pressable>
+    </View>
+  );
+}
 
 function MutualsScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
@@ -563,31 +712,13 @@ function MutualsScreen({ navigation, route }) {
               </Pressable>
             </View>
           ) : candidates.map((user) => (
-            <View key={user.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider, borderRadius: 12 }}>
-              <Pressable
-                onPress={() => navigation.navigate('Profile', { userId: user.id })}
-                style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
-              >
-                <Avatar size={48} name={user.display_name || 'Unknown'} uri={user.avatar_url} />
-                <View style={{ flex: 1, marginHorizontal: 12 }}>
-                  <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>{user.display_name || 'Unknown'}</Text>
-                  <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }}>Mutual contact</Text>
-                </View>
-              </Pressable>
-              <Pressable
-                onPress={() => sendRequest(user.id)}
-                disabled={Boolean(sending[user.id])}
-                style={({ pressed }) => ({
-                  paddingHorizontal: 14,
-                  paddingVertical: 8,
-                  borderRadius: 10,
-                  backgroundColor: COLORS.primary,
-                  opacity: pressed || sending[user.id] ? 0.7 : 1,
-                })}
-              >
-                {sending[user.id] ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Request</Text>}
-              </Pressable>
-            </View>
+            <MutualCandidateCard
+              key={user.id}
+              user={user}
+              sending={Boolean(sending[user.id])}
+              onOpenProfile={() => navigation.navigate('Profile', { userId: user.id })}
+              onRequest={() => sendRequest(user.id)}
+            />
           ))}
         </ScrollView>
       ) : tab === 'requests' ? (

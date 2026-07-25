@@ -37,6 +37,10 @@ import {
   deleteOwnPost,
   fetchPostDetail,
 } from '../../services/postService';
+import {
+  fetchMyMutualPreviewPostId,
+  setMyMutualPreviewPost,
+} from '../../services/profileService';
 import { timeAgo } from '../../utils/timeAgo';
 
 function localCommentId() {
@@ -64,6 +68,8 @@ export function PostDetailScreen({ route, navigation }) {
   const [isOwner, setIsOwner] = useState(false);
   const [ownerMenuVisible, setOwnerMenuVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [mutualPreviewPostId, setMutualPreviewPostId] = useState(null);
+  const [previewSaving, setPreviewSaving] = useState(false);
 
   const [comments, setComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(true);
@@ -89,6 +95,11 @@ export function PostDetailScreen({ route, navigation }) {
       setCommentCount(detail.commentCount);
       setLiked(detail.likedByMe);
       setIsOwner(detail.isOwner);
+      if (detail.isOwner) {
+        setMutualPreviewPostId(await fetchMyMutualPreviewPostId());
+      } else {
+        setMutualPreviewPostId(null);
+      }
       if (!silent) setActiveMediaIndex(0);
     } catch (loadError) {
       if (!mountedRef.current) return;
@@ -241,6 +252,45 @@ export function PostDetailScreen({ route, navigation }) {
     } finally {
       if (mountedRef.current) setDeleting(false);
     }
+  };
+
+  const saveMutualPreview = async (nextPostId) => {
+    if (previewSaving) return;
+
+    setPreviewSaving(true);
+    try {
+      const savedPostId = await setMyMutualPreviewPost(nextPostId);
+      setMutualPreviewPostId(savedPostId);
+      setOwnerMenuVisible(false);
+    } catch (previewError) {
+      Alert.alert(
+        'Preview not updated',
+        previewError?.message || 'Please try again.'
+      );
+    } finally {
+      if (mountedRef.current) setPreviewSaving(false);
+    }
+  };
+
+  const toggleMutualPreview = () => {
+    if (!isOwner || previewSaving) return;
+
+    if (mutualPreviewPostId === postId) {
+      saveMutualPreview(null);
+      return;
+    }
+
+    Alert.alert(
+      'Show this post to mutuals?',
+      'People who share trusted contact context with you will be able to see this one preview before you connect. Your full profile and other posts stay private.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Show post',
+          onPress: () => saveMutualPreview(postId),
+        },
+      ]
+    );
   };
 
   const displayMedia = media.length
@@ -483,7 +533,12 @@ export function PostDetailScreen({ route, navigation }) {
       <PostOwnerMenu
         visible={ownerMenuVisible}
         busy={deleting}
-        onClose={() => !deleting && setOwnerMenuVisible(false)}
+        previewBusy={previewSaving}
+        isMutualPreview={mutualPreviewPostId === postId}
+        onClose={() => {
+          if (!deleting && !previewSaving) setOwnerMenuVisible(false);
+        }}
+        onToggleMutualPreview={toggleMutualPreview}
         onEdit={editPost}
         onDelete={removePost}
       />

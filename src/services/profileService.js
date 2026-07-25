@@ -90,6 +90,31 @@ export async function fetchProfilePage(userId) {
   return { profile, posts };
 }
 
+export async function fetchMyMutualPreviewPostId() {
+  await ensureAuthed();
+
+  const { data, error } = await supabase.rpc(
+    'get_my_mutual_preview_post_id'
+  );
+
+  if (error) throw error;
+  return data || null;
+}
+
+export async function setMyMutualPreviewPost(postId = null) {
+  await ensureAuthed();
+
+  const { data, error } = await supabase.rpc(
+    'set_my_mutual_preview_post',
+    {
+      p_post_id: postId || null,
+    }
+  );
+
+  if (error) throw error;
+  return data || null;
+}
+
 export async function fetchMyEditableProfile() {
   const session = await ensureAuthed();
 
