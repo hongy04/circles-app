@@ -81,13 +81,51 @@ export async function fetchProfilePosts(userId) {
   }));
 }
 
+export async function fetchPreConnectionProfileShell(userId) {
+  await ensureAuthed();
+
+  const { data, error } = await supabase
+    .rpc('get_preconnection_profile_shell', {
+      profile_user_id: userId,
+    })
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!data) {
+    throw new Error('This profile is private or unavailable.');
+  }
+
+  return {
+    ...data,
+    mutual_connection_count: Number(data.mutual_connection_count || 0),
+    shared_circle_count: Number(data.shared_circle_count || 0),
+    preview_media_count: Number(data.preview_media_count || 0),
+  };
+}
+
 export async function fetchProfilePage(userId) {
   const profile = await fetchProfileOverview(userId);
-  const posts = profile.can_view_posts
-    ? await fetchProfilePosts(profile.id)
-    : [];
 
-  return { profile, posts };
+  if (profile.can_view_posts) {
+    return {
+      profile,
+      posts: await fetchProfilePosts(profile.id),
+    };
+  }
+
+  const shell = await fetchPreConnectionProfileShell(profile.id);
+
+  return {
+    profile: {
+      ...profile,
+      ...shell,
+      can_view_posts: false,
+      post_count: 0,
+      connection_count: 0,
+    },
+    posts: [],
+  };
 }
 
 export async function fetchMyMutualPreviewPostId() {

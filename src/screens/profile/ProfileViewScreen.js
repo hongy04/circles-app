@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS } from '../../theme/colors';
 import { ProfileHeader } from '../../components/profile/ProfileHeader';
+import { PreConnectionProfileShell } from '../../components/profile/PreConnectionProfileShell';
 import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import { deleteOwnPost } from '../../services/postService';
@@ -291,6 +292,7 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
       <ProfileHeader
         profile={profile}
         isSelf={resolvedIsSelf}
+        showStats={Boolean(profile.can_view_posts)}
         busy={actionBusy}
         onEdit={() => navigation.navigate('EditProfile')}
         onConnect={handleConnect}
@@ -298,10 +300,14 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
         onDecline={() => handleRespond('decline')}
       />
 
-      <View style={styles.gridHeading}>
-        <Ionicons name="grid-outline" size={18} color={COLORS.text} />
-        <Text style={styles.gridHeadingText}>Posts</Text>
-      </View>
+      {profile.can_view_posts ? (
+        <View style={styles.gridHeading}>
+          <Ionicons name="grid-outline" size={18} color={COLORS.text} />
+          <Text style={styles.gridHeadingText}>Posts</Text>
+        </View>
+      ) : (
+        <PreConnectionProfileShell profile={profile} />
+      )}
     </>
   ) : null;
 
@@ -370,13 +376,13 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
               }
             />
           )}
-          ListEmptyComponent={(
+          ListEmptyComponent={profile?.can_view_posts ? (
             <EmptyPosts
               isSelf={resolvedIsSelf}
-              canViewPosts={Boolean(profile?.can_view_posts)}
+              canViewPosts
               onCreatePost={() => navigation.navigate('CreatePost')}
             />
-          )}
+          ) : null}
           refreshControl={(
             <RefreshControl
               refreshing={refreshing}

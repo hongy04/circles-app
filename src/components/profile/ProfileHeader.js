@@ -105,6 +105,7 @@ function RelationshipActions({
 export function ProfileHeader({
   profile,
   isSelf,
+  showStats = true,
   busy = false,
   onEdit,
   onConnect,
@@ -144,11 +145,13 @@ export function ProfileHeader({
         <Text style={styles.bioHint}>Add a short bio so your circle knows it’s you.</Text>
       ) : null}
 
-      <View style={styles.statsRow}>
-        <Stat value={profile.post_count || 0} label="Posts" />
-        <View style={styles.statDivider} />
-        <Stat value={profile.connection_count || 0} label="Connections" />
-      </View>
+      {showStats ? (
+        <View style={styles.statsRow}>
+          <Stat value={profile.post_count || 0} label="Posts" />
+          <View style={styles.statDivider} />
+          <Stat value={profile.connection_count || 0} label="Connections" />
+        </View>
+      ) : null}
 
       {isSelf ? (
         <View style={styles.actionsRow}>
