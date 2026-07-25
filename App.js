@@ -65,6 +65,8 @@ import { CircleTimelineFeedScreen } from './src/screens/conversations/CircleTime
 import { CircleEventsScreen } from './src/screens/conversations/CircleEventsScreen';
 import { CreateEventScreen } from './src/screens/conversations/CreateEventScreen';
 import { EventDetailScreen } from './src/screens/conversations/EventDetailScreen';
+import { CreateAvailabilityPollScreen } from './src/screens/conversations/CreateAvailabilityPollScreen';
+import { AvailabilityPollDetailScreen } from './src/screens/conversations/AvailabilityPollDetailScreen';
 import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
 import { getInviteLinkingPrefixes } from './src/services/inviteService';
 import { timeAgo } from './src/utils/timeAgo';
@@ -315,6 +317,16 @@ function CirclesStack() {
         name="EventDetail"
         component={EventDetailScreen}
         options={{ title: 'Event' }}
+      />
+      <CirclesStackNav.Screen
+        name="CreateAvailabilityPoll"
+        component={CreateAvailabilityPollScreen}
+        options={{ title: 'Poll Dates' }}
+      />
+      <CirclesStackNav.Screen
+        name="AvailabilityPollDetail"
+        component={AvailabilityPollDetailScreen}
+        options={{ title: 'Availability' }}
       />
       <CirclesStackNav.Screen
         name="InviteCirclePeople"

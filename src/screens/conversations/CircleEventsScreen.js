@@ -14,7 +14,12 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { COLORS } from '../../theme/colors';
 import { listCircleEvents } from '../../services/eventService';
+import { listCircleAvailabilityPolls } from '../../services/availabilityPollService';
 import { trackAppEvent } from '../../services/analyticsService';
+import {
+  FEATURE_FLAGS,
+  isFeatureEnabled,
+} from '../../services/featureFlagService';
 
 const RSVP_LABELS = {
   pending: 'No response',
@@ -58,10 +63,7 @@ function EventCard({ event, onPress }) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.eventCard,
-        pressed && styles.pressed,
-      ]}
+      style={({ pressed }) => [styles.eventCard, pressed && styles.pressed]}
     >
       <View style={styles.dateIcon}>
         <Ionicons
@@ -73,9 +75,7 @@ function EventCard({ event, onPress }) {
 
       <View style={styles.eventCopy}>
         <View style={styles.titleRow}>
-          <Text style={styles.eventTitle} numberOfLines={1}>
-            {event.title}
-          </Text>
+          <Text style={styles.eventTitle} numberOfLines={1}>{event.title}</Text>
           {isPast ? <Text style={styles.pastLabel}>Past</Text> : null}
         </View>
 
@@ -86,9 +86,7 @@ function EventCard({ event, onPress }) {
         {event.locationName ? (
           <View style={styles.metaRow}>
             <Ionicons name="location-outline" size={14} color={COLORS.subtext} />
-            <Text style={styles.metaText} numberOfLines={1}>
-              {event.locationName}
-            </Text>
+            <Text style={styles.metaText} numberOfLines={1}>{event.locationName}</Text>
           </View>
         ) : null}
 
@@ -109,26 +107,85 @@ function EventCard({ event, onPress }) {
   );
 }
 
+function PollCard({ poll, onPress }) {
+  const finalized = poll.status === 'finalized';
+  const responseLabel = `${poll.responseCount}/${poll.memberCount} responded`;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.pollCard, pressed && styles.pressed]}
+    >
+      <View style={styles.pollIcon}>
+        <Ionicons
+          name={finalized ? 'checkmark-done-outline' : 'options-outline'}
+          size={22}
+          color={COLORS.text}
+        />
+      </View>
+      <View style={styles.pollCopy}>
+        <View style={styles.titleRow}>
+          <Text style={styles.pollTitle} numberOfLines={1}>{poll.title}</Text>
+          <Text style={styles.pollState}>{finalized ? 'Finalized' : 'Open'}</Text>
+        </View>
+        <Text style={styles.pollMeta} numberOfLines={1}>
+          {poll.optionCount} possible times · {responseLabel}
+        </Text>
+        <Text style={styles.pollViewerState}>
+          {finalized
+            ? 'Open the chosen event'
+            : poll.viewerResponded
+              ? 'Your availability is saved'
+              : 'Add your availability'}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={19} color="#c7c7cc" />
+    </Pressable>
+  );
+}
+
 export function CircleEventsScreen({ route, navigation }) {
   const { conversationId, circleName = 'Circle' } = route.params || {};
   const [events, setEvents] = useState([]);
+  const [polls, setPolls] = useState([]);
+  const [pollsEnabled, setPollsEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [pollError, setPollError] = useState('');
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!conversationId) return;
     if (!quiet) setLoading(true);
     setError('');
+    setPollError('');
 
-    try {
-      setEvents(await listCircleEvents(conversationId));
-    } catch (loadError) {
-      setError(loadError?.message || 'Could not load this Circle’s events.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    const availabilityEnabled = await isFeatureEnabled(
+      FEATURE_FLAGS.EVENT_AVAILABILITY_POLLS
+    );
+    setPollsEnabled(availabilityEnabled);
+
+    const results = await Promise.allSettled([
+      listCircleEvents(conversationId),
+      availabilityEnabled
+        ? listCircleAvailabilityPolls(conversationId)
+        : Promise.resolve([]),
+    ]);
+
+    if (results[0].status === 'fulfilled') {
+      setEvents(results[0].value);
+    } else {
+      setError(results[0].reason?.message || 'Could not load this Circle’s events.');
     }
+
+    if (results[1].status === 'fulfilled') {
+      setPolls(results[1].value);
+    } else {
+      setPollError(results[1].reason?.message || 'Availability polls could not load.');
+    }
+
+    setLoading(false);
+    setRefreshing(false);
   }, [conversationId]);
 
   useFocusEffect(
@@ -141,6 +198,10 @@ export function CircleEventsScreen({ route, navigation }) {
     () => events.filter((event) => new Date(event.startsAt).getTime() >= Date.now()).length,
     [events]
   );
+  const openPollCount = useMemo(
+    () => polls.filter((poll) => poll.status === 'open').length,
+    [polls]
+  );
 
   const openEvent = (event) => {
     void trackAppEvent('event_opened', {
@@ -148,6 +209,14 @@ export function CircleEventsScreen({ route, navigation }) {
       rsvp_status: event.viewerRsvpStatus,
     });
     navigation.navigate('EventDetail', { eventId: event.id });
+  };
+
+  const openPoll = (poll) => {
+    void trackAppEvent('event_poll_opened', {
+      surface: 'circle_events',
+      poll_status: poll.status,
+    });
+    navigation.navigate('AvailabilityPollDetail', { pollId: poll.id });
   };
 
   const header = (
@@ -158,23 +227,63 @@ export function CircleEventsScreen({ route, navigation }) {
         </View>
         <Text style={styles.heroTitle}>Plans for {circleName}</Text>
         <Text style={styles.heroBody}>
-          Make a real plan, keep the details in one private place, and let every
-          current Circle member answer for themselves.
+          Poll the Circle when the date is uncertain, or create a private event
+          when the plan is already decided.
         </Text>
-        <Pressable
-          onPress={() => navigation.navigate('CreateEvent', {
-            conversationId,
-            circleName,
-          })}
-          style={({ pressed }) => [
-            styles.createButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Ionicons name="add" size={19} color="#fff" />
-          <Text style={styles.createButtonText}>Create Event</Text>
-        </Pressable>
+
+        <View style={styles.actionRow}>
+          {pollsEnabled ? (
+            <Pressable
+              onPress={() => navigation.navigate('CreateAvailabilityPoll', {
+                conversationId,
+                circleName,
+              })}
+              style={({ pressed }) => [styles.pollButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="options-outline" size={18} color={COLORS.text} />
+              <Text style={styles.pollButtonText}>Poll Dates</Text>
+            </Pressable>
+          ) : null}
+
+          <Pressable
+            onPress={() => navigation.navigate('CreateEvent', {
+              conversationId,
+              circleName,
+            })}
+            style={({ pressed }) => [styles.createButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="add" size={19} color="#fff" />
+            <Text style={styles.createButtonText}>Create Event</Text>
+          </Pressable>
+        </View>
       </View>
+
+      {pollsEnabled ? (
+        <>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Availability polls</Text>
+            <Text style={styles.sectionCount}>{openPollCount} open</Text>
+          </View>
+
+          {pollError ? (
+            <View style={styles.inlineError}>
+              <Ionicons name="alert-circle-outline" size={18} color={COLORS.subtext} />
+              <Text style={styles.inlineErrorText}>{pollError}</Text>
+            </View>
+          ) : polls.length > 0 ? (
+            polls.map((poll) => (
+              <PollCard key={poll.id} poll={poll} onPress={() => openPoll(poll)} />
+            ))
+          ) : (
+            <View style={styles.pollEmptyCard}>
+              <Text style={styles.pollEmptyTitle}>No date polls yet</Text>
+              <Text style={styles.pollEmptyBody}>
+                Start one when the Circle knows the plan but not the best time.
+              </Text>
+            </View>
+          )}
+        </>
+      ) : null}
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Circle events</Text>
@@ -183,16 +292,16 @@ export function CircleEventsScreen({ route, navigation }) {
     </View>
   );
 
-  if (loading && events.length === 0) {
+  if (loading && events.length === 0 && polls.length === 0) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
         <ActivityIndicator />
-        <Text style={styles.stateText}>Loading events…</Text>
+        <Text style={styles.stateText}>Loading plans…</Text>
       </SafeAreaView>
     );
   }
 
-  if (error && events.length === 0) {
+  if (error && events.length === 0 && polls.length === 0) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
         <Ionicons name="calendar-outline" size={38} color={COLORS.text} />
@@ -216,10 +325,10 @@ export function CircleEventsScreen({ route, navigation }) {
         ListEmptyComponent={(
           <View style={styles.emptyState}>
             <Ionicons name="calendar-outline" size={42} color={COLORS.subtext} />
-            <Text style={styles.emptyTitle}>No plans yet</Text>
+            <Text style={styles.emptyTitle}>No events yet</Text>
             <Text style={styles.emptyBody}>
-              Create the first event for this Circle. Members can answer Going,
-              Maybe, or Can’t go without leaving the private group.
+              Finalize an availability poll or create an event directly. Members
+              can then answer Going, Maybe, or Can’t go.
             </Text>
           </View>
         )}
@@ -279,9 +388,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  actionRow: { marginTop: 18, flexDirection: 'row', gap: 9 },
+  pollButton: {
+    minHeight: 44,
+    flex: 1,
+    borderRadius: 11,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  pollButtonText: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+  },
   createButton: {
     minHeight: 44,
-    marginTop: 18,
+    flex: 1,
     borderRadius: 11,
     flexDirection: 'row',
     alignItems: 'center',
@@ -292,7 +419,7 @@ const styles = StyleSheet.create({
   createButtonText: {
     color: '#fff',
     fontFamily: 'Manrope_700Bold',
-    fontSize: 14,
+    fontSize: 13,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -311,6 +438,87 @@ const styles = StyleSheet.create({
     color: COLORS.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
+  },
+  pollCard: {
+    minHeight: 104,
+    marginBottom: 9,
+    padding: 14,
+    borderRadius: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  pollIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f1f1',
+  },
+  pollCopy: { flex: 1 },
+  pollTitle: {
+    flex: 1,
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 15,
+  },
+  pollState: {
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 9,
+    textTransform: 'uppercase',
+  },
+  pollMeta: {
+    marginTop: 4,
+    color: COLORS.text,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 11,
+  },
+  pollViewerState: {
+    marginTop: 5,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+  },
+  pollEmptyCard: {
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
+  pollEmptyTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+  },
+  pollEmptyBody: {
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  inlineError: {
+    minHeight: 62,
+    padding: 13,
+    borderRadius: 13,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inlineErrorText: {
+    flex: 1,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
   },
   eventCard: {
     minHeight: 126,

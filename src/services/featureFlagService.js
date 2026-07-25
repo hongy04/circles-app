@@ -6,6 +6,7 @@ export const FEATURE_FLAGS = Object.freeze({
   PRECONNECTION_PROFILE_SHELL: 'preconnection_profile_shell',
   LAUNCH_ANALYTICS: 'launch_analytics',
   CIRCLE_EVENTS: 'circle_events',
+  EVENT_AVAILABILITY_POLLS: 'event_availability_polls',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -14,6 +15,7 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.PRECONNECTION_PROFILE_SHELL]: true,
   [FEATURE_FLAGS.LAUNCH_ANALYTICS]: true,
   [FEATURE_FLAGS.CIRCLE_EVENTS]: true,
+  [FEATURE_FLAGS.EVENT_AVAILABILITY_POLLS]: true,
 });
 
 const CACHE_TTL_MS = 60_000;

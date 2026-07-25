@@ -17,6 +17,10 @@ const ALLOWED_EVENT_NAMES = new Set([
   'event_created',
   'event_opened',
   'event_rsvp_updated',
+  'event_poll_created',
+  'event_poll_opened',
+  'event_poll_response_updated',
+  'event_poll_finalized',
 ]);
 
 const ALLOWED_PROPERTY_KEYS = new Set([
@@ -39,6 +43,10 @@ const ALLOWED_PROPERTY_KEYS = new Set([
   'rsvp_status',
   'has_location',
   'has_description',
+  'option_count',
+  'selected_count',
+  'none_available',
+  'poll_status',
 ]);
 
 function sanitizeProperties(properties = {}) {
