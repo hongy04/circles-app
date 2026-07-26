@@ -19,6 +19,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS } from '../../theme/colors';
 import {
   getEventDetails,
+  getEventGuestAttendeeVisibility,
   updateEventGuestSettings,
 } from '../../services/eventService';
 
@@ -42,20 +43,25 @@ export function EventGuestSettingsScreen({ route, navigation }) {
   const [guestCapInput, setGuestCapInput] = useState('0');
   const [membersCanInviteGuests, setMembersCanInviteGuests] = useState(false);
   const [allowPlusOnes, setAllowPlusOnes] = useState(false);
+  const [showAttendeeListToGuests, setShowAttendeeListToGuests] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const details = await getEventDetails(eventId);
+      const [details, attendeeVisibility] = await Promise.all([
+        getEventDetails(eventId),
+        getEventGuestAttendeeVisibility(eventId),
+      ]);
       if (!details.event.canManage) {
         throw new Error('Only the event host can change outside guest settings.');
       }
-      setGuestCount(details.event.guestCount);
+      setGuestCount(details.event.reservedGuestCount);
       setGuestCapInput(String(details.event.outsideGuestCap));
       setMembersCanInviteGuests(details.event.membersCanInviteGuests);
       setAllowPlusOnes(details.event.allowPlusOnes);
+      setShowAttendeeListToGuests(attendeeVisibility);
     } catch (loadError) {
       setError(loadError?.message || 'Guest settings could not load.');
     } finally {
@@ -81,7 +87,7 @@ export function EventGuestSettingsScreen({ route, navigation }) {
     if (guestCap < guestCount) {
       Alert.alert(
         'Guest limit is too low',
-        `This event already has ${guestCount} outside ${guestCount === 1 ? 'guest' : 'guests'}. Remove guests first.`
+        `This event already has ${guestCount} reserved guest ${guestCount === 1 ? 'spot' : 'spots'}, including pending invitations. Remove guests or revoke invitations first.`
       );
       return;
     }
@@ -93,6 +99,7 @@ export function EventGuestSettingsScreen({ route, navigation }) {
         outsideGuestCap: guestCap,
         membersCanInviteGuests: guestCap > 0 && membersCanInviteGuests,
         allowPlusOnes: guestCap > 0 && allowPlusOnes,
+        showAttendeeListToGuests,
       });
       navigation.goBack();
     } catch (saveError) {
@@ -148,8 +155,7 @@ export function EventGuestSettingsScreen({ route, navigation }) {
             <View style={styles.contextCopy}>
               <Text style={styles.contextTitle}>Host-controlled guest access</Text>
               <Text style={styles.contextBody}>
-                Named guests appear only in this private event. They do not gain profile,
-                Circle, message, or invitation access.
+                Guest invitations and claimed guests appear only in this private event. They do not gain profile, Circle, message, or onward-invitation access.
               </Text>
             </View>
           </View>
@@ -163,13 +169,13 @@ export function EventGuestSettingsScreen({ route, navigation }) {
             style={styles.input}
           />
           <Text style={styles.hint}>
-            Use 0 to turn outside guests off. Current outside guests: {guestCount}.
+            Use 0 to turn outside guests off. Currently reserved guest spots: {guestCount}.
           </Text>
 
           <View style={styles.settingsCard}>
             <SettingRow
-              title="Let members add guests"
-              body="When off, only you can add or remove named outside guests."
+              title="Let members invite guests"
+              body="When off, only you can create, re-share, or revoke guest invitations."
               value={membersCanInviteGuests}
               onValueChange={setMembersCanInviteGuests}
               disabled={!guestsEnabled}
@@ -180,6 +186,14 @@ export function EventGuestSettingsScreen({ route, navigation }) {
               body="Plus-ones count toward the same guest limit and cannot invite anyone else."
               value={allowPlusOnes}
               onValueChange={setAllowPlusOnes}
+              disabled={!guestsEnabled}
+            />
+            <View style={styles.divider} />
+            <SettingRow
+              title="Show who’s going to guests"
+              body="People with a valid guest invitation can see the names and profile photos of members marked Going, plus the names and inviters of outside guests marked Going. Profiles remain private and non-tappable."
+              value={showAttendeeListToGuests}
+              onValueChange={setShowAttendeeListToGuests}
               disabled={!guestsEnabled}
             />
           </View>

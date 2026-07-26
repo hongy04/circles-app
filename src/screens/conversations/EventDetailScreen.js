@@ -25,6 +25,10 @@ import {
   FEATURE_FLAGS,
   isFeatureEnabled,
 } from '../../services/featureFlagService';
+import {
+  reshareEventGuestInvitation,
+  revokeEventGuestInvitation,
+} from '../../services/eventGuestInviteService';
 
 const RSVP_OPTIONS = [
   { status: 'going', label: 'Going', icon: 'checkmark-circle-outline' },
@@ -115,7 +119,13 @@ function AttendeeRow({ attendee }) {
   );
 }
 
-function GuestRow({ guest, busy, controlsEnabled, onChangeStatus, onRemove }) {
+function GuestRow({
+  guest,
+  busy,
+  controlsEnabled,
+  onChangeStatus,
+  onRemove,
+}) {
   return (
     <View style={styles.guestRow}>
       <View style={styles.guestAvatar}>
@@ -128,7 +138,7 @@ function GuestRow({ guest, busy, controlsEnabled, onChangeStatus, onRemove }) {
       <View style={styles.guestCopy}>
         <Text style={styles.guestName} numberOfLines={1}>{guest.displayName}</Text>
         <Text style={styles.guestMeta} numberOfLines={1}>
-          {guest.guestType === 'plus_one' ? 'Plus-one' : 'Outside guest'} · added by {guest.invitedByName}
+          {guest.guestType === 'plus_one' ? 'Plus-one' : 'Outside guest'} · invited by {guest.invitedByName}
         </Text>
       </View>
 
@@ -151,7 +161,7 @@ function GuestRow({ guest, busy, controlsEnabled, onChangeStatus, onRemove }) {
             onPress={() => onRemove(guest)}
             disabled={busy}
             hitSlop={8}
-            style={({ pressed }) => [styles.removeGuestButton, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.guestIconButton, pressed && styles.pressed]}
           >
             <Ionicons name="trash-outline" size={18} color={COLORS.subtext} />
           </Pressable>
@@ -167,6 +177,59 @@ function GuestRow({ guest, busy, controlsEnabled, onChangeStatus, onRemove }) {
   );
 }
 
+function GuestInvitationRow({ invitation, busy, sharing, onShare, onRevoke }) {
+  const typeLabel = invitation.guestType === 'plus_one'
+    ? 'Plus-one invitation'
+    : 'Guest invitation';
+
+  return (
+    <View style={styles.guestRow}>
+      <View style={styles.pendingInviteAvatar}>
+        <Ionicons name="link-outline" size={20} color={COLORS.text} />
+      </View>
+      <View style={styles.guestCopy}>
+        <Text style={styles.guestName} numberOfLines={1}>{typeLabel}</Text>
+        <Text style={styles.guestMeta} numberOfLines={1}>
+          Waiting for response · invited by {invitation.invitedByName}
+        </Text>
+      </View>
+
+      {invitation.canManage ? (
+        <View style={styles.guestActions}>
+          <Pressable
+            onPress={() => onShare(invitation)}
+            disabled={busy || sharing}
+            hitSlop={8}
+            style={({ pressed }) => [styles.guestIconButton, pressed && styles.pressed]}
+          >
+            {sharing ? (
+              <ActivityIndicator size="small" />
+            ) : (
+              <Ionicons name="share-outline" size={18} color={COLORS.text} />
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => onRevoke(invitation)}
+            disabled={busy || sharing}
+            hitSlop={8}
+            style={({ pressed }) => [styles.guestIconButton, pressed && styles.pressed]}
+          >
+            {busy ? (
+              <ActivityIndicator size="small" />
+            ) : (
+              <Ionicons name="trash-outline" size={18} color={COLORS.subtext} />
+            )}
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.statusPill}>
+          <Text style={styles.statusPillText}>Waiting</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 export function EventDetailScreen({ route, navigation }) {
   const { eventId } = route.params || {};
   const [details, setDetails] = useState(null);
@@ -174,7 +237,10 @@ export function EventDetailScreen({ route, navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState('');
   const [updatingGuestId, setUpdatingGuestId] = useState('');
+  const [sharingInvitationId, setSharingInvitationId] = useState('');
+  const [updatingInvitationId, setUpdatingInvitationId] = useState('');
   const [outsideGuestControlsEnabled, setOutsideGuestControlsEnabled] = useState(true);
+  const [guestInviteLinksEnabled, setGuestInviteLinksEnabled] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async ({ quiet = false } = {}) => {
@@ -183,12 +249,14 @@ export function EventDetailScreen({ route, navigation }) {
     setError('');
 
     try {
-      const [nextDetails, guestControlsEnabled] = await Promise.all([
+      const [nextDetails, guestControlsEnabled, inviteLinksEnabled] = await Promise.all([
         getEventDetails(eventId),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_OUTSIDE_GUESTS),
+        isFeatureEnabled(FEATURE_FLAGS.EVENT_GUEST_WEB_RSVP),
       ]);
       setDetails(nextDetails);
       setOutsideGuestControlsEnabled(guestControlsEnabled);
+      setGuestInviteLinksEnabled(inviteLinksEnabled);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this event.');
     } finally {
@@ -259,6 +327,65 @@ export function EventDetailScreen({ route, navigation }) {
     );
   };
 
+  const sharePendingInvitation = (invitation) => {
+    Alert.alert(
+      'Share this guest invitation again?',
+      'A fresh private link will replace the older link for this reserved guest spot.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Create & Share',
+          onPress: async () => {
+            if (sharingInvitationId || updatingInvitationId) return;
+            setSharingInvitationId(invitation.id);
+            try {
+              await reshareEventGuestInvitation({
+                invitationId: invitation.id,
+                eventTitle: details?.event?.title,
+              });
+            } catch (shareError) {
+              Alert.alert(
+                'Could not share guest invitation',
+                shareError?.message || 'Please try again.'
+              );
+            } finally {
+              setSharingInvitationId('');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const confirmRevokeInvitation = (invitation) => {
+    Alert.alert(
+      'Revoke this guest invitation?',
+      'The private link will stop working and the reserved guest spot will become available again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Revoke',
+          style: 'destructive',
+          onPress: async () => {
+            if (updatingInvitationId || sharingInvitationId) return;
+            setUpdatingInvitationId(invitation.id);
+            try {
+              await revokeEventGuestInvitation(invitation.id);
+              await load({ quiet: true });
+            } catch (revokeError) {
+              Alert.alert(
+                'Could not revoke invitation',
+                revokeError?.message || 'Please try again.'
+              );
+            } finally {
+              setUpdatingInvitationId('');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const confirmRemoveGuest = (guest) => {
     Alert.alert(
       `Remove ${guest.displayName}?`,
@@ -292,6 +419,7 @@ export function EventDetailScreen({ route, navigation }) {
   const counts = details?.counts;
   const attendees = details?.attendees || [];
   const guests = details?.guests || [];
+  const guestInvitations = details?.guestInvitations || [];
 
   if (loading && !event) {
     return (
@@ -423,12 +551,12 @@ export function EventDetailScreen({ route, navigation }) {
     </View>
   ) : null;
 
-  const guestFooter = event && (event.outsideGuestCap > 0 || event.canManage || guests.length > 0) ? (
+  const guestFooter = event && (event.outsideGuestCap > 0 || event.canManage || guests.length > 0 || guestInvitations.length > 0) ? (
     <View style={styles.guestSection}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Outside guests</Text>
         <Text style={styles.sectionCount}>
-          {event.guestCount}/{event.outsideGuestCap} spots
+          {event.reservedGuestCount}/{event.outsideGuestCap} spots
         </Text>
       </View>
 
@@ -442,7 +570,9 @@ export function EventDetailScreen({ route, navigation }) {
           </Text>
           <Text style={styles.guestPolicyBody}>
             {event.outsideGuestCap > 0
-              ? `${event.membersCanInviteGuests ? 'Circle members may add named guests.' : 'Only the host may add named guests.'} ${event.allowPlusOnes ? 'Plus-ones are allowed.' : 'Plus-ones are off.'}`
+              ? `${guestInviteLinksEnabled
+                ? (event.membersCanInviteGuests ? 'Circle members may create private guest invitations.' : 'Only the host may create private guest invitations.')
+                : (event.membersCanInviteGuests ? 'Circle members may add named guests manually.' : 'Only the host may add named guests manually.')} ${event.allowPlusOnes ? 'Plus-ones are allowed.' : 'Plus-ones are off.'}${guestInviteLinksEnabled ? ' Recipients enter their own name and RSVP.' : ''}`
               : 'The host can enable named outside guests without exposing private Circle content.'}
           </Text>
         </View>
@@ -463,20 +593,32 @@ export function EventDetailScreen({ route, navigation }) {
             <Pressable
               onPress={() => navigation.navigate('AddEventGuest', {
                 eventId,
+                eventTitle: event.title,
                 allowPlusOnes: event.allowPlusOnes,
                 remainingGuestSlots: event.remainingGuestSlots,
+                guestInviteLinksEnabled,
               })}
               style={({ pressed }) => [styles.primaryGuestButton, pressed && styles.pressed]}
             >
               <Ionicons name="person-add-outline" size={18} color="#fff" />
-              <Text style={styles.primaryGuestButtonText}>Add Guest</Text>
+              <Text style={styles.primaryGuestButtonText}>{guestInviteLinksEnabled ? 'Invite Guest' : 'Add Guest'}</Text>
             </Pressable>
           ) : null}
         </View>
       ) : null}
 
-      {guests.length > 0 ? (
+      {guestInvitations.length > 0 || guests.length > 0 ? (
         <View style={styles.guestList}>
+          {guestInvitations.map((invitation) => (
+            <GuestInvitationRow
+              key={invitation.id}
+              invitation={invitation}
+              busy={updatingInvitationId === invitation.id}
+              sharing={sharingInvitationId === invitation.id}
+              onShare={sharePendingInvitation}
+              onRevoke={confirmRevokeInvitation}
+            />
+          ))}
           {guests.map((guest) => (
             <GuestRow
               key={guest.id}
@@ -492,7 +634,7 @@ export function EventDetailScreen({ route, navigation }) {
         <View style={styles.emptyGuestCard}>
           <Text style={styles.emptyGuestTitle}>No outside guests yet</Text>
           <Text style={styles.emptyGuestBody}>
-            Add only people who have actually been invited. Named guests cannot invite anyone else.
+            Create a private invitation so the recipient can enter their own name and RSVP. Manual entry remains available as a fallback.
           </Text>
         </View>
       ) : null}
@@ -820,6 +962,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#f1f1f1',
   },
+  pendingInviteAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: '#fff',
+  },
   guestCopy: { flex: 1, marginHorizontal: 10 },
   guestName: {
     color: COLORS.text,
@@ -847,7 +999,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
     fontSize: 9,
   },
-  removeGuestButton: {
+  guestIconButton: {
     width: 32,
     height: 32,
     alignItems: 'center',

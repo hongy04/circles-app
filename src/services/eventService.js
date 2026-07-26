@@ -27,9 +27,21 @@ function mapEventSummary(row) {
   };
 }
 
-function mapEventDetails(data) {
+function mapEventDetails(data, rawInvitations = []) {
   const rawEvent = data?.event || {};
   const counts = data?.counts || {};
+  const guestInvitations = (rawInvitations || []).map((invitation) => ({
+    id: invitation.id,
+    guestType: invitation.guest_type || 'guest',
+    invitedByName: invitation.invited_by_name || 'Circle member',
+    expiresAt: invitation.expires_at || null,
+    canManage: Boolean(invitation.can_manage),
+  }));
+  const pendingGuestInvitationCount = guestInvitations.length;
+  const actualGuestCount = Number(rawEvent.guest_count || 0);
+  const reservedGuestCount = actualGuestCount + pendingGuestInvitationCount;
+  const outsideGuestCap = Number(rawEvent.outside_guest_cap || 0);
+  const remainingGuestSlots = Math.max(outsideGuestCap - reservedGuestCount, 0);
 
   return {
     event: {
@@ -52,12 +64,14 @@ function mapEventDetails(data) {
       })),
       viewerRsvpStatus: rawEvent.viewer_rsvp_status || 'pending',
       canManage: Boolean(rawEvent.can_manage),
-      outsideGuestCap: Number(rawEvent.outside_guest_cap || 0),
+      outsideGuestCap,
       membersCanInviteGuests: Boolean(rawEvent.members_can_invite_guests),
       allowPlusOnes: Boolean(rawEvent.allow_plus_ones),
-      guestCount: Number(rawEvent.guest_count || 0),
-      remainingGuestSlots: Number(rawEvent.remaining_guest_slots || 0),
-      canAddGuests: Boolean(rawEvent.can_add_guests),
+      guestCount: actualGuestCount,
+      pendingGuestInvitationCount,
+      reservedGuestCount,
+      remainingGuestSlots,
+      canAddGuests: Boolean(rawEvent.can_add_guests) && remainingGuestSlots > 0,
       createdAt: rawEvent.created_at || null,
     },
     counts: {
@@ -66,10 +80,12 @@ function mapEventDetails(data) {
       maybe: Number(counts.maybe || 0),
       notGoing: Number(counts.not_going || 0),
       pending: Number(counts.pending || 0),
-      guestCount: Number(counts.guest_count || 0),
+      guestCount: actualGuestCount,
+      pendingGuestInvitations: pendingGuestInvitationCount,
+      reservedGuestCount,
       guestGoing: Number(counts.guest_going || 0),
       guestMaybe: Number(counts.guest_maybe || 0),
-      guestInvited: Number(counts.guest_invited || 0),
+      guestInvited: Number(counts.guest_invited || 0) + pendingGuestInvitationCount,
       guestNotGoing: Number(counts.guest_not_going || 0),
     },
     attendees: (data?.attendees || []).map((attendee) => ({
@@ -90,6 +106,7 @@ function mapEventDetails(data) {
       invitedByName: guest.invited_by_name || 'Circle member',
       canManage: Boolean(guest.can_manage),
     })),
+    guestInvitations,
   };
 }
 
@@ -200,13 +217,15 @@ export async function getEventDetails(eventId) {
 
   if (!eventId) throw new Error('Event is missing.');
 
-  const { data, error } = await supabase.rpc('get_event_details', {
-    p_event_id: eventId,
-  });
+  const [detailsResult, invitationsResult] = await Promise.all([
+    supabase.rpc('get_event_details', { p_event_id: eventId }),
+    supabase.rpc('list_event_guest_invitations', { p_event_id: eventId }),
+  ]);
 
-  if (error) throw error;
-  if (!data?.event?.id) throw new Error('Event not found or unavailable.');
-  return mapEventDetails(data);
+  if (detailsResult.error) throw detailsResult.error;
+  if (invitationsResult.error) throw invitationsResult.error;
+  if (!detailsResult.data?.event?.id) throw new Error('Event not found or unavailable.');
+  return mapEventDetails(detailsResult.data, invitationsResult.data || []);
 }
 
 export async function respondToEvent(eventId, status) {
@@ -292,11 +311,30 @@ export async function removeEventGuest(guestId, guestType = 'guest') {
   return Boolean(data);
 }
 
+export async function getEventGuestAttendeeVisibility(eventId) {
+  await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.EVENT_OUTSIDE_GUESTS,
+    'Outside guests are temporarily unavailable.'
+  );
+
+  if (!eventId) throw new Error('Event is missing.');
+
+  const { data, error } = await supabase.rpc(
+    'get_event_guest_attendee_visibility',
+    { p_event_id: eventId }
+  );
+
+  if (error) throw error;
+  return data !== false;
+}
+
 export async function updateEventGuestSettings({
   eventId,
   outsideGuestCap,
   membersCanInviteGuests,
   allowPlusOnes,
+  showAttendeeListToGuests = true,
 }) {
   await ensureAuthed();
   await requireFeature(
@@ -304,11 +342,12 @@ export async function updateEventGuestSettings({
     'Outside guests are temporarily unavailable.'
   );
 
-  const { data, error } = await supabase.rpc('update_event_guest_settings', {
+  const { data, error } = await supabase.rpc('update_event_guest_settings_v2', {
     p_event_id: eventId,
     p_outside_guest_cap: Number(outsideGuestCap || 0),
     p_members_can_invite_guests: Boolean(membersCanInviteGuests),
     p_allow_plus_ones: Boolean(allowPlusOnes),
+    p_show_attendee_list_to_guests: Boolean(showAttendeeListToGuests),
   });
 
   if (error) throw error;

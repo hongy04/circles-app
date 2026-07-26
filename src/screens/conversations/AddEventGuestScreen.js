@@ -16,6 +16,10 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { COLORS } from '../../theme/colors';
 import { addEventGuest } from '../../services/eventService';
+import {
+  createEventGuestInvitation,
+  shareCreatedEventGuestInvitation,
+} from '../../services/eventGuestInviteService';
 
 const RESPONSE_OPTIONS = [
   { value: 'invited', label: 'Invited' },
@@ -55,15 +59,45 @@ function ChoiceButton({ selected, label, icon, onPress, disabled = false }) {
 export function AddEventGuestScreen({ route, navigation }) {
   const {
     eventId,
+    eventTitle = 'an event',
     allowPlusOnes = false,
     remainingGuestSlots = 0,
+    guestInviteLinksEnabled = true,
   } = route.params || {};
+  const [mode, setMode] = useState(guestInviteLinksEnabled ? 'invite' : 'manual');
   const [displayName, setDisplayName] = useState('');
   const [guestType, setGuestType] = useState('guest');
   const [status, setStatus] = useState('invited');
   const [submitting, setSubmitting] = useState(false);
 
-  const submit = async () => {
+  const createAndShare = async () => {
+    if (submitting) return;
+
+    setSubmitting(true);
+    let invitation = null;
+    try {
+      invitation = await createEventGuestInvitation({ eventId, guestType });
+      await shareCreatedEventGuestInvitation({ invite: invitation, eventTitle });
+      navigation.goBack();
+    } catch (error) {
+      if (invitation) {
+        Alert.alert(
+          'Invitation created',
+          'The guest spot is reserved, but the share sheet did not finish. Return to the event to share the pending invitation again.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      } else {
+        Alert.alert(
+          'Could not create invitation',
+          error?.message || 'Please check the guest settings and try again.'
+        );
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const addManually = async () => {
     if (submitting) return;
     const cleanName = displayName.trim();
 
@@ -105,30 +139,22 @@ export function AddEventGuestScreen({ route, navigation }) {
         >
           <View style={styles.contextCard}>
             <View style={styles.contextIcon}>
-              <Ionicons name="person-add-outline" size={22} color={COLORS.text} />
+              <Ionicons name="link-outline" size={22} color={COLORS.text} />
             </View>
             <View style={styles.contextCopy}>
-              <Text style={styles.contextTitle}>Add a named outside guest</Text>
+              <Text style={styles.contextTitle}>
+                {mode === 'invite' ? 'Send a claimable guest invite' : 'Add a guest manually'}
+              </Text>
               <Text style={styles.contextBody}>
-                {remainingGuestSlots} guest {remainingGuestSlots === 1 ? 'spot' : 'spots'} remaining.
-                This person will not receive Circle, profile, or message access.
+                {remainingGuestSlots} guest {remainingGuestSlots === 1 ? 'spot' : 'spots'} remaining.{' '}
+                {mode === 'invite'
+                  ? 'The recipient will enter their own name and RSVP from the private link.'
+                  : 'Use this only when someone responds outside Circles or will not open a link.'}
               </Text>
             </View>
           </View>
 
-          <Text style={styles.label}>Guest name</Text>
-          <TextInput
-            value={displayName}
-            onChangeText={setDisplayName}
-            placeholder="Maya Chen"
-            placeholderTextColor="#a4a4a4"
-            autoCapitalize="words"
-            autoCorrect={false}
-            maxLength={80}
-            style={styles.input}
-          />
-
-          <Text style={[styles.label, styles.sectionLabel]}>Guest type</Text>
+          <Text style={styles.label}>Invitation type</Text>
           <View style={styles.choiceRow}>
             <ChoiceButton
               selected={guestType === 'guest'}
@@ -138,7 +164,7 @@ export function AddEventGuestScreen({ route, navigation }) {
             />
             <ChoiceButton
               selected={guestType === 'plus_one'}
-              label="Plus-one"
+              label="My plus-one"
               icon="people-outline"
               onPress={() => setGuestType('plus_one')}
               disabled={!allowPlusOnes}
@@ -148,48 +174,104 @@ export function AddEventGuestScreen({ route, navigation }) {
             <Text style={styles.hint}>The host has not enabled plus-ones for this event.</Text>
           ) : null}
 
-          <Text style={[styles.label, styles.sectionLabel]}>Current response</Text>
-          <View style={styles.responseGrid}>
-            {RESPONSE_OPTIONS.map((option) => (
+          {mode === 'invite' ? (
+            <>
+              <View style={styles.explainerCard}>
+                <Ionicons name="shield-checkmark-outline" size={20} color={COLORS.text} />
+                <Text style={styles.explainerText}>
+                  This reserves one guest spot. The private link reveals only the event information needed to RSVP—not private Circles, profiles, posts, or messages.
+                </Text>
+              </View>
+
               <Pressable
-                key={option.value}
-                onPress={() => setStatus(option.value)}
+                onPress={createAndShare}
+                disabled={submitting}
                 style={({ pressed }) => [
-                  styles.responseButton,
-                  status === option.value && styles.responseButtonSelected,
-                  pressed && styles.pressed,
+                  styles.submitButton,
+                  (pressed || submitting) && styles.pressed,
                 ]}
               >
-                <Text style={[
-                  styles.responseButtonText,
-                  status === option.value && styles.responseButtonTextSelected,
-                ]}>
-                  {option.label}
-                </Text>
+                {submitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="share-outline" size={19} color="#fff" />
+                    <Text style={styles.submitText}>Create & Share Invite</Text>
+                  </>
+                )}
               </Pressable>
-            ))}
-          </View>
-          <Text style={styles.hint}>
-            Until web RSVPs are added, the host or inviter can update this when the guest responds.
-          </Text>
 
-          <Pressable
-            onPress={submit}
-            disabled={submitting}
-            style={({ pressed }) => [
-              styles.submitButton,
-              (pressed || submitting) && styles.pressed,
-            ]}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="person-add-outline" size={19} color="#fff" />
-                <Text style={styles.submitText}>Add Guest</Text>
-              </>
-            )}
-          </Pressable>
+              <Pressable
+                onPress={() => setMode('manual')}
+                disabled={submitting}
+                style={({ pressed }) => [styles.modeButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.modeButtonText}>Add manually instead</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={[styles.label, styles.sectionLabel]}>Guest name</Text>
+              <TextInput
+                value={displayName}
+                onChangeText={setDisplayName}
+                placeholder="Maya Chen"
+                placeholderTextColor="#a4a4a4"
+                autoCapitalize="words"
+                autoCorrect={false}
+                maxLength={80}
+                style={styles.input}
+              />
+
+              <Text style={[styles.label, styles.sectionLabel]}>Response</Text>
+              <View style={styles.responseGrid}>
+                {RESPONSE_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => setStatus(option.value)}
+                    style={({ pressed }) => [
+                      styles.responseButton,
+                      status === option.value && styles.responseButtonSelected,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[
+                      styles.responseButtonText,
+                      status === option.value && styles.responseButtonTextSelected,
+                    ]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Pressable
+                onPress={addManually}
+                disabled={submitting}
+                style={({ pressed }) => [
+                  styles.submitButton,
+                  (pressed || submitting) && styles.pressed,
+                ]}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="person-add-outline" size={19} color="#fff" />
+                    <Text style={styles.submitText}>Add Guest Manually</Text>
+                  </>
+                )}
+              </Pressable>
+
+              <Pressable
+                onPress={() => setMode('invite')}
+                disabled={submitting}
+                style={({ pressed }) => [styles.modeButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.modeButtonText}>Back to private invite link</Text>
+              </Pressable>
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -280,6 +362,24 @@ const styles = StyleSheet.create({
   },
   choiceButtonTextSelected: { color: '#fff' },
   choiceButtonTextDisabled: { color: '#a9a9a9' },
+  explainerCard: {
+    marginTop: 22,
+    padding: 15,
+    borderRadius: 13,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  explainerText: {
+    flex: 1,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 17,
+  },
   responseGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -326,6 +426,18 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
+  },
+  modeButton: {
+    minHeight: 46,
+    marginTop: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeButtonText: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+    textDecorationLine: 'underline',
   },
   pressed: { opacity: 0.72 },
 });

@@ -2,7 +2,7 @@ import { Platform, Share } from 'react-native';
 import * as Linking from 'expo-linking';
 import * as SMS from 'expo-sms';
 
-import { INVITE_BASE_URL } from '../config/env';
+import { EVENT_GUEST_BASE_URL, INVITE_BASE_URL } from '../config/env';
 import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
 import { trackLaunchEvent } from './analyticsService';
@@ -14,16 +14,17 @@ function cleanBaseUrl(value = '') {
 
 export function getInviteLinkingPrefixes() {
   const prefixes = [Linking.createURL('/'), 'circles://'];
-  const configuredBase = cleanBaseUrl(INVITE_BASE_URL);
+  [INVITE_BASE_URL, EVENT_GUEST_BASE_URL].forEach((baseUrl) => {
+    const configuredBase = cleanBaseUrl(baseUrl);
+    if (!configuredBase) return;
 
-  if (configuredBase) {
     try {
       const parsed = new URL(configuredBase);
       prefixes.push(`${parsed.protocol}//${parsed.host}`);
     } catch {
       // Invalid optional production configuration should not break development.
     }
-  }
+  });
 
   return Array.from(new Set(prefixes.filter(Boolean)));
 }

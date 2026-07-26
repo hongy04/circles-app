@@ -19,6 +19,10 @@ export const INVITE_BASE_URL = (
   process.env.EXPO_PUBLIC_INVITE_BASE_URL || ''
 ).trim();
 
+export const EVENT_GUEST_BASE_URL = (
+  process.env.EXPO_PUBLIC_EVENT_GUEST_BASE_URL || ''
+).trim();
+
 export const SUPABASE_KEY =
   process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;

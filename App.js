@@ -46,6 +46,7 @@ import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
 import { InvitePeopleScreen } from './src/screens/profile/InvitePeopleScreen';
 import { InvitationLandingScreen } from './src/screens/invitations/InvitationLandingScreen';
+import { EventGuestInvitationScreen } from './src/screens/invitations/EventGuestInvitationScreen';
 import { DevAccountsScreen } from './src/screens/dev/DevAccountsScreen';
 import { InboxScreen } from './src/screens/conversations/InboxScreen';
 import { NotificationsScreen } from './src/screens/conversations/NotificationsScreen';
@@ -87,6 +88,7 @@ const APP_LINKING = {
   config: {
     screens: {
       Invite: 'invite/:token',
+      EventGuestInvite: 'event-guest/:token',
     },
   },
 };
@@ -102,6 +104,7 @@ export default function App() {
         <RootStack.Navigator screenOptions={{ headerShown: false }}>
           <RootStack.Screen name="Gate" component={GateScreen} />
           <RootStack.Screen name="Invite" component={InvitationLandingScreen} />
+          <RootStack.Screen name="EventGuestInvite" component={EventGuestInvitationScreen} />
           <RootStack.Screen name="Auth" component={AuthNavigator} />
           <RootStack.Screen name="MainTabs" component={AppTabs} />
           <RootStack.Screen name="CreatePost" component={CreatePostScreen} />
@@ -323,7 +326,7 @@ function CirclesStack() {
       <CirclesStackNav.Screen
         name="AddEventGuest"
         component={AddEventGuestScreen}
-        options={{ title: 'Add Guest' }}
+        options={{ title: 'Invite Guest' }}
       />
       <CirclesStackNav.Screen
         name="EventGuestSettings"
