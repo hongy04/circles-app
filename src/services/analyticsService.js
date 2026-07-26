@@ -21,6 +21,10 @@ const ALLOWED_EVENT_NAMES = new Set([
   'event_poll_opened',
   'event_poll_response_updated',
   'event_poll_finalized',
+  'event_guest_added',
+  'event_guest_response_updated',
+  'event_guest_removed',
+  'event_guest_settings_updated',
 ]);
 
 const ALLOWED_PROPERTY_KEYS = new Set([
@@ -48,6 +52,11 @@ const ALLOWED_PROPERTY_KEYS = new Set([
   'none_available',
   'poll_status',
   'circle_count',
+  'guest_type',
+  'guest_status',
+  'guest_cap',
+  'invite_mode',
+  'allow_plus_ones',
 ]);
 
 function sanitizeProperties(properties = {}) {

@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -138,16 +139,25 @@ export function CreateEventScreen({ route, navigation }) {
   const [selectedAdditionalCircleIds, setSelectedAdditionalCircleIds] = useState([]);
   const [loadingCircles, setLoadingCircles] = useState(true);
   const [circleLoadError, setCircleLoadError] = useState('');
+  const [outsideGuestsEnabled, setOutsideGuestsEnabled] = useState(false);
+  const [allowOutsideGuests, setAllowOutsideGuests] = useState(false);
+  const [guestCapInput, setGuestCapInput] = useState('4');
+  const [membersCanInviteGuests, setMembersCanInviteGuests] = useState(false);
+  const [allowPlusOnes, setAllowPlusOnes] = useState(false);
 
   useEffect(() => {
     let active = true;
 
     (async () => {
-      const enabled = await isFeatureEnabled(FEATURE_FLAGS.MULTI_CIRCLE_EVENTS);
+      const [multiCircleAvailable, outsideGuestAvailable] = await Promise.all([
+        isFeatureEnabled(FEATURE_FLAGS.MULTI_CIRCLE_EVENTS),
+        isFeatureEnabled(FEATURE_FLAGS.EVENT_OUTSIDE_GUESTS),
+      ]);
       if (!active) return;
-      setMultiCircleEnabled(enabled);
+      setMultiCircleEnabled(multiCircleAvailable);
+      setOutsideGuestsEnabled(outsideGuestAvailable);
 
-      if (!enabled) {
+      if (!multiCircleAvailable) {
         setLoadingCircles(false);
         return;
       }
@@ -219,6 +229,12 @@ export function CreateEventScreen({ route, navigation }) {
       }
     }
 
+    const guestCap = allowOutsideGuests ? Number(guestCapInput) : 0;
+    if (allowOutsideGuests && (!Number.isInteger(guestCap) || guestCap < 1 || guestCap > 50)) {
+      Alert.alert('Check the guest limit', 'Choose a whole number from 1 to 50.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const eventId = await createCircleEvent({
@@ -228,6 +244,9 @@ export function CreateEventScreen({ route, navigation }) {
         startsAt,
         endsAt,
         locationName: location,
+        outsideGuestCap: guestCap,
+        membersCanInviteGuests: allowOutsideGuests && membersCanInviteGuests,
+        allowPlusOnes: allowOutsideGuests && allowPlusOnes,
       });
 
       navigation.replace('EventDetail', { eventId });
@@ -263,7 +282,10 @@ export function CreateEventScreen({ route, navigation }) {
                 {selectedCircleCount === 1
                   ? 'This event is private to current members of this Circle.'
                   : `This event will be shared privately across ${selectedCircleCount} Circles.`}
-                {' '}No one outside the selected Circles is invited.
+                {' '}
+                {allowOutsideGuests
+                  ? 'Named outside guests can be added within the host’s limit.'
+                  : 'No one outside the selected Circles is invited.'}
               </Text>
             </View>
           </View>
@@ -393,6 +415,70 @@ export function CreateEventScreen({ route, navigation }) {
               style={[styles.input, styles.textArea]}
             />
           </Field>
+
+          {outsideGuestsEnabled ? (
+            <View style={styles.guestSettingsCard}>
+              <View style={styles.settingRow}>
+                <View style={styles.settingCopy}>
+                  <Text style={styles.settingTitle}>Allow outside guests</Text>
+                  <Text style={styles.settingBody}>
+                    Add named guests without giving them private Circle or profile access.
+                  </Text>
+                </View>
+                <Switch
+                  value={allowOutsideGuests}
+                  onValueChange={(value) => {
+                    setAllowOutsideGuests(value);
+                    if (!value) {
+                      setMembersCanInviteGuests(false);
+                      setAllowPlusOnes(false);
+                    }
+                  }}
+                />
+              </View>
+
+              {allowOutsideGuests ? (
+                <>
+                  <View style={styles.guestDivider} />
+                  <Field label="Outside guest limit" hint="Maximum 50 named guests and plus-ones combined">
+                    <TextInput
+                      value={guestCapInput}
+                      onChangeText={(value) => setGuestCapInput(value.replace(/[^0-9]/g, ''))}
+                      keyboardType="number-pad"
+                      maxLength={2}
+                      style={styles.input}
+                    />
+                  </Field>
+
+                  <View style={styles.settingRow}>
+                    <View style={styles.settingCopy}>
+                      <Text style={styles.settingTitle}>Let members add guests</Text>
+                      <Text style={styles.settingBody}>
+                        Otherwise only the event host can add or remove outside guests.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={membersCanInviteGuests}
+                      onValueChange={setMembersCanInviteGuests}
+                    />
+                  </View>
+
+                  <View style={[styles.settingRow, styles.settingRowSpaced]}>
+                    <View style={styles.settingCopy}>
+                      <Text style={styles.settingTitle}>Allow plus-ones</Text>
+                      <Text style={styles.settingBody}>
+                        Plus-ones still count toward the same host-controlled guest limit.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={allowPlusOnes}
+                      onValueChange={setAllowPlusOnes}
+                    />
+                  </View>
+                </>
+              ) : null}
+            </View>
+          ) : null}
 
           <Pressable
             onPress={submit}
@@ -593,6 +679,38 @@ const styles = StyleSheet.create({
   textArea: { minHeight: 112 },
   twoColumnRow: { flexDirection: 'row', gap: 10 },
   columnField: { flex: 1 },
+  guestSettingsCard: {
+    marginBottom: 20,
+    padding: 15,
+    borderRadius: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  settingRowSpaced: { marginTop: 18 },
+  settingCopy: { flex: 1 },
+  settingTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+  },
+  settingBody: {
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  guestDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 16,
+    backgroundColor: COLORS.border,
+  },
   submitButton: {
     minHeight: 50,
     marginTop: 7,

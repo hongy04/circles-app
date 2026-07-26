@@ -15,7 +15,16 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
 import { COLORS } from '../../theme/colors';
-import { getEventDetails, respondToEvent } from '../../services/eventService';
+import {
+  getEventDetails,
+  removeEventGuest,
+  respondToEvent,
+  updateEventGuestResponse,
+} from '../../services/eventService';
+import {
+  FEATURE_FLAGS,
+  isFeatureEnabled,
+} from '../../services/featureFlagService';
 
 const RSVP_OPTIONS = [
   { status: 'going', label: 'Going', icon: 'checkmark-circle-outline' },
@@ -28,6 +37,7 @@ const STATUS_LABELS = {
   maybe: 'Maybe',
   not_going: 'Can’t go',
   pending: 'No response',
+  invited: 'Invited',
 };
 
 function formatEventDate(startsAt, endsAt) {
@@ -94,9 +104,7 @@ function AttendeeRow({ attendee }) {
         <Text style={styles.attendeeName} numberOfLines={1}>
           {attendee.isMe ? 'You' : attendee.displayName}
         </Text>
-        {attendee.isHost ? (
-          <Text style={styles.hostLabel}>Host</Text>
-        ) : null}
+        {attendee.isHost ? <Text style={styles.hostLabel}>Host</Text> : null}
       </View>
       <View style={styles.statusPill}>
         <Text style={styles.statusPillText}>
@@ -107,12 +115,66 @@ function AttendeeRow({ attendee }) {
   );
 }
 
-export function EventDetailScreen({ route }) {
+function GuestRow({ guest, busy, controlsEnabled, onChangeStatus, onRemove }) {
+  return (
+    <View style={styles.guestRow}>
+      <View style={styles.guestAvatar}>
+        <Ionicons
+          name={guest.guestType === 'plus_one' ? 'people-outline' : 'person-outline'}
+          size={20}
+          color={COLORS.text}
+        />
+      </View>
+      <View style={styles.guestCopy}>
+        <Text style={styles.guestName} numberOfLines={1}>{guest.displayName}</Text>
+        <Text style={styles.guestMeta} numberOfLines={1}>
+          {guest.guestType === 'plus_one' ? 'Plus-one' : 'Outside guest'} · added by {guest.invitedByName}
+        </Text>
+      </View>
+
+      {guest.canManage && controlsEnabled ? (
+        <View style={styles.guestActions}>
+          <Pressable
+            onPress={() => onChangeStatus(guest)}
+            disabled={busy}
+            style={({ pressed }) => [styles.guestStatusButton, pressed && styles.pressed]}
+          >
+            {busy ? (
+              <ActivityIndicator size="small" />
+            ) : (
+              <Text style={styles.guestStatusText}>
+                {STATUS_LABELS[guest.status] || 'Invited'}
+              </Text>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => onRemove(guest)}
+            disabled={busy}
+            hitSlop={8}
+            style={({ pressed }) => [styles.removeGuestButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="trash-outline" size={18} color={COLORS.subtext} />
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.statusPill}>
+          <Text style={styles.statusPillText}>
+            {STATUS_LABELS[guest.status] || 'Invited'}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+export function EventDetailScreen({ route, navigation }) {
   const { eventId } = route.params || {};
   const [details, setDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState('');
+  const [updatingGuestId, setUpdatingGuestId] = useState('');
+  const [outsideGuestControlsEnabled, setOutsideGuestControlsEnabled] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async ({ quiet = false } = {}) => {
@@ -121,7 +183,12 @@ export function EventDetailScreen({ route }) {
     setError('');
 
     try {
-      setDetails(await getEventDetails(eventId));
+      const [nextDetails, guestControlsEnabled] = await Promise.all([
+        getEventDetails(eventId),
+        isFeatureEnabled(FEATURE_FLAGS.EVENT_OUTSIDE_GUESTS),
+      ]);
+      setDetails(nextDetails);
+      setOutsideGuestControlsEnabled(guestControlsEnabled);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this event.');
     } finally {
@@ -153,9 +220,78 @@ export function EventDetailScreen({ route }) {
     }
   };
 
+  const setGuestStatus = async (guest, status) => {
+    if (updatingGuestId) return;
+    setUpdatingGuestId(guest.id);
+    try {
+      await updateEventGuestResponse(guest.id, status);
+      await load({ quiet: true });
+    } catch (updateError) {
+      Alert.alert(
+        'Could not update guest',
+        updateError?.message || 'Please try again.'
+      );
+    } finally {
+      setUpdatingGuestId('');
+    }
+  };
+
+  const chooseGuestStatus = (guest) => {
+    Alert.alert(
+      guest.displayName,
+      'Update this guest’s response.',
+      [
+        { text: 'Going', onPress: () => setGuestStatus(guest, 'going') },
+        { text: 'Maybe', onPress: () => setGuestStatus(guest, 'maybe') },
+        {
+          text: 'More',
+          onPress: () => Alert.alert(
+            guest.displayName,
+            'Choose another response.',
+            [
+              { text: 'Invited', onPress: () => setGuestStatus(guest, 'invited') },
+              { text: 'Can’t go', onPress: () => setGuestStatus(guest, 'not_going') },
+              { text: 'Cancel', style: 'cancel' },
+            ]
+          ),
+        },
+      ]
+    );
+  };
+
+  const confirmRemoveGuest = (guest) => {
+    Alert.alert(
+      `Remove ${guest.displayName}?`,
+      'This removes the named guest from this event only.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            if (updatingGuestId) return;
+            setUpdatingGuestId(guest.id);
+            try {
+              await removeEventGuest(guest.id, guest.guestType);
+              await load({ quiet: true });
+            } catch (removeError) {
+              Alert.alert(
+                'Could not remove guest',
+                removeError?.message || 'Please try again.'
+              );
+            } finally {
+              setUpdatingGuestId('');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const event = details?.event;
   const counts = details?.counts;
   const attendees = details?.attendees || [];
+  const guests = details?.guests || [];
 
   if (loading && !event) {
     return (
@@ -229,9 +365,7 @@ export function EventDetailScreen({ route }) {
           </View>
         </View>
 
-        {event.description ? (
-          <Text style={styles.description}>{event.description}</Text>
-        ) : null}
+        {event.description ? <Text style={styles.description}>{event.description}</Text> : null}
       </View>
 
       <View style={styles.rsvpCard}>
@@ -283,9 +417,85 @@ export function EventDetailScreen({ route }) {
       </View>
 
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Responses</Text>
+        <Text style={styles.sectionTitle}>Circle responses</Text>
         <Text style={styles.sectionCount}>{counts?.attendeeCount || 0} people</Text>
       </View>
+    </View>
+  ) : null;
+
+  const guestFooter = event && (event.outsideGuestCap > 0 || event.canManage || guests.length > 0) ? (
+    <View style={styles.guestSection}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Outside guests</Text>
+        <Text style={styles.sectionCount}>
+          {event.guestCount}/{event.outsideGuestCap} spots
+        </Text>
+      </View>
+
+      <View style={styles.guestPolicyCard}>
+        <View style={styles.guestPolicyIcon}>
+          <Ionicons name="shield-checkmark-outline" size={21} color={COLORS.text} />
+        </View>
+        <View style={styles.guestPolicyCopy}>
+          <Text style={styles.guestPolicyTitle}>
+            {event.outsideGuestCap > 0 ? 'Controlled guest list' : 'Outside guests are off'}
+          </Text>
+          <Text style={styles.guestPolicyBody}>
+            {event.outsideGuestCap > 0
+              ? `${event.membersCanInviteGuests ? 'Circle members may add named guests.' : 'Only the host may add named guests.'} ${event.allowPlusOnes ? 'Plus-ones are allowed.' : 'Plus-ones are off.'}`
+              : 'The host can enable named outside guests without exposing private Circle content.'}
+          </Text>
+        </View>
+      </View>
+
+      {outsideGuestControlsEnabled && (event.canManage || event.canAddGuests) ? (
+        <View style={styles.guestActionRow}>
+          {event.canManage ? (
+            <Pressable
+              onPress={() => navigation.navigate('EventGuestSettings', { eventId })}
+              style={({ pressed }) => [styles.secondaryGuestButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="options-outline" size={18} color={COLORS.text} />
+              <Text style={styles.secondaryGuestButtonText}>Settings</Text>
+            </Pressable>
+          ) : null}
+          {event.canAddGuests ? (
+            <Pressable
+              onPress={() => navigation.navigate('AddEventGuest', {
+                eventId,
+                allowPlusOnes: event.allowPlusOnes,
+                remainingGuestSlots: event.remainingGuestSlots,
+              })}
+              style={({ pressed }) => [styles.primaryGuestButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="person-add-outline" size={18} color="#fff" />
+              <Text style={styles.primaryGuestButtonText}>Add Guest</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+
+      {guests.length > 0 ? (
+        <View style={styles.guestList}>
+          {guests.map((guest) => (
+            <GuestRow
+              key={guest.id}
+              guest={guest}
+              busy={updatingGuestId === guest.id}
+              controlsEnabled={outsideGuestControlsEnabled}
+              onChangeStatus={chooseGuestStatus}
+              onRemove={confirmRemoveGuest}
+            />
+          ))}
+        </View>
+      ) : event.outsideGuestCap > 0 ? (
+        <View style={styles.emptyGuestCard}>
+          <Text style={styles.emptyGuestTitle}>No outside guests yet</Text>
+          <Text style={styles.emptyGuestBody}>
+            Add only people who have actually been invited. Named guests cannot invite anyone else.
+          </Text>
+        </View>
+      ) : null}
     </View>
   ) : null;
 
@@ -295,6 +505,7 @@ export function EventDetailScreen({ route }) {
         data={attendees}
         keyExtractor={(item) => item.userId}
         ListHeaderComponent={header}
+        ListFooterComponent={guestFooter}
         renderItem={({ item }) => <AttendeeRow attendee={item} />}
         refreshControl={(
           <RefreshControl
@@ -523,6 +734,144 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
+  },
+  guestSection: { marginTop: 2 },
+  guestPolicyCard: {
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    gap: 11,
+  },
+  guestPolicyIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f1f1',
+  },
+  guestPolicyCopy: { flex: 1 },
+  guestPolicyTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+  },
+  guestPolicyBody: {
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  guestActionRow: { flexDirection: 'row', gap: 9, marginTop: 10 },
+  secondaryGuestButton: {
+    minHeight: 44,
+    flex: 1,
+    borderRadius: 11,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  secondaryGuestButtonText: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+  },
+  primaryGuestButton: {
+    minHeight: 44,
+    flex: 1,
+    borderRadius: 11,
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  primaryGuestButtonText: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+  },
+  guestList: { marginTop: 10 },
+  guestRow: {
+    minHeight: 68,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  guestAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f1f1',
+  },
+  guestCopy: { flex: 1, marginHorizontal: 10 },
+  guestName: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+  },
+  guestMeta: {
+    marginTop: 2,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 9,
+  },
+  guestActions: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  guestStatusButton: {
+    minWidth: 64,
+    minHeight: 32,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    backgroundColor: '#efefef',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestStatusText: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 9,
+  },
+  removeGuestButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyGuestCard: {
+    marginTop: 10,
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
+  emptyGuestTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+  },
+  emptyGuestBody: {
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
   },
   centerState: {
     flex: 1,
