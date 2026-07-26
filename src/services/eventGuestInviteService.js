@@ -8,6 +8,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
 import { FEATURE_FLAGS, requireFeature } from './featureFlagService';
+import { publicEventPhotoUrl } from './eventPhotoService';
 
 function cleanBaseUrl(value = '') {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -83,6 +84,22 @@ function mapAttendeeList(data) {
       isHost: Boolean(attendee.is_host),
       invitedByName: attendee.invited_by_name || '',
     })),
+  };
+}
+
+function mapPhotoGallery(data) {
+  return {
+    valid: Boolean(data?.valid),
+    reason: data?.reason || null,
+    photoCount: Number(data?.photo_count || 0),
+    photos: (data?.photos || []).map((photo, index) => ({
+      id: photo.storage_path || `event-photo-${index}`,
+      storagePath: photo.storage_path || '',
+      url: publicEventPhotoUrl(photo.storage_path),
+      width: Number(photo.width || 0) || null,
+      height: Number(photo.height || 0) || null,
+      createdAt: photo.created_at || null,
+    })).filter((photo) => Boolean(photo.url)),
   };
 }
 
@@ -233,6 +250,15 @@ export async function shareEventGuestInvite({ guestId, guestName, eventTitle }) 
   };
 }
 
+export async function getEventGuestPhotoGallery(token) {
+  const { data, error } = await supabase.rpc('list_event_guest_photos', {
+    p_token: String(token || '').trim(),
+  });
+
+  if (error) throw error;
+  return mapPhotoGallery(data);
+}
+
 export async function getEventGuestAttendeeList(token) {
   const { data, error } = await supabase.rpc('list_event_guest_attendees', {
     p_token: String(token || '').trim(),
@@ -255,23 +281,24 @@ export async function previewEventGuestInvite(token) {
     return {
       ...preview,
       attendeeList: mapAttendeeList(null),
+      photoGallery: mapPhotoGallery(null),
     };
   }
 
-  try {
-    const attendeeList = await getEventGuestAttendeeList(cleanToken);
-    return { ...preview, attendeeList };
-  } catch {
-    // RSVP access should remain available even if the optional attendee list
-    // cannot load. The page will show a small unavailable state instead.
-    return {
-      ...preview,
-      attendeeList: {
-        ...mapAttendeeList(null),
-        reason: 'unavailable',
-      },
-    };
-  }
+  const [attendeeResult, photoResult] = await Promise.allSettled([
+    getEventGuestAttendeeList(cleanToken),
+    getEventGuestPhotoGallery(cleanToken),
+  ]);
+
+  return {
+    ...preview,
+    attendeeList: attendeeResult.status === 'fulfilled'
+      ? attendeeResult.value
+      : { ...mapAttendeeList(null), reason: 'unavailable' },
+    photoGallery: photoResult.status === 'fulfilled'
+      ? photoResult.value
+      : { ...mapPhotoGallery(null), reason: 'unavailable' },
+  };
 }
 
 export async function respondToEventGuestInvite(token, { displayName, status }) {

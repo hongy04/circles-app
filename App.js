@@ -66,6 +66,7 @@ import { CircleTimelineFeedScreen } from './src/screens/conversations/CircleTime
 import { CircleEventsScreen } from './src/screens/conversations/CircleEventsScreen';
 import { CreateEventScreen } from './src/screens/conversations/CreateEventScreen';
 import { EventDetailScreen } from './src/screens/conversations/EventDetailScreen';
+import { EventPhotoGalleryScreen } from './src/screens/conversations/EventPhotoGalleryScreen';
 import { AddEventGuestScreen } from './src/screens/conversations/AddEventGuestScreen';
 import { EventGuestSettingsScreen } from './src/screens/conversations/EventGuestSettingsScreen';
 import { CreateAvailabilityPollScreen } from './src/screens/conversations/CreateAvailabilityPollScreen';
@@ -322,6 +323,11 @@ function CirclesStack() {
         name="EventDetail"
         component={EventDetailScreen}
         options={{ title: 'Event' }}
+      />
+      <CirclesStackNav.Screen
+        name="EventPhotoGallery"
+        component={EventPhotoGalleryScreen}
+        options={{ title: 'Event Photos' }}
       />
       <CirclesStackNav.Screen
         name="AddEventGuest"

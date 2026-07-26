@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -121,6 +123,42 @@ function AttendeeRow({ attendee }) {
   );
 }
 
+function GuestPhotoViewer({ photo, onClose }) {
+  if (!photo) return null;
+
+  return (
+    <Modal
+      visible={Boolean(photo)}
+      animationType="fade"
+      transparent={false}
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={styles.photoViewerScreen}>
+        <View style={styles.photoViewerHeader}>
+          <Pressable
+            onPress={onClose}
+            hitSlop={8}
+            style={({ pressed }) => [styles.photoViewerClose, pressed && styles.pressed]}
+          >
+            <Ionicons name="close" size={27} color="#fff" />
+          </Pressable>
+        </View>
+        <Image
+          source={{ uri: photo.url }}
+          resizeMode="contain"
+          style={styles.photoViewerImage}
+        />
+        <View style={styles.photoViewerFooter}>
+          <Ionicons name="shield-checkmark-outline" size={18} color="#d8d8d8" />
+          <Text style={styles.photoViewerFooterText}>
+            Shared privately for this event. This image does not open a Circles profile.
+          </Text>
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
 export function EventGuestInvitationScreen({ route }) {
   const token = route.params?.token || '';
   const [preview, setPreview] = useState(null);
@@ -130,6 +168,7 @@ export function EventGuestInvitationScreen({ route }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -236,7 +275,7 @@ export function EventGuestInvitationScreen({ route }) {
     );
   }
 
-  const { event, guest, invitation, attendeeList } = preview;
+  const { event, guest, invitation, attendeeList, photoGallery } = preview;
   const greeting = guest.claimed && guest.displayName
     ? `${guest.displayName}, you’re invited`
     : 'You’re invited';
@@ -407,6 +446,51 @@ export function EventGuestInvitationScreen({ route }) {
             </View>
           ) : null}
 
+          {photoGallery?.valid ? (
+            <View style={styles.photosCard}>
+              <View style={styles.photosHeader}>
+                <View>
+                  <Text style={styles.photosTitle}>Event photos</Text>
+                  <Text style={styles.photosCount}>
+                    {photoGallery.photoCount === 1
+                      ? '1 photo shared'
+                      : `${photoGallery.photoCount} photos shared`}
+                  </Text>
+                </View>
+                <Ionicons name="images-outline" size={23} color={COLORS.text} />
+              </View>
+
+              {photoGallery.photos.length > 0 ? (
+                <View style={styles.photoGrid}>
+                  {photoGallery.photos.map((photo) => (
+                    <Pressable
+                      key={photo.id}
+                      onPress={() => setSelectedPhoto(photo)}
+                      style={({ pressed }) => [
+                        styles.photoTile,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Image source={{ uri: photo.url }} style={styles.photoTileImage} />
+                    </Pressable>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.photosEmpty}>
+                  <Ionicons name="image-outline" size={28} color={COLORS.subtext} />
+                  <Text style={styles.photosEmptyTitle}>No photos shared yet</Text>
+                  <Text style={styles.photosEmptyBody}>
+                    Photos added by attendees will appear here through this private invitation.
+                  </Text>
+                </View>
+              )}
+
+              <Text style={styles.photosPrivacy}>
+                Event photos are view-only here. They do not reveal private Circle names, profiles, posts, messages, or connections.
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.privacyCard}>
             <Ionicons name="shield-checkmark-outline" size={22} color={COLORS.text} />
             <View style={styles.privacyCopy}>
@@ -418,6 +502,10 @@ export function EventGuestInvitationScreen({ route }) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <GuestPhotoViewer
+        photo={selectedPhoto}
+        onClose={() => setSelectedPhoto(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -723,6 +811,109 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
     lineHeight: 15,
+  },
+  photosCard: {
+    marginTop: 12,
+    padding: 18,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
+  photosHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  photosTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 17,
+  },
+  photosCount: {
+    marginTop: 2,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+  },
+  photoGrid: {
+    marginTop: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+  },
+  photoTile: {
+    width: '48.5%',
+    aspectRatio: 1,
+    overflow: 'hidden',
+    borderRadius: 10,
+    backgroundColor: '#e8e8e8',
+  },
+  photoTileImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  photosEmpty: {
+    marginTop: 14,
+    padding: 22,
+    borderRadius: 14,
+    backgroundColor: '#f4f4f4',
+    alignItems: 'center',
+  },
+  photosEmptyTitle: {
+    marginTop: 8,
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+  },
+  photosEmptyBody: {
+    maxWidth: 360,
+    marginTop: 4,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+  },
+  photosPrivacy: {
+    marginTop: 13,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 10,
+    lineHeight: 15,
+  },
+  photoViewerScreen: { flex: 1, backgroundColor: '#000' },
+  photoViewerHeader: {
+    minHeight: 58,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  photoViewerClose: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoViewerImage: { flex: 1, width: '100%' },
+  photoViewerFooter: {
+    minHeight: 70,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#333',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  photoViewerFooterText: {
+    flex: 1,
+    color: '#d8d8d8',
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
   },
   privacyCard: {
     marginTop: 12,

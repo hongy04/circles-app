@@ -241,6 +241,7 @@ export function EventDetailScreen({ route, navigation }) {
   const [updatingInvitationId, setUpdatingInvitationId] = useState('');
   const [outsideGuestControlsEnabled, setOutsideGuestControlsEnabled] = useState(true);
   const [guestInviteLinksEnabled, setGuestInviteLinksEnabled] = useState(true);
+  const [eventPhotosEnabled, setEventPhotosEnabled] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async ({ quiet = false } = {}) => {
@@ -249,14 +250,21 @@ export function EventDetailScreen({ route, navigation }) {
     setError('');
 
     try {
-      const [nextDetails, guestControlsEnabled, inviteLinksEnabled] = await Promise.all([
+      const [
+        nextDetails,
+        guestControlsEnabled,
+        inviteLinksEnabled,
+        photosEnabled,
+      ] = await Promise.all([
         getEventDetails(eventId),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_OUTSIDE_GUESTS),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_GUEST_WEB_RSVP),
+        isFeatureEnabled(FEATURE_FLAGS.EVENT_PHOTO_GALLERY),
       ]);
       setDetails(nextDetails);
       setOutsideGuestControlsEnabled(guestControlsEnabled);
       setGuestInviteLinksEnabled(inviteLinksEnabled);
+      setEventPhotosEnabled(photosEnabled);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this event.');
     } finally {
@@ -544,6 +552,30 @@ export function EventDetailScreen({ route, navigation }) {
         <CountCard value={counts?.pending || 0} label="Waiting" />
       </View>
 
+      {eventPhotosEnabled ? (
+        <Pressable
+          onPress={() => navigation.navigate('EventPhotoGallery', {
+            eventId,
+            eventTitle: event.title,
+          })}
+          style={({ pressed }) => [
+            styles.photoGalleryCard,
+            pressed && styles.pressed,
+          ]}
+        >
+          <View style={styles.photoGalleryIcon}>
+            <Ionicons name="images-outline" size={23} color={COLORS.text} />
+          </View>
+          <View style={styles.photoGalleryCopy}>
+            <Text style={styles.photoGalleryTitle}>Event photos</Text>
+            <Text style={styles.photoGalleryBody}>
+              Share photos from this gathering. Invited guests can view the gallery through their private link.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={COLORS.subtext} />
+        </Pressable>
+      ) : null}
+
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Circle responses</Text>
         <Text style={styles.sectionCount}>{counts?.attendeeCount || 0} people</Text>
@@ -804,6 +836,38 @@ const styles = StyleSheet.create({
   },
   rsvpButtonTextSelected: { color: '#fff' },
   countsRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  photoGalleryCard: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  photoGalleryIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f1f1',
+  },
+  photoGalleryCopy: { flex: 1 },
+  photoGalleryTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+  },
+  photoGalleryBody: {
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 10,
+    lineHeight: 15,
+  },
   countCard: {
     flex: 1,
     paddingVertical: 14,

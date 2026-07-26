@@ -10,6 +10,7 @@ export const FEATURE_FLAGS = Object.freeze({
   MULTI_CIRCLE_EVENTS: 'multi_circle_events',
   EVENT_OUTSIDE_GUESTS: 'event_outside_guests',
   EVENT_GUEST_WEB_RSVP: 'event_guest_web_rsvp',
+  EVENT_PHOTO_GALLERY: 'event_photo_gallery',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -22,6 +23,7 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.MULTI_CIRCLE_EVENTS]: true,
   [FEATURE_FLAGS.EVENT_OUTSIDE_GUESTS]: true,
   [FEATURE_FLAGS.EVENT_GUEST_WEB_RSVP]: true,
+  [FEATURE_FLAGS.EVENT_PHOTO_GALLERY]: true,
 });
 
 const CACHE_TTL_MS = 60_000;
