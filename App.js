@@ -465,9 +465,61 @@ const MOCK_INCOMING = [
   { id: 'r1', from_user: 'uZ', display_name: 'Taylor Brooks', avatar_url: 'https://i.pravatar.cc/150?img=47', note: null, created_at: new Date().toISOString() },
 ];
 
+function countLabel(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function getMutualContext(user) {
+  const sharedEventCount = Number(user.shared_event_count || 0);
+  const sharedCircleCount = Number(user.shared_circle_count || 0);
+  const mutualConnectionCount = Number(user.mutual_connection_count || 0);
+  const hasMutualContact = user.has_mutual_contact === true
+    || user.primary_context === 'mutual_contact'
+    || (
+      !user.primary_context
+      && sharedEventCount === 0
+      && sharedCircleCount === 0
+      && mutualConnectionCount === 0
+    );
+
+  let primary = 'Trusted social context';
+  const secondaryParts = [];
+
+  if (sharedEventCount > 0) {
+    primary = user.latest_shared_event_title
+      ? `Met at ${user.latest_shared_event_title}`
+      : countLabel(sharedEventCount, 'shared event');
+    if (user.latest_shared_event_title && sharedEventCount > 1) {
+      secondaryParts.push(countLabel(sharedEventCount, 'shared event'));
+    }
+  } else if (sharedCircleCount > 0) {
+    primary = countLabel(sharedCircleCount, 'shared Circle');
+  } else if (mutualConnectionCount > 0) {
+    primary = countLabel(mutualConnectionCount, 'mutual connection');
+  } else if (hasMutualContact) {
+    primary = 'Mutual contact';
+  }
+
+  if (sharedCircleCount > 0 && user.primary_context !== 'shared_circle') {
+    secondaryParts.push(countLabel(sharedCircleCount, 'shared Circle'));
+  }
+  if (mutualConnectionCount > 0 && user.primary_context !== 'mutual_connection') {
+    secondaryParts.push(countLabel(mutualConnectionCount, 'mutual connection'));
+  }
+  if (hasMutualContact && user.primary_context !== 'mutual_contact') {
+    secondaryParts.push('Mutual contact');
+  }
+
+  return {
+    primary,
+    secondary: secondaryParts.slice(0, 2).join(' · '),
+  };
+}
+
 
 function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const context = getMutualContext(user);
   const hasPreview = Boolean(user.preview_post_id);
   const isVideo = user.preview_media_type === 'video';
   const canShowImage = Boolean(user.preview_url) && !isVideo && !imageFailed;
@@ -490,7 +542,10 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
           <Avatar size={48} name={user.display_name || 'Unknown'} uri={user.avatar_url} />
           <View style={{ flex: 1, marginHorizontal: 12 }}>
             <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>{user.display_name || 'Unknown'}</Text>
-            <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }}>Mutual contact</Text>
+            <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }} numberOfLines={1}>{context.primary}</Text>
+            {context.secondary ? (
+              <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 11, marginTop: 2 }} numberOfLines={1}>{context.secondary}</Text>
+            ) : null}
           </View>
         </Pressable>
         <Pressable
@@ -523,7 +578,7 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
               {user.display_name || 'Unknown'}
             </Text>
             <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }} numberOfLines={1}>
-              Mutual contact{previewTime ? ` · ${previewTime}` : ''}
+              {context.primary}{previewTime ? ` · ${previewTime}` : ''}
             </Text>
           </View>
         </Pressable>
@@ -588,6 +643,11 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
       </Pressable>
 
       <Pressable onPress={onOpenProfile} style={({ pressed }) => ({ paddingHorizontal: 13, paddingVertical: 12, opacity: pressed ? 0.65 : 1 })}>
+        {context.secondary ? (
+          <Text style={{ color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11, marginBottom: 6 }} numberOfLines={1}>
+            {context.secondary}
+          </Text>
+        ) : null}
         {user.preview_caption ? (
           <Text style={{ color: COLORS.text, fontFamily: 'Manrope_400Regular', lineHeight: 20 }} numberOfLines={3}>
             <Text style={{ fontFamily: 'Manrope_700Bold' }}>{user.display_name || 'Unknown'} </Text>
@@ -613,6 +673,7 @@ function MutualsScreen({ navigation, route }) {
     route?.params?.initialTab === 'requests' ? 'requests' : 'mutuals'
   );
   const [authed, setAuthed] = useState(false);
+  const [trustedRankingActive, setTrustedRankingActive] = useState(true);
   const hasTrackedOpen = useRef(false);
 
   useEffect(() => {
@@ -640,18 +701,28 @@ function MutualsScreen({ navigation, route }) {
         return;
       }
 
-      const [
-        candidateResult,
-        requestResult,
-        featureFlags,
-      ] = await Promise.all([
-        supabase.rpc('mutual_candidates'),
+      const featureFlags = await loadFeatureFlags();
+      const trustedRankingEnabled =
+        featureFlags[FEATURE_FLAGS.TRUSTED_MUTUALS_RANKING] !== false;
+      const preferredCandidateRpc = trustedRankingEnabled
+        ? 'trusted_mutual_candidates'
+        : 'mutual_candidates';
+
+      let [candidateResult, requestResult] = await Promise.all([
+        supabase.rpc(preferredCandidateRpc),
         supabase.rpc('incoming_requests'),
-        loadFeatureFlags(),
       ]);
+
+      let usingTrustedRanking = trustedRankingEnabled;
+      if (candidateResult.error && trustedRankingEnabled) {
+        candidateResult = await supabase.rpc('mutual_candidates');
+        usingTrustedRanking = false;
+      }
 
       if (candidateResult.error) throw candidateResult.error;
       if (requestResult.error) throw requestResult.error;
+
+      setTrustedRankingActive(usingTrustedRanking);
 
       const previewEnabled =
         featureFlags[FEATURE_FLAGS.MUTUAL_PREVIEW_POSTS] !== false;
@@ -821,6 +892,14 @@ function MutualsScreen({ navigation, route }) {
 
       {tab === 'mutuals' ? (
         <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }}>
+          {trustedRankingActive ? (
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 11, borderRadius: 12, backgroundColor: '#f5f5f5' }}>
+              <Ionicons name="git-network-outline" size={18} color={COLORS.text} />
+              <Text style={{ flex: 1, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, lineHeight: 18 }}>
+                Ordered by shared events, shared Circles, mutual connections, and mutual contacts — never popularity or engagement.
+              </Text>
+            </View>
+          ) : null}
           {candidates.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 38, paddingHorizontal: 24 }}>
               <Ionicons name="people-outline" size={38} color={COLORS.subtext} />
@@ -828,7 +907,7 @@ function MutualsScreen({ navigation, route }) {
                 No mutuals yet
               </Text>
               <Text style={{ marginTop: 5, textAlign: 'center', color: COLORS.subtext, fontFamily: 'Manrope_400Regular', lineHeight: 19 }}>
-                Sync contacts or invite people you already know. Profiles remain private until both people connect.
+                Mutuals appear through shared events, shared Circles, mutual connections, or privacy-safe contact overlap. Profiles remain private until both people connect.
               </Text>
               <Pressable
                 onPress={() => navigation.navigate('InvitePeople')}

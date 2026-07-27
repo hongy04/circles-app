@@ -14,6 +14,7 @@ export const FEATURE_FLAGS = Object.freeze({
   EVENT_HISTORY: 'event_history',
   SHARED_EVENT_CONNECTIONS: 'shared_event_connections',
   GUEST_ATTENDANCE_CLAIMS: 'guest_attendance_claims',
+  TRUSTED_MUTUALS_RANKING: 'trusted_mutuals_ranking',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -30,6 +31,7 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.EVENT_HISTORY]: true,
   [FEATURE_FLAGS.SHARED_EVENT_CONNECTIONS]: true,
   [FEATURE_FLAGS.GUEST_ATTENDANCE_CLAIMS]: true,
+  [FEATURE_FLAGS.TRUSTED_MUTUALS_RANKING]: true,
 });
 
 const CACHE_TTL_MS = 60_000;
