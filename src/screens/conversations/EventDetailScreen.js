@@ -96,7 +96,7 @@ function CountCard({ value, label }) {
   );
 }
 
-function AttendeeRow({ attendee }) {
+function AttendeeRow({ attendee, attendanceReviewed }) {
   return (
     <View style={styles.attendeeRow}>
       <Avatar
@@ -112,7 +112,9 @@ function AttendeeRow({ attendee }) {
       </View>
       <View style={styles.statusPill}>
         <Text style={styles.statusPillText}>
-          {STATUS_LABELS[attendee.rsvpStatus] || 'No response'}
+          {attendanceReviewed
+            ? (attendee.attended ? 'Attended' : 'Didn’t attend')
+            : (STATUS_LABELS[attendee.rsvpStatus] || 'No response')}
         </Text>
       </View>
     </View>
@@ -125,6 +127,7 @@ function GuestRow({
   controlsEnabled,
   onChangeStatus,
   onRemove,
+  attendanceReviewed,
 }) {
   return (
     <View style={styles.guestRow}>
@@ -153,7 +156,9 @@ function GuestRow({
               <ActivityIndicator size="small" />
             ) : (
               <Text style={styles.guestStatusText}>
-                {STATUS_LABELS[guest.status] || 'Invited'}
+                {attendanceReviewed
+                  ? (guest.attended ? 'Attended' : 'Didn’t attend')
+                  : (STATUS_LABELS[guest.status] || 'Invited')}
               </Text>
             )}
           </Pressable>
@@ -169,7 +174,9 @@ function GuestRow({
       ) : (
         <View style={styles.statusPill}>
           <Text style={styles.statusPillText}>
-            {STATUS_LABELS[guest.status] || 'Invited'}
+            {attendanceReviewed
+              ? (guest.attended ? 'Attended' : 'Didn’t attend')
+              : (STATUS_LABELS[guest.status] || 'Invited')}
           </Text>
         </View>
       )}
@@ -242,6 +249,7 @@ export function EventDetailScreen({ route, navigation }) {
   const [outsideGuestControlsEnabled, setOutsideGuestControlsEnabled] = useState(true);
   const [guestInviteLinksEnabled, setGuestInviteLinksEnabled] = useState(true);
   const [eventPhotosEnabled, setEventPhotosEnabled] = useState(true);
+  const [eventHistoryEnabled, setEventHistoryEnabled] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async ({ quiet = false } = {}) => {
@@ -255,16 +263,19 @@ export function EventDetailScreen({ route, navigation }) {
         guestControlsEnabled,
         inviteLinksEnabled,
         photosEnabled,
+        historyEnabled,
       ] = await Promise.all([
         getEventDetails(eventId),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_OUTSIDE_GUESTS),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_GUEST_WEB_RSVP),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_PHOTO_GALLERY),
+        isFeatureEnabled(FEATURE_FLAGS.EVENT_HISTORY),
       ]);
       setDetails(nextDetails);
       setOutsideGuestControlsEnabled(guestControlsEnabled);
       setGuestInviteLinksEnabled(inviteLinksEnabled);
       setEventPhotosEnabled(photosEnabled);
+      setEventHistoryEnabled(historyEnabled);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this event.');
     } finally {
@@ -428,6 +439,10 @@ export function EventDetailScreen({ route, navigation }) {
   const attendees = details?.attendees || [];
   const guests = details?.guests || [];
   const guestInvitations = details?.guestInvitations || [];
+  const isPastEvent = Boolean(event) && (
+    event.isPast || event.status === 'completed' || new Date(event.startsAt).getTime() < Date.now()
+  );
+  const eventLocked = event?.status === 'completed' || event?.status === 'cancelled';
 
   if (loading && !event) {
     return (
@@ -505,45 +520,51 @@ export function EventDetailScreen({ route, navigation }) {
       </View>
 
       <View style={styles.rsvpCard}>
-        <Text style={styles.rsvpTitle}>Are you going?</Text>
+        <Text style={styles.rsvpTitle}>
+          {eventLocked ? 'Event completed' : 'Are you going?'}
+        </Text>
         <Text style={styles.rsvpBody}>
-          Your answer is visible only to members of the Circles invited to this event.
+          {eventLocked
+            ? 'The original RSVP remains part of the event record. Attendance is tracked separately.'
+            : 'Your answer is visible only to members of the Circles invited to this event.'}
         </Text>
 
-        <View style={styles.rsvpButtons}>
-          {RSVP_OPTIONS.map((option) => {
-            const selected = event.viewerRsvpStatus === option.status;
-            const busy = updatingStatus === option.status;
-            return (
-              <Pressable
-                key={option.status}
-                onPress={() => updateRsvp(option.status)}
-                disabled={Boolean(updatingStatus)}
-                style={({ pressed }) => [
-                  styles.rsvpButton,
-                  selected && styles.rsvpButtonSelected,
-                  (pressed || busy) && styles.pressed,
-                ]}
-              >
-                {busy ? (
-                  <ActivityIndicator size="small" color={selected ? '#fff' : COLORS.text} />
-                ) : (
-                  <Ionicons
-                    name={option.icon}
-                    size={19}
-                    color={selected ? '#fff' : COLORS.text}
-                  />
-                )}
-                <Text style={[
-                  styles.rsvpButtonText,
-                  selected && styles.rsvpButtonTextSelected,
-                ]}>
-                  {option.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        {!eventLocked ? (
+          <View style={styles.rsvpButtons}>
+            {RSVP_OPTIONS.map((option) => {
+              const selected = event.viewerRsvpStatus === option.status;
+              const busy = updatingStatus === option.status;
+              return (
+                <Pressable
+                  key={option.status}
+                  onPress={() => updateRsvp(option.status)}
+                  disabled={Boolean(updatingStatus)}
+                  style={({ pressed }) => [
+                    styles.rsvpButton,
+                    selected && styles.rsvpButtonSelected,
+                    (pressed || busy) && styles.pressed,
+                  ]}
+                >
+                  {busy ? (
+                    <ActivityIndicator size="small" color={selected ? '#fff' : COLORS.text} />
+                  ) : (
+                    <Ionicons
+                      name={option.icon}
+                      size={19}
+                      color={selected ? '#fff' : COLORS.text}
+                    />
+                  )}
+                  <Text style={[
+                    styles.rsvpButtonText,
+                    selected && styles.rsvpButtonTextSelected,
+                  ]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.countsRow}>
@@ -551,6 +572,45 @@ export function EventDetailScreen({ route, navigation }) {
         <CountCard value={counts?.maybe || 0} label="Maybe" />
         <CountCard value={counts?.pending || 0} label="Waiting" />
       </View>
+
+      {eventHistoryEnabled && isPastEvent ? (
+        <View style={styles.historyCard}>
+          <View style={styles.historyIcon}>
+            <Ionicons
+              name={event.attendanceReviewed ? 'checkmark-done-outline' : 'people-outline'}
+              size={23}
+              color={COLORS.text}
+            />
+          </View>
+          <View style={styles.historyCopy}>
+            <Text style={styles.historyTitle}>
+              {event.attendanceReviewed
+                ? 'Attendance reviewed'
+                : (event.canManage ? 'Who made it?' : 'Past event')}
+            </Text>
+            <Text style={styles.historyBody}>
+              {event.attendanceReviewed
+                ? `${event.attendedCount} ${event.attendedCount === 1 ? 'person was' : 'people were'} marked as attended. Original RSVPs remain unchanged.`
+                : (event.canManage
+                  ? 'Review the guest list and record who actually attended. Going responses are only the starting suggestion.'
+                  : 'The host has not reviewed attendance for this event.')}
+            </Text>
+          </View>
+          {event.canManage ? (
+            <Pressable
+              onPress={() => navigation.navigate('EventAttendanceReview', {
+                eventId,
+                eventTitle: event.title,
+              })}
+              style={({ pressed }) => [styles.historyButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.historyButtonText}>
+                {event.attendanceReviewed ? 'Review again' : 'Review'}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       {eventPhotosEnabled ? (
         <Pressable
@@ -610,7 +670,7 @@ export function EventDetailScreen({ route, navigation }) {
         </View>
       </View>
 
-      {outsideGuestControlsEnabled && (event.canManage || event.canAddGuests) ? (
+      {outsideGuestControlsEnabled && !eventLocked && (event.canManage || event.canAddGuests) ? (
         <View style={styles.guestActionRow}>
           {event.canManage ? (
             <Pressable
@@ -656,9 +716,10 @@ export function EventDetailScreen({ route, navigation }) {
               key={guest.id}
               guest={guest}
               busy={updatingGuestId === guest.id}
-              controlsEnabled={outsideGuestControlsEnabled}
+              controlsEnabled={outsideGuestControlsEnabled && !eventLocked}
               onChangeStatus={chooseGuestStatus}
               onRemove={confirmRemoveGuest}
+              attendanceReviewed={event.attendanceReviewed}
             />
           ))}
         </View>
@@ -680,7 +741,9 @@ export function EventDetailScreen({ route, navigation }) {
         keyExtractor={(item) => item.userId}
         ListHeaderComponent={header}
         ListFooterComponent={guestFooter}
-        renderItem={({ item }) => <AttendeeRow attendee={item} />}
+        renderItem={({ item }) => (
+          <AttendeeRow attendee={item} attendanceReviewed={event?.attendanceReviewed} />
+        )}
         refreshControl={(
           <RefreshControl
             refreshing={refreshing}
@@ -836,6 +899,51 @@ const styles = StyleSheet.create({
   },
   rsvpButtonTextSelected: { color: '#fff' },
   countsRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  historyCard: {
+    marginTop: 14,
+    padding: 15,
+    borderRadius: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  historyIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f1f1',
+  },
+  historyCopy: { flex: 1, minWidth: 0 },
+  historyTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+  },
+  historyBody: {
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 10,
+    lineHeight: 15,
+  },
+  historyButton: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+  },
+  historyButtonText: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 10,
+  },
   photoGalleryCard: {
     marginTop: 12,
     padding: 14,

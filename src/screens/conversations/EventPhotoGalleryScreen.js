@@ -275,7 +275,7 @@ export function EventPhotoGalleryScreen({ route }) {
         <View style={styles.uploadNotice}>
           <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.subtext} />
           <Text style={styles.uploadNoticeText}>
-            RSVP Going to add photos. You can still view everything shared here.
+            The host, people marked Going, and confirmed attendees can add photos. You can still view everything shared here.
           </Text>
         </View>
       )}

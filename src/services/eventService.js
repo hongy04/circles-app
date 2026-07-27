@@ -24,10 +24,13 @@ function mapEventSummary(row) {
     circleCount: Math.max(1, Number(row.circle_count || 1)),
     guestCount: Number(row.guest_count || 0),
     guestCap: Number(row.outside_guest_cap || 0),
+    attendanceReviewedAt: row.attendance_reviewed_at || null,
+    completedAt: row.completed_at || null,
+    attendedCount: Number(row.attended_count || 0),
   };
 }
 
-function mapEventDetails(data, rawInvitations = []) {
+function mapEventDetails(data, rawInvitations = [], attendanceSummary = {}) {
   const rawEvent = data?.event || {};
   const counts = data?.counts || {};
   const guestInvitations = (rawInvitations || []).map((invitation) => ({
@@ -42,6 +45,19 @@ function mapEventDetails(data, rawInvitations = []) {
   const reservedGuestCount = actualGuestCount + pendingGuestInvitationCount;
   const outsideGuestCap = Number(rawEvent.outside_guest_cap || 0);
   const remainingGuestSlots = Math.max(outsideGuestCap - reservedGuestCount, 0);
+  const memberAttendance = new Map(
+    (attendanceSummary?.member_attendance || []).map((row) => [
+      row.user_id,
+      Boolean(row.attended),
+    ])
+  );
+  const guestAttendance = new Map(
+    (attendanceSummary?.guest_attendance || []).map((row) => [
+      row.guest_id,
+      Boolean(row.attended),
+    ])
+  );
+  const attendanceReviewedAt = attendanceSummary?.attendance_reviewed_at || null;
 
   return {
     event: {
@@ -73,6 +89,11 @@ function mapEventDetails(data, rawInvitations = []) {
       remainingGuestSlots,
       canAddGuests: Boolean(rawEvent.can_add_guests) && remainingGuestSlots > 0,
       createdAt: rawEvent.created_at || null,
+      isPast: Boolean(attendanceSummary?.is_past),
+      attendanceReviewed: Boolean(attendanceReviewedAt),
+      attendanceReviewedAt,
+      completedAt: attendanceSummary?.completed_at || null,
+      attendedCount: Number(attendanceSummary?.attended_count || 0),
     },
     counts: {
       attendeeCount: Number(counts.attendee_count || 0),
@@ -96,6 +117,9 @@ function mapEventDetails(data, rawInvitations = []) {
       respondedAt: attendee.responded_at || null,
       isHost: Boolean(attendee.is_host),
       isMe: Boolean(attendee.is_me),
+      attended: memberAttendance.has(attendee.user_id)
+        ? memberAttendance.get(attendee.user_id)
+        : null,
     })),
     guests: (data?.guests || []).map((guest) => ({
       id: guest.id,
@@ -105,6 +129,9 @@ function mapEventDetails(data, rawInvitations = []) {
       respondedAt: guest.responded_at || null,
       invitedByName: guest.invited_by_name || 'Circle member',
       canManage: Boolean(guest.can_manage),
+      attended: guestAttendance.has(guest.id)
+        ? guestAttendance.get(guest.id)
+        : null,
     })),
     guestInvitations,
   };
@@ -217,15 +244,21 @@ export async function getEventDetails(eventId) {
 
   if (!eventId) throw new Error('Event is missing.');
 
-  const [detailsResult, invitationsResult] = await Promise.all([
+  const [detailsResult, invitationsResult, attendanceResult] = await Promise.all([
     supabase.rpc('get_event_details', { p_event_id: eventId }),
     supabase.rpc('list_event_guest_invitations', { p_event_id: eventId }),
+    supabase.rpc('get_event_attendance_summary', { p_event_id: eventId }),
   ]);
 
   if (detailsResult.error) throw detailsResult.error;
   if (invitationsResult.error) throw invitationsResult.error;
+  if (attendanceResult.error) throw attendanceResult.error;
   if (!detailsResult.data?.event?.id) throw new Error('Event not found or unavailable.');
-  return mapEventDetails(detailsResult.data, invitationsResult.data || []);
+  return mapEventDetails(
+    detailsResult.data,
+    invitationsResult.data || [],
+    attendanceResult.data || {}
+  );
 }
 
 export async function respondToEvent(eventId, status) {
@@ -353,5 +386,81 @@ export async function updateEventGuestSettings({
   if (error) throw error;
 
   return data;
+}
+
+export async function getEventAttendanceReview(eventId) {
+  await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.EVENT_HISTORY,
+    'Event history is temporarily unavailable.'
+  );
+
+  if (!eventId) throw new Error('Event is missing.');
+
+  const { data, error } = await supabase.rpc('get_event_attendance_review', {
+    p_event_id: eventId,
+  });
+
+  if (error) throw error;
+  if (!data?.event?.id) throw new Error('Event not found or unavailable.');
+
+  return {
+    event: {
+      id: data.event.id,
+      title: data.event.title || 'Event',
+      startsAt: data.event.starts_at,
+      endsAt: data.event.ends_at || null,
+      status: data.event.status || 'scheduled',
+      attendanceReviewedAt: data.event.attendance_reviewed_at || null,
+      completedAt: data.event.completed_at || null,
+    },
+    members: (data.members || []).map((member) => ({
+      userId: member.user_id,
+      displayName: member.display_name || 'Circle member',
+      avatarUri: member.avatar_url || null,
+      rsvpStatus: member.rsvp_status || 'pending',
+      isHost: Boolean(member.is_host),
+      attended: Boolean(member.attended),
+      wasReviewed: Boolean(member.was_reviewed),
+    })),
+    guests: (data.guests || []).map((guest) => ({
+      id: guest.guest_id,
+      displayName: guest.display_name || 'Guest',
+      guestType: guest.guest_type || 'guest',
+      status: guest.status || 'invited',
+      invitedByName: guest.invited_by_name || 'Circle member',
+      attended: Boolean(guest.attended),
+      wasReviewed: Boolean(guest.was_reviewed),
+    })),
+  };
+}
+
+export async function saveEventAttendanceReview({
+  eventId,
+  attendedUserIds = [],
+  attendedGuestIds = [],
+}) {
+  await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.EVENT_HISTORY,
+    'Event history is temporarily unavailable.'
+  );
+
+  if (!eventId) throw new Error('Event is missing.');
+
+  const { data, error } = await supabase.rpc('save_event_attendance_review', {
+    p_event_id: eventId,
+    p_attended_user_ids: Array.from(new Set(attendedUserIds.filter(Boolean))),
+    p_attended_guest_ids: Array.from(new Set(attendedGuestIds.filter(Boolean))),
+  });
+
+  if (error) throw error;
+  return {
+    status: data?.status || 'completed',
+    attendanceReviewedAt: data?.attendance_reviewed_at || null,
+    attendedCount: Number(data?.attended_count || 0),
+    memberCount: Number(data?.member_count || 0),
+    guestCount: Number(data?.guest_count || 0),
+  };
 }
 

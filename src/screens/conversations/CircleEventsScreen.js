@@ -58,7 +58,12 @@ function formatEventDate(startsAt, endsAt) {
 }
 
 function EventCard({ event, onPress }) {
-  const isPast = new Date(event.startsAt).getTime() < Date.now();
+  const startTime = new Date(event.startsAt).getTime();
+  const isPast = event.status === 'completed' || startTime < Date.now();
+  const historyLabel = event.attendanceReviewedAt ? 'Reviewed' : 'Past';
+  const historySummary = event.attendanceReviewedAt
+    ? `${event.attendedCount} attended`
+    : `${event.goingCount} marked going`;
 
   return (
     <Pressable
@@ -76,7 +81,7 @@ function EventCard({ event, onPress }) {
       <View style={styles.eventCopy}>
         <View style={styles.titleRow}>
           <Text style={styles.eventTitle} numberOfLines={1}>{event.title}</Text>
-          {isPast ? <Text style={styles.pastLabel}>Past</Text> : null}
+          {isPast ? <Text style={styles.pastLabel}>{historyLabel}</Text> : null}
         </View>
 
         <Text style={styles.eventDate} numberOfLines={1}>
@@ -100,14 +105,27 @@ function EventCard({ event, onPress }) {
         ) : null}
 
         <View style={styles.summaryRow}>
-          <View style={styles.rsvpPill}>
-            <Text style={styles.rsvpPillText}>
-              {RSVP_LABELS[event.viewerRsvpStatus] || 'No response'}
-            </Text>
-          </View>
-          <Text style={styles.countText}>
-            {event.goingCount} going · {event.maybeCount} maybe
-          </Text>
+          {isPast ? (
+            <>
+              <View style={styles.rsvpPill}>
+                <Text style={styles.rsvpPillText}>
+                  {event.status === 'completed' ? 'Completed' : 'Past event'}
+                </Text>
+              </View>
+              <Text style={styles.countText}>{historySummary}</Text>
+            </>
+          ) : (
+            <>
+              <View style={styles.rsvpPill}>
+                <Text style={styles.rsvpPillText}>
+                  {RSVP_LABELS[event.viewerRsvpStatus] || 'No response'}
+                </Text>
+              </View>
+              <Text style={styles.countText}>
+                {event.goingCount} going · {event.maybeCount} maybe
+              </Text>
+            </>
+          )}
         </View>
       </View>
 
@@ -203,10 +221,27 @@ export function CircleEventsScreen({ route, navigation }) {
     }, [load])
   );
 
-  const upcomingCount = useMemo(
-    () => events.filter((event) => new Date(event.startsAt).getTime() >= Date.now()).length,
+  const upcomingEvents = useMemo(
+    () => events.filter((event) => (
+      event.status !== 'completed' && new Date(event.startsAt).getTime() >= Date.now()
+    )),
     [events]
   );
+  const pastEvents = useMemo(
+    () => events.filter((event) => (
+      event.status === 'completed' || new Date(event.startsAt).getTime() < Date.now()
+    )),
+    [events]
+  );
+  const eventRows = useMemo(() => {
+    if (events.length === 0) return [];
+    return [
+      { rowType: 'section', id: 'upcoming-section', title: 'Upcoming events', count: upcomingEvents.length },
+      ...upcomingEvents.map((event) => ({ rowType: 'event', event })),
+      { rowType: 'section', id: 'past-section', title: 'Past events', count: pastEvents.length },
+      ...pastEvents.map((event) => ({ rowType: 'event', event })),
+    ];
+  }, [events, pastEvents, upcomingEvents]);
   const openPollCount = useMemo(
     () => polls.filter((poll) => poll.status === 'open').length,
     [polls]
@@ -294,11 +329,6 @@ export function CircleEventsScreen({ route, navigation }) {
           )}
         </>
       ) : null}
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Circle events</Text>
-        <Text style={styles.sectionCount}>{upcomingCount} upcoming</Text>
-      </View>
     </View>
   );
 
@@ -326,11 +356,16 @@ export function CircleEventsScreen({ route, navigation }) {
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
       <FlatList
-        data={events}
-        keyExtractor={(item) => item.id}
+        data={eventRows}
+        keyExtractor={(item) => item.rowType === 'section' ? item.id : item.event.id}
         ListHeaderComponent={header}
-        renderItem={({ item }) => (
-          <EventCard event={item} onPress={() => openEvent(item)} />
+        renderItem={({ item }) => item.rowType === 'section' ? (
+          <View style={styles.eventSectionHeader}>
+            <Text style={styles.sectionTitle}>{item.title}</Text>
+            <Text style={styles.sectionCount}>{item.count}</Text>
+          </View>
+        ) : (
+          <EventCard event={item.event} onPress={() => openEvent(item.event)} />
         )}
         ListEmptyComponent={(
           <View style={styles.emptyState}>
@@ -430,6 +465,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
+  },
+  eventSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 24,
+    marginBottom: 10,
+    paddingHorizontal: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
