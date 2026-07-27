@@ -61,12 +61,19 @@ function mapPreview(data) {
       locationName: rawEvent.location_name || '',
       hostName: rawEvent.host_name || 'Event host',
       hostAvatar: rawEvent.host_avatar || null,
+      status: rawEvent.status || 'scheduled',
+      attendanceReviewed: Boolean(rawEvent.attendance_reviewed),
     },
     invitation: {
       invitedByName: rawInvitation.invited_by_name || 'A Circle member',
       expiresAt: rawInvitation.expires_at || null,
       claimRequired: Boolean(rawInvitation.claim_required),
     },
+    accountClaim: {
+      state: data?.account_claim?.state || 'unavailable',
+      available: Boolean(data?.account_claim?.available),
+    },
+    rsvpLocked: Boolean(data?.rsvp_locked),
   };
 }
 
@@ -76,6 +83,7 @@ function mapAttendeeList(data) {
     reason: data?.reason || null,
     visible: Boolean(data?.visible),
     goingCount: Number(data?.going_count || 0),
+    completed: Boolean(data?.completed),
     attendees: (data?.attendees || []).map((attendee) => ({
       displayName: attendee.display_name || 'Attendee',
       avatarUri: attendee.avatar_url || null,
@@ -100,6 +108,46 @@ function mapPhotoGallery(data) {
       height: Number(photo.height || 0) || null,
       createdAt: photo.created_at || null,
     })).filter((photo) => Boolean(photo.url)),
+  };
+}
+
+function mapAccountClaimPreview(data) {
+  const rawGuest = data?.guest || {};
+  const rawEvent = data?.event || {};
+  const rawInvitation = data?.invitation || {};
+  const rawClaim = data?.account_claim || {};
+
+  return {
+    valid: Boolean(data?.valid),
+    reason: data?.reason || null,
+    guest: {
+      displayName: rawGuest.display_name || '',
+      guestType: rawGuest.guest_type || 'guest',
+      status: rawGuest.status || 'invited',
+      claimed: Boolean(rawGuest.claimed),
+      accountClaimed: Boolean(rawGuest.account_claimed),
+    },
+    event: {
+      title: rawEvent.title || 'Event',
+      description: rawEvent.description || '',
+      startsAt: rawEvent.starts_at || null,
+      endsAt: rawEvent.ends_at || null,
+      locationName: rawEvent.location_name || '',
+      hostName: rawEvent.host_name || 'Event host',
+      hostAvatar: rawEvent.host_avatar || null,
+      status: rawEvent.status || 'scheduled',
+      attendanceReviewed: Boolean(rawEvent.attendance_reviewed),
+    },
+    invitation: {
+      invitedByName: rawInvitation.invited_by_name || 'A Circle member',
+      expiresAt: rawInvitation.expires_at || null,
+      claimRequired: Boolean(rawInvitation.claim_required),
+    },
+    accountClaim: {
+      state: rawClaim.state || 'unavailable',
+      available: Boolean(rawClaim.available),
+    },
+    rsvpLocked: Boolean(data?.rsvp_locked),
   };
 }
 
@@ -270,13 +318,30 @@ export async function getEventGuestAttendeeList(token) {
 
 export async function previewEventGuestInvite(token) {
   const cleanToken = String(token || '').trim();
-  const { data, error } = await supabase.rpc('preview_event_guest_invite', {
-    p_token: cleanToken,
-  });
+  const [inviteResult, claimResult] = await Promise.all([
+    supabase.rpc('preview_event_guest_invite', { p_token: cleanToken }),
+    supabase.rpc('preview_event_guest_account_claim', { p_token: cleanToken }),
+  ]);
 
-  if (error) throw error;
+  if (inviteResult.error) throw inviteResult.error;
+  if (claimResult.error) throw claimResult.error;
 
-  const preview = mapPreview(data);
+  const invitePreview = mapPreview(inviteResult.data);
+  const claimPreview = mapAccountClaimPreview(claimResult.data);
+  const preview = invitePreview.valid
+    ? claimPreview.valid
+      ? {
+          ...invitePreview,
+          accountClaim: claimPreview.accountClaim,
+          rsvpLocked: claimPreview.rsvpLocked,
+          event: { ...invitePreview.event, ...claimPreview.event },
+          guest: { ...invitePreview.guest, accountClaimed: claimPreview.guest.accountClaimed },
+        }
+      : invitePreview
+    : claimPreview.valid
+      ? claimPreview
+      : invitePreview;
+
   if (!preview.valid) {
     return {
       ...preview,
@@ -298,6 +363,32 @@ export async function previewEventGuestInvite(token) {
     photoGallery: photoResult.status === 'fulfilled'
       ? photoResult.value
       : { ...mapPhotoGallery(null), reason: 'unavailable' },
+  };
+}
+
+export async function claimEventGuestAttendance(token) {
+  await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.GUEST_ATTENDANCE_CLAIMS,
+    'Guest attendance claiming is temporarily unavailable.'
+  );
+
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) throw new Error('Guest invitation token is missing.');
+
+  const { data, error } = await supabase.rpc('claim_event_guest_attendance', {
+    p_token: cleanToken,
+  });
+
+  if (error) throw error;
+  if (!data?.event_id) throw new Error('Circles could not claim this event.');
+
+  return {
+    outcome: data.outcome || 'claimed',
+    eventId: data.event_id,
+    eventTitle: data.event_title || 'Event',
+    startsAt: data.starts_at || null,
+    attendanceReviewedAt: data.attendance_reviewed_at || null,
   };
 }
 

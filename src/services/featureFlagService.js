@@ -12,6 +12,8 @@ export const FEATURE_FLAGS = Object.freeze({
   EVENT_GUEST_WEB_RSVP: 'event_guest_web_rsvp',
   EVENT_PHOTO_GALLERY: 'event_photo_gallery',
   EVENT_HISTORY: 'event_history',
+  SHARED_EVENT_CONNECTIONS: 'shared_event_connections',
+  GUEST_ATTENDANCE_CLAIMS: 'guest_attendance_claims',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -26,6 +28,8 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.EVENT_GUEST_WEB_RSVP]: true,
   [FEATURE_FLAGS.EVENT_PHOTO_GALLERY]: true,
   [FEATURE_FLAGS.EVENT_HISTORY]: true,
+  [FEATURE_FLAGS.SHARED_EVENT_CONNECTIONS]: true,
+  [FEATURE_FLAGS.GUEST_ATTENDANCE_CLAIMS]: true,
 });
 
 const CACHE_TTL_MS = 60_000;

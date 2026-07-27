@@ -42,6 +42,9 @@ import { StoryComposerScreen } from './src/screens/stories/StoryComposerScreen';
 import { MeScreen } from './src/screens/profile/MeScreen';
 import { ProfileScreen } from './src/screens/profile/ProfileScreen';
 import { ProfilePostsFeedScreen } from './src/screens/profile/ProfilePostsFeedScreen';
+import { ProfileEventsScreen } from './src/screens/profile/ProfileEventsScreen';
+import { ProfileConnectionsScreen } from './src/screens/profile/ProfileConnectionsScreen';
+import { GuestClaimProfileSetupScreen } from './src/screens/profile/GuestClaimProfileSetupScreen';
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
 import { InvitePeopleScreen } from './src/screens/profile/InvitePeopleScreen';
@@ -68,6 +71,7 @@ import { CreateEventScreen } from './src/screens/conversations/CreateEventScreen
 import { EventDetailScreen } from './src/screens/conversations/EventDetailScreen';
 import { EventPhotoGalleryScreen } from './src/screens/conversations/EventPhotoGalleryScreen';
 import { EventAttendanceReviewScreen } from './src/screens/conversations/EventAttendanceReviewScreen';
+import { EventConnectionsScreen } from './src/screens/conversations/EventConnectionsScreen';
 import { AddEventGuestScreen } from './src/screens/conversations/AddEventGuestScreen';
 import { EventGuestSettingsScreen } from './src/screens/conversations/EventGuestSettingsScreen';
 import { CreateAvailabilityPollScreen } from './src/screens/conversations/CreateAvailabilityPollScreen';
@@ -107,12 +111,45 @@ export default function App() {
           <RootStack.Screen name="Gate" component={GateScreen} />
           <RootStack.Screen name="Invite" component={InvitationLandingScreen} />
           <RootStack.Screen name="EventGuestInvite" component={EventGuestInvitationScreen} />
+          <RootStack.Screen
+            name="ClaimedEventConnections"
+            component={EventConnectionsScreen}
+            options={{ headerShown: true, title: 'People From This Event' }}
+          />
           <RootStack.Screen name="Auth" component={AuthNavigator} />
           <RootStack.Screen name="MainTabs" component={AppTabs} />
           <RootStack.Screen name="CreatePost" component={CreatePostScreen} />
           <RootStack.Screen name="CreateStory" component={StoryComposerScreen} />
           <RootStack.Screen name="Profile" component={ProfileScreen} />
           <RootStack.Screen name="ProfilePostsFeed" component={ProfilePostsFeedScreen} />
+          <RootStack.Screen
+            name="ProfileEvents"
+            component={ProfileEventsScreen}
+            options={{
+              headerShown: true,
+              title: 'Events',
+              headerShadowVisible: false,
+              headerBackTitleVisible: false,
+              headerTintColor: COLORS.text,
+              headerTitleStyle: { fontFamily: 'Manrope_700Bold' },
+            }}
+          />
+          <RootStack.Screen
+            name="ProfileConnections"
+            component={ProfileConnectionsScreen}
+            options={{
+              headerShown: true,
+              title: 'Connections',
+              headerShadowVisible: false,
+              headerBackTitleVisible: false,
+              headerTintColor: COLORS.text,
+              headerTitleStyle: { fontFamily: 'Manrope_700Bold' },
+            }}
+          />
+          <RootStack.Screen
+            name="GuestClaimProfileSetup"
+            component={GuestClaimProfileSetupScreen}
+          />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
           <RootStack.Screen name="InvitePeople" component={InvitePeopleScreen} />
@@ -336,6 +373,11 @@ function CirclesStack() {
         options={{ title: 'Review Attendance' }}
       />
       <CirclesStackNav.Screen
+        name="EventConnections"
+        component={EventConnectionsScreen}
+        options={{ title: 'People From This Event' }}
+      />
+      <CirclesStackNav.Screen
         name="AddEventGuest"
         component={AddEventGuestScreen}
         options={{ title: 'Invite Guest' }}
@@ -422,9 +464,7 @@ const MOCK_CANDIDATES = [
 const MOCK_INCOMING = [
   { id: 'r1', from_user: 'uZ', display_name: 'Taylor Brooks', avatar_url: 'https://i.pravatar.cc/150?img=47', note: null, created_at: new Date().toISOString() },
 ];
-const MOCK_CONNECTIONS = [
-  { user_id: 'c1', display_name: 'Alex Rivera', username: 'alex', avatar_url: 'https://i.pravatar.cc/150?img=12' },
-];
+
 
 function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -567,16 +607,17 @@ function MutualsScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [candidates, setCandidates] = useState([]);
   const [incoming, setIncoming] = useState([]);
-  const [connections, setConnections] = useState([]);
   const [sending, setSending] = useState({});
   const [responding, setResponding] = useState({});
-  const [tab, setTab] = useState(route?.params?.initialTab || 'mutuals');
+  const [tab, setTab] = useState(
+    route?.params?.initialTab === 'requests' ? 'requests' : 'mutuals'
+  );
   const [authed, setAuthed] = useState(false);
   const hasTrackedOpen = useRef(false);
 
   useEffect(() => {
     if (route?.params?.initialTab) {
-      setTab(route.params.initialTab);
+      setTab(route.params.initialTab === 'requests' ? 'requests' : 'mutuals');
     }
   }, [route?.params?.initialTab]);
 
@@ -595,7 +636,6 @@ function MutualsScreen({ navigation, route }) {
         if (IS_DEVELOPMENT) {
           setCandidates(MOCK_CANDIDATES);
           setIncoming(MOCK_INCOMING);
-          setConnections(MOCK_CONNECTIONS);
         }
         return;
       }
@@ -603,18 +643,15 @@ function MutualsScreen({ navigation, route }) {
       const [
         candidateResult,
         requestResult,
-        connectionResult,
         featureFlags,
       ] = await Promise.all([
         supabase.rpc('mutual_candidates'),
         supabase.rpc('incoming_requests'),
-        supabase.rpc('get_my_connections'),
         loadFeatureFlags(),
       ]);
 
       if (candidateResult.error) throw candidateResult.error;
       if (requestResult.error) throw requestResult.error;
-      if (connectionResult.error) throw connectionResult.error;
 
       const previewEnabled =
         featureFlags[FEATURE_FLAGS.MUTUAL_PREVIEW_POSTS] !== false;
@@ -632,19 +669,14 @@ function MutualsScreen({ navigation, route }) {
             }
       );
       const nextRequests = requestResult.data || [];
-      const nextConnections = connectionResult.data || [];
-
       setCandidates(nextCandidates);
       setIncoming(nextRequests);
-      setConnections(nextConnections);
-
       if (!hasTrackedOpen.current) {
         hasTrackedOpen.current = true;
         void trackLaunchEvent('mutuals_opened', {
           surface: 'mutuals',
           candidate_count: nextCandidates.length,
           request_count: nextRequests.length,
-          connection_count: nextConnections.length,
         });
       }
     } catch (err) {
@@ -729,16 +761,15 @@ function MutualsScreen({ navigation, route }) {
   const segmentItems = [
     { key: 'mutuals', label: 'Mutuals' },
     { key: 'requests', label: incoming.length ? `Requests (${incoming.length})` : 'Requests' },
-    { key: 'connections', label: 'Connections' },
   ];
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 8 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 24 }}>People</Text>
+          <Text style={{ color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 24 }}>Mutuals</Text>
           <Text style={{ color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, marginTop: 2 }}>
-            Mutual context first. Access only after connection.
+            Discover trusted context and handle connection requests.
           </Text>
         </View>
         <Pressable
@@ -876,40 +907,7 @@ function MutualsScreen({ navigation, route }) {
             </View>
           ))}
         </ScrollView>
-      ) : (
-        <ScrollView contentContainerStyle={{ padding: 12, gap: 10 }}>
-          {connections.length === 0 ? (
-            <Text style={{ textAlign: 'center', color: COLORS.subtext, fontFamily: 'Manrope_400Regular', paddingTop: 38 }}>
-              Accepted connections will appear here.
-            </Text>
-          ) : connections.map((person) => (
-            <Pressable
-              key={person.user_id}
-              onPress={() => navigation.navigate('Profile', { userId: person.user_id })}
-              style={({ pressed }) => ({
-                flexDirection: 'row',
-                alignItems: 'center',
-                padding: 12,
-                borderWidth: StyleSheet.hairlineWidth,
-                borderColor: COLORS.divider,
-                borderRadius: 12,
-                opacity: pressed ? 0.7 : 1,
-              })}
-            >
-              <Avatar size={48} name={person.display_name || 'Connection'} uri={person.avatar_url} />
-              <View style={{ flex: 1, marginHorizontal: 12 }}>
-                <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>
-                  {person.display_name || 'Connection'}
-                </Text>
-                <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }} numberOfLines={1}>
-                  {person.username ? `@${person.username}` : 'Accepted connection'}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
-            </Pressable>
-          ))}
-        </ScrollView>
-      )}
+      ) : null}
     </SafeAreaView>
   );
 }

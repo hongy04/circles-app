@@ -26,6 +26,26 @@ function buildContext(profile) {
   const items = [];
   const mutualConnections = Number(profile?.mutual_connection_count || 0);
   const sharedCircles = Number(profile?.shared_circle_count || 0);
+  const sharedEvents = Number(profile?.shared_event_count || 0);
+  const latestSharedEventTitle = String(
+    profile?.latest_shared_event_title || ''
+  ).trim();
+
+  if (latestSharedEventTitle) {
+    items.push({
+      key: 'latest-event',
+      icon: 'calendar-outline',
+      label: `Met at ${latestSharedEventTitle}`,
+    });
+  }
+
+  if (sharedEvents > 1) {
+    items.push({
+      key: 'events',
+      icon: 'calendar-number-outline',
+      label: pluralize(sharedEvents, 'shared event'),
+    });
+  }
 
   if (mutualConnections > 0) {
     items.push({

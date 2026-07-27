@@ -464,3 +464,58 @@ export async function saveEventAttendanceReview({
   };
 }
 
+
+export async function listEventConnectionCandidates(eventId) {
+  await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.SHARED_EVENT_CONNECTIONS,
+    'Shared-event connections are temporarily unavailable.'
+  );
+
+  if (!eventId) throw new Error('Event is missing.');
+
+  const { data, error } = await supabase.rpc(
+    'get_event_connection_candidates',
+    { p_event_id: eventId }
+  );
+
+  if (error) throw error;
+
+  return {
+    eventTitle: data?.event?.title || 'this event',
+    startsAt: data?.event?.starts_at || null,
+    attendanceReviewedAt: data?.event?.attendance_reviewed_at || null,
+    viewerAttended: Boolean(data?.viewer_attended),
+    candidates: (data?.candidates || []).map((candidate) => ({
+      userId: candidate.user_id,
+      displayName: candidate.display_name || 'Circle member',
+      avatarUri: candidate.avatar_url || null,
+      isHost: Boolean(candidate.is_host),
+      relationshipStatus: candidate.relationship_status || 'unavailable',
+      requestId: candidate.request_id || null,
+      sharedEventCount: Number(candidate.shared_event_count || 0),
+      canOpenProfile: Boolean(candidate.can_open_profile),
+    })),
+  };
+}
+
+export async function sendEventConnectionRequest(eventId, userId) {
+  await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.SHARED_EVENT_CONNECTIONS,
+    'Shared-event connections are temporarily unavailable.'
+  );
+
+  if (!eventId || !userId) throw new Error('Connection request is missing context.');
+
+  const { data, error } = await supabase.rpc(
+    'send_shared_event_connection_request',
+    {
+      p_event_id: eventId,
+      p_to_user_id: userId,
+    }
+  );
+
+  if (error) throw error;
+  return data?.outcome || 'request_created';
+}

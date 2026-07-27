@@ -4,12 +4,28 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../Avatar';
 import { COLORS } from '../../theme/colors';
 
-function Stat({ value, label }) {
-  return (
-    <View style={styles.stat}>
+function Stat({ value, label, onPress, accessibilityHint }) {
+  const content = (
+    <>
       <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
+      <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
+    </>
+  );
+
+  if (!onPress) {
+    return <View style={styles.stat}>{content}</View>;
+  }
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${value} ${label}`}
+      accessibilityHint={accessibilityHint}
+      style={({ pressed }) => [styles.stat, pressed && styles.statPressed]}
+    >
+      {content}
+    </Pressable>
   );
 }
 
@@ -111,6 +127,10 @@ export function ProfileHeader({
   onConnect,
   onAccept,
   onDecline,
+  stats,
+  onPostsPress,
+  onEventsPress,
+  onConnectionsPress,
 }) {
   const displayName = profile.display_name || (isSelf ? 'You' : 'User');
   const username = profile.username ? `@${profile.username}` : null;
@@ -147,9 +167,30 @@ export function ProfileHeader({
 
       {showStats ? (
         <View style={styles.statsRow}>
-          <Stat value={profile.post_count || 0} label="Posts" />
+          <Stat
+            value={stats?.postCount ?? profile.post_count ?? 0}
+            label="Posts"
+            onPress={onPostsPress}
+            accessibilityHint="Open this profile’s posts"
+          />
           <View style={styles.statDivider} />
-          <Stat value={profile.connection_count || 0} label="Connections" />
+          <Stat
+            value={stats?.eventCount ?? 0}
+            label={stats?.mode === 'connected' ? 'Shared events' : 'Events'}
+            onPress={onEventsPress}
+            accessibilityHint={stats?.mode === 'connected'
+              ? 'Open events you both attended'
+              : 'Open your private event history'}
+          />
+          <View style={styles.statDivider} />
+          <Stat
+            value={stats?.connectionCount ?? 0}
+            label={stats?.mode === 'connected' ? 'Mutual connections' : 'Connections'}
+            onPress={onConnectionsPress}
+            accessibilityHint={stats?.mode === 'connected'
+              ? 'Open people you are both connected with'
+              : 'Open your accepted connections'}
+          />
         </View>
       ) : null}
 
@@ -240,8 +281,13 @@ const styles = StyleSheet.create({
   statLabel: {
     color: COLORS.subtext,
     fontFamily: 'Manrope_400Regular',
-    fontSize: 12,
+    fontSize: 10.5,
+    lineHeight: 14,
     marginTop: 2,
+    textAlign: 'center',
+  },
+  statPressed: {
+    opacity: 0.55,
   },
   statDivider: {
     width: StyleSheet.hairlineWidth,

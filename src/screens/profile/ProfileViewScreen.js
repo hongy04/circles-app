@@ -112,7 +112,12 @@ function EmptyPosts({ isSelf, canViewPosts, onCreatePost }) {
   );
 }
 
-export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
+export function ProfileViewScreen({
+  navigation,
+  userId,
+  sourceEventId = null,
+  isSelf = false,
+}) {
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -124,6 +129,7 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
   const [deletingPostId, setDeletingPostId] = useState(null);
   const [mutualPreviewPostId, setMutualPreviewPostId] = useState(null);
   const [previewSaving, setPreviewSaving] = useState(false);
+  const [socialStats, setSocialStats] = useState(null);
 
   const load = useCallback(async ({ refresh = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -141,6 +147,7 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
 
       setProfile(result.profile);
       setPosts(result.posts);
+      setSocialStats(result.socialStats || null);
       setMutualPreviewPostId(previewPostId);
     } catch (loadError) {
       setError(loadError?.message || 'Failed to load profile.');
@@ -252,7 +259,7 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
 
     setActionBusy(true);
     try {
-      await sendProfileConnectionRequest(profile.id);
+      await sendProfileConnectionRequest(profile.id, sourceEventId);
       await load({ refresh: true });
     } catch (actionError) {
       Alert.alert(
@@ -281,6 +288,35 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
     }
   };
 
+  const openPosts = () => {
+    if (posts.length > 0) {
+      navigation.navigate('ProfilePostsFeed', {
+        userId: profile?.id,
+        profileName: profile?.display_name || 'Posts',
+        initialPostId: posts[0].id,
+      });
+      return;
+    }
+
+    if (resolvedIsSelf) {
+      navigation.navigate('CreatePost');
+    }
+  };
+
+  const openEvents = () => {
+    navigation.navigate('ProfileEvents', {
+      userId: resolvedIsSelf ? null : profile?.id,
+      profileName: profile?.display_name || 'Profile',
+    });
+  };
+
+  const openConnections = () => {
+    navigation.navigate('ProfileConnections', {
+      userId: resolvedIsSelf ? null : profile?.id,
+      profileName: profile?.display_name || 'Profile',
+    });
+  };
+
   const header = profile ? (
     <>
       <TopBar
@@ -298,6 +334,10 @@ export function ProfileViewScreen({ navigation, userId, isSelf = false }) {
         onConnect={handleConnect}
         onAccept={() => handleRespond('accept')}
         onDecline={() => handleRespond('decline')}
+        stats={socialStats}
+        onPostsPress={openPosts}
+        onEventsPress={openEvents}
+        onConnectionsPress={openConnections}
       />
 
       {profile.can_view_posts ? (

@@ -21,6 +21,7 @@ function getRegionCode() {
 
 export function AuthPhoneScreen({ route, navigation }) {
   const inviteToken = route?.params?.inviteToken || null;
+  const eventGuestToken = route?.params?.eventGuestToken || null;
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const region = getRegionCode();
@@ -38,7 +39,7 @@ export function AuthPhoneScreen({ route, navigation }) {
       const e164 = parsed?.isValid() ? parsed.number : phone.trim();
 
       if (IS_DEVELOPMENT) {
-        navigation.replace('AuthOtp', { phone: e164, inviteToken });
+        navigation.replace('AuthOtp', { phone: e164, inviteToken, eventGuestToken });
         return;
       }
 
@@ -48,7 +49,7 @@ export function AuthPhoneScreen({ route, navigation }) {
 
       if (error) throw error;
 
-      navigation.replace('AuthOtp', { phone: e164, inviteToken });
+      navigation.replace('AuthOtp', { phone: e164, inviteToken, eventGuestToken });
     } catch (error) {
       Alert.alert(
         'Could not send code',

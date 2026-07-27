@@ -7,21 +7,23 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { replaceWithMainTabs } from '../../navigation/navigationActions';
+import { replaceAfterOnboarding } from '../../navigation/navigationActions';
 import { authStyles } from './authStyles';
 
 export function ContactsIntroScreen({ route, navigation }) {
   const inviteResult = route?.params?.inviteResult || null;
   const inviteError = route?.params?.inviteError || '';
+  const eventClaimResult = route?.params?.eventClaimResult || null;
+  const eventClaimError = route?.params?.eventClaimError || '';
   const isWeb = Platform.OS === 'web';
 
   const continueFromIntro = () => {
     if (isWeb) {
-      replaceWithMainTabs(navigation);
+      replaceAfterOnboarding(navigation, eventClaimResult);
       return;
     }
 
-    navigation.replace('ContactsPicker');
+    navigation.replace('ContactsPicker', { eventClaimResult });
   };
 
   return (
@@ -62,6 +64,22 @@ export function ContactsIntroScreen({ route, navigation }) {
         </View>
       ) : null}
 
+      {eventClaimResult ? (
+        <View style={authStyles.webNotice}>
+          <Text style={authStyles.caption}>
+            {eventClaimResult.eventTitle} is now linked to your account. After setup, you can see the people who were confirmed there and choose whether to connect.
+          </Text>
+        </View>
+      ) : null}
+
+      {eventClaimError ? (
+        <View style={authStyles.webNotice}>
+          <Text style={authStyles.caption}>
+            You are signed in, but the event could not be linked: {eventClaimError}
+          </Text>
+        </View>
+      ) : null}
+
       <View style={{ height: 16 }} />
 
       <Pressable
@@ -69,14 +87,16 @@ export function ContactsIntroScreen({ route, navigation }) {
         onPress={continueFromIntro}
       >
         <Text style={authStyles.primaryButtonText}>
-          {isWeb ? 'Continue to Circles' : 'Choose Contacts'}
+          {eventClaimResult
+            ? isWeb ? 'Open people from the event' : 'Choose Contacts'
+            : isWeb ? 'Continue to Circles' : 'Choose Contacts'}
         </Text>
       </Pressable>
 
       {!isWeb ? (
         <Pressable
           style={{ marginTop: 12 }}
-          onPress={() => replaceWithMainTabs(navigation)}
+          onPress={() => replaceAfterOnboarding(navigation, eventClaimResult)}
         >
           <Text style={authStyles.linkText}>Skip for now</Text>
         </Pressable>

@@ -7,6 +7,7 @@ import {
   requireFeature,
 } from './featureFlagService';
 import { uploadToBucket } from './uploadService';
+import { fetchProfileSocialStats } from './profileDirectoryService';
 
 const REMOTE_URI_PATTERN = /^https?:\/\//i;
 
@@ -123,6 +124,9 @@ export async function fetchPreConnectionProfileShell(userId) {
         }),
     mutual_connection_count: Number(data.mutual_connection_count || 0),
     shared_circle_count: Number(data.shared_circle_count || 0),
+    shared_event_count: Number(data.shared_event_count || 0),
+    latest_shared_event_title: data.latest_shared_event_title || null,
+    latest_shared_event_at: data.latest_shared_event_at || null,
     preview_media_count: previewEnabled
       ? Number(data.preview_media_count || 0)
       : 0,
@@ -131,7 +135,7 @@ export async function fetchPreConnectionProfileShell(userId) {
   void trackLaunchEvent('preconnection_profile_opened', {
     surface: 'preconnection_profile',
     has_preview: Boolean(shell.preview_post_id),
-    has_mutual_contact: Boolean(shell.has_mutual_contact),
+    has_mutual_contact: Boolean(shell.has_contact_context),
     mutual_connection_count: shell.mutual_connection_count,
     shared_circle_count: shell.shared_circle_count,
     request_state: shell.request_state || 'none',
@@ -144,9 +148,15 @@ export async function fetchProfilePage(userId) {
   const profile = await fetchProfileOverview(userId);
 
   if (profile.can_view_posts) {
+    const [posts, socialStats] = await Promise.all([
+      fetchProfilePosts(profile.id),
+      fetchProfileSocialStats(profile.id),
+    ]);
+
     return {
       profile,
-      posts: await fetchProfilePosts(profile.id),
+      posts,
+      socialStats,
     };
   }
 
@@ -161,6 +171,7 @@ export async function fetchProfilePage(userId) {
       connection_count: 0,
     },
     posts: [],
+    socialStats: null,
   };
 }
 
@@ -197,6 +208,15 @@ export async function setMyMutualPreviewPost(postId = null) {
   });
 
   return data || null;
+}
+
+
+export function isProfileIdentityComplete(profile = {}) {
+  return Boolean(
+    profile.display_name?.trim()
+    && profile.username?.trim()
+    && profile.avatar_url
+  );
 }
 
 export async function fetchMyEditableProfile() {
@@ -263,17 +283,23 @@ export async function saveMyProfile({
   return data;
 }
 
-export async function sendProfileConnectionRequest(userId) {
-  const { error } = await supabase.rpc('send_connection_request', {
-    to_user_id: userId,
-    note: null,
-  });
+export async function sendProfileConnectionRequest(userId, sourceEventId = null) {
+  const rpcName = sourceEventId
+    ? 'send_shared_event_connection_request'
+    : 'send_connection_request';
+  const params = sourceEventId
+    ? { p_event_id: sourceEventId, p_to_user_id: userId }
+    : { to_user_id: userId, note: null };
+
+  const { error } = await supabase.rpc(rpcName, params);
 
   if (error) throw error;
 
-  void trackLaunchEvent('connection_request_sent', {
-    surface: 'preconnection_profile',
-  });
+  if (!sourceEventId) {
+    void trackLaunchEvent('connection_request_sent', {
+      surface: 'preconnection_profile',
+    });
+  }
 }
 
 export async function respondToProfileRequest(requestId, action) {

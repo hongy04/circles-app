@@ -6,6 +6,7 @@ export function ProfileScreen({ navigation, route }) {
     <ProfileViewScreen
       navigation={navigation}
       userId={route?.params?.userId}
+      sourceEventId={route?.params?.sourceEventId}
     />
   );
 }

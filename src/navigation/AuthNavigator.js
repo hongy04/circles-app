@@ -12,6 +12,7 @@ const Stack = createNativeStackNavigator();
 
 export function AuthNavigator({ route }) {
   const inviteToken = route?.params?.inviteToken || null;
+  const eventGuestToken = route?.params?.eventGuestToken || null;
   return (
     <Stack.Navigator
       screenOptions={{
@@ -22,7 +23,7 @@ export function AuthNavigator({ route }) {
       <Stack.Screen
         name="AuthPhone"
         component={AuthPhoneScreen}
-        initialParams={{ inviteToken }}
+        initialParams={{ inviteToken, eventGuestToken }}
       />
       <Stack.Screen name="AuthOtp" component={AuthOtpScreen} />
       <Stack.Screen

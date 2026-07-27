@@ -12,10 +12,19 @@ import { DEV_BYPASS_CODE, IS_DEVELOPMENT } from '../../config/env';
 import { supabase } from '../../lib/supabase';
 import { ensureDevSession } from '../../services/authService';
 import { redeemAppInvite } from '../../services/inviteService';
+import { claimEventGuestAttendance } from '../../services/eventGuestInviteService';
+import {
+  fetchMyEditableProfile,
+  isProfileIdentityComplete,
+} from '../../services/profileService';
+import {
+  replaceWithClaimedEvent,
+  replaceWithGuestClaimProfileSetup,
+} from '../../navigation/navigationActions';
 import { authStyles } from './authStyles';
 
 export function AuthOtpScreen({ route, navigation }) {
-  const { phone, inviteToken } = route.params || {};
+  const { phone, inviteToken, eventGuestToken } = route.params || {};
 
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -33,9 +42,24 @@ export function AuthOtpScreen({ route, navigation }) {
       }
     }
 
+    if (eventGuestToken) {
+      const profile = await fetchMyEditableProfile();
+
+      if (!isProfileIdentityComplete(profile)) {
+        replaceWithGuestClaimProfileSetup(navigation, eventGuestToken);
+        return;
+      }
+
+      const eventClaimResult = await claimEventGuestAttendance(eventGuestToken);
+      replaceWithClaimedEvent(navigation, eventClaimResult);
+      return;
+    }
+
     navigation.replace('ContactsIntro', {
       inviteResult,
       inviteError,
+      eventClaimResult: null,
+      eventClaimError: '',
     });
   };
 
@@ -126,7 +150,7 @@ export function AuthOtpScreen({ route, navigation }) {
 
       <Pressable
         style={{ marginTop: 12 }}
-        onPress={() => navigation.replace('AuthPhone', { inviteToken })}
+        onPress={() => navigation.replace('AuthPhone', { inviteToken, eventGuestToken })}
       >
         <Text style={authStyles.linkText}>Use a different number</Text>
       </Pressable>

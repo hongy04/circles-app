@@ -250,6 +250,7 @@ export function EventDetailScreen({ route, navigation }) {
   const [guestInviteLinksEnabled, setGuestInviteLinksEnabled] = useState(true);
   const [eventPhotosEnabled, setEventPhotosEnabled] = useState(true);
   const [eventHistoryEnabled, setEventHistoryEnabled] = useState(true);
+  const [sharedEventConnectionsEnabled, setSharedEventConnectionsEnabled] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async ({ quiet = false } = {}) => {
@@ -264,18 +265,21 @@ export function EventDetailScreen({ route, navigation }) {
         inviteLinksEnabled,
         photosEnabled,
         historyEnabled,
+        sharedConnectionsEnabled,
       ] = await Promise.all([
         getEventDetails(eventId),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_OUTSIDE_GUESTS),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_GUEST_WEB_RSVP),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_PHOTO_GALLERY),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_HISTORY),
+        isFeatureEnabled(FEATURE_FLAGS.SHARED_EVENT_CONNECTIONS),
       ]);
       setDetails(nextDetails);
       setOutsideGuestControlsEnabled(guestControlsEnabled);
       setGuestInviteLinksEnabled(inviteLinksEnabled);
       setEventPhotosEnabled(photosEnabled);
       setEventHistoryEnabled(historyEnabled);
+      setSharedEventConnectionsEnabled(sharedConnectionsEnabled);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this event.');
     } finally {
@@ -612,6 +616,30 @@ export function EventDetailScreen({ route, navigation }) {
         </View>
       ) : null}
 
+      {sharedEventConnectionsEnabled && event.attendanceReviewed ? (
+        <Pressable
+          onPress={() => navigation.navigate('EventConnections', {
+            eventId,
+            eventTitle: event.title,
+          })}
+          style={({ pressed }) => [
+            styles.eventConnectionsCard,
+            pressed && styles.pressed,
+          ]}
+        >
+          <View style={styles.eventConnectionsIcon}>
+            <Ionicons name="people-outline" size={23} color={COLORS.text} />
+          </View>
+          <View style={styles.eventConnectionsCopy}>
+            <Text style={styles.eventConnectionsTitle}>People from this event</Text>
+            <Text style={styles.eventConnectionsBody}>
+              See confirmed app attendees. Shared attendance gives limited profile context, never automatic access.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={COLORS.subtext} />
+        </Pressable>
+      ) : null}
+
       {eventPhotosEnabled ? (
         <Pressable
           onPress={() => navigation.navigate('EventPhotoGallery', {
@@ -943,6 +971,38 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
+  },
+  eventConnectionsCard: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  eventConnectionsIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f1f1',
+  },
+  eventConnectionsCopy: { flex: 1 },
+  eventConnectionsTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+  },
+  eventConnectionsBody: {
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 10,
+    lineHeight: 15,
   },
   photoGalleryCard: {
     marginTop: 12,

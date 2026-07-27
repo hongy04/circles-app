@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -18,11 +19,17 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { MonoRingWithRipples } from '../../components/MonoRingWithRipples';
 import { COLORS } from '../../theme/colors';
+import { supabase } from '../../lib/supabase';
 import {
+  claimEventGuestAttendance,
   getEventGuestAttendeeList,
   previewEventGuestInvite,
   respondToEventGuestInvite,
 } from '../../services/eventGuestInviteService';
+import {
+  fetchMyEditableProfile,
+  isProfileIdentityComplete,
+} from '../../services/profileService';
 
 const RSVP_OPTIONS = [
   { status: 'going', label: 'Going', icon: 'checkmark-circle-outline' },
@@ -123,6 +130,38 @@ function AttendeeRow({ attendee }) {
   );
 }
 
+function accountClaimCopy(state) {
+  switch (state) {
+    case 'available':
+      return {
+        title: 'Keep this event in Circles',
+        body: 'Join or sign in to link your confirmed attendance. You can then see the limited profiles of people who were there and choose whether to connect.',
+      };
+    case 'attendance_pending':
+      return {
+        title: 'Attendance review pending',
+        body: 'After the host confirms who attended, return to this private link to keep the event in Circles.',
+      };
+    case 'not_attended':
+      return {
+        title: 'Attendance was not confirmed',
+        body: 'This invitation cannot create shared-event access because the host did not mark this guest as attended.',
+      };
+    case 'already_claimed':
+      return {
+        title: 'Already linked to Circles',
+        body: 'This guest attendance has already been claimed by a Circles account.',
+      };
+    case 'rsvp_required':
+      return {
+        title: 'Submit your RSVP first',
+        body: 'Enter your name and RSVP before this invitation can later be linked to a Circles account.',
+      };
+    default:
+      return null;
+  }
+}
+
 function GuestPhotoViewer({ photo, onClose }) {
   if (!photo) return null;
 
@@ -159,7 +198,7 @@ function GuestPhotoViewer({ photo, onClose }) {
   );
 }
 
-export function EventGuestInvitationScreen({ route }) {
+export function EventGuestInvitationScreen({ route, navigation }) {
   const token = route.params?.token || '';
   const [preview, setPreview] = useState(null);
   const [displayName, setDisplayName] = useState('');
@@ -169,6 +208,8 @@ export function EventGuestInvitationScreen({ route }) {
   const [error, setError] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [claimingAccount, setClaimingAccount] = useState(false);
+  const [claimError, setClaimError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -196,7 +237,7 @@ export function EventGuestInvitationScreen({ route }) {
   }, [load]);
 
   const saveRsvp = async () => {
-    if (!preview?.valid || saving) return;
+    if (!preview?.valid || saving || preview.rsvpLocked) return;
     const cleanName = displayName.trim();
 
     if (!cleanName) {
@@ -219,33 +260,107 @@ export function EventGuestInvitationScreen({ route }) {
       });
       setDisplayName(response.displayName);
 
-      let attendeeList = preview.attendeeList;
       try {
-        attendeeList = await getEventGuestAttendeeList(token);
+        setPreview(await previewEventGuestInvite(token));
       } catch {
-        // The RSVP is already saved. Keep the existing attendee state if the
-        // optional list cannot refresh right away.
-      }
+        let attendeeList = preview.attendeeList;
+        try {
+          attendeeList = await getEventGuestAttendeeList(token);
+        } catch {
+          // The RSVP is already saved. Keep the existing attendee state if the
+          // optional list cannot refresh right away.
+        }
 
-      setPreview((current) => ({
-        ...current,
-        guest: {
-          ...current.guest,
-          displayName: response.displayName,
-          status: response.status,
-          claimed: true,
-        },
-        invitation: {
-          ...current.invitation,
-          claimRequired: false,
-        },
-        attendeeList,
-      }));
+        setPreview((current) => ({
+          ...current,
+          guest: {
+            ...current.guest,
+            displayName: response.displayName,
+            status: response.status,
+            claimed: true,
+          },
+          invitation: {
+            ...current.invitation,
+            claimRequired: false,
+          },
+          attendeeList,
+        }));
+      }
       setSavedMessage(`Your RSVP is saved as ${STATUS_LABELS[response.status] || 'updated'}.`);
     } catch (responseError) {
       setError(responseError?.message || 'Could not save your RSVP.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const useAnotherAccountForClaim = async () => {
+    setClaimingAccount(true);
+    setClaimError('');
+
+    try {
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) throw signOutError;
+      navigation.replace('Auth', { eventGuestToken: token });
+    } catch (switchError) {
+      setClaimError(switchError?.message || 'Could not switch Circles accounts.');
+    } finally {
+      setClaimingAccount(false);
+    }
+  };
+
+  const openClaimedEvent = (result) => {
+    navigation.replace('ClaimedEventConnections', {
+      eventId: result.eventId,
+      eventTitle: result.eventTitle,
+    });
+  };
+
+  const showExistingMemberChoice = (result) => {
+    Alert.alert(
+      'This account is already part of the event',
+      'The Circles account currently signed in already has a member record for this event, so it cannot also claim the outside-guest identity. Open the event with this account, or sign in with the guest’s own account.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Use another account', onPress: useAnotherAccountForClaim },
+        { text: 'Open event', onPress: () => openClaimedEvent(result) },
+      ]
+    );
+  };
+
+  const claimAttendanceInCircles = async () => {
+    if (!token || claimingAccount) return;
+    setClaimingAccount(true);
+    setClaimError('');
+
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+
+      if (!session) {
+        navigation.replace('Auth', { eventGuestToken: token });
+        return;
+      }
+
+      const currentProfile = await fetchMyEditableProfile();
+      if (!isProfileIdentityComplete(currentProfile)) {
+        navigation.replace('GuestClaimProfileSetup', {
+          eventGuestToken: token,
+        });
+        return;
+      }
+
+      const result = await claimEventGuestAttendance(token);
+      if (result.outcome === 'member_attendee') {
+        showExistingMemberChoice(result);
+        return;
+      }
+
+      openClaimedEvent(result);
+    } catch (claimFailure) {
+      setClaimError(claimFailure?.message || 'Could not link this event to Circles.');
+    } finally {
+      setClaimingAccount(false);
     }
   };
 
@@ -276,6 +391,7 @@ export function EventGuestInvitationScreen({ route }) {
   }
 
   const { event, guest, invitation, attendeeList, photoGallery } = preview;
+  const claimContent = accountClaimCopy(preview.accountClaim?.state);
   const greeting = guest.claimed && guest.displayName
     ? `${guest.displayName}, you’re invited`
     : 'You’re invited';
@@ -323,10 +439,16 @@ export function EventGuestInvitationScreen({ route }) {
 
           <View style={styles.rsvpCard}>
             <Text style={styles.rsvpTitle}>
-              {guest.claimed ? 'Update your RSVP' : 'Claim your invitation'}
+              {preview.rsvpLocked
+                ? 'Event completed'
+                : guest.claimed
+                  ? 'Update your RSVP'
+                  : 'Claim your invitation'}
             </Text>
             <Text style={styles.rsvpBody}>
-              Enter your own name and choose a response. No Circles account is required.
+              {preview.rsvpLocked
+                ? `RSVPs are closed. Your saved response is ${STATUS_LABELS[guest.status] || 'available in the event history'}.`
+                : 'Enter your own name and choose a response. No Circles account is required.'}
             </Text>
 
             <Text style={styles.inputLabel}>Your name</Text>
@@ -338,7 +460,8 @@ export function EventGuestInvitationScreen({ route }) {
               autoCapitalize="words"
               autoCorrect={false}
               maxLength={80}
-              style={styles.nameInput}
+              editable={!preview.rsvpLocked}
+              style={[styles.nameInput, preview.rsvpLocked && styles.inputLocked]}
             />
 
             <Text style={styles.inputLabel}>Can you make it?</Text>
@@ -349,7 +472,7 @@ export function EventGuestInvitationScreen({ route }) {
                   <Pressable
                     key={option.status}
                     onPress={() => setSelectedStatus(option.status)}
-                    disabled={saving}
+                    disabled={saving || preview.rsvpLocked}
                     style={({ pressed }) => [
                       styles.rsvpButton,
                       selected && styles.rsvpButtonSelected,
@@ -372,7 +495,7 @@ export function EventGuestInvitationScreen({ route }) {
               })}
             </View>
 
-            {selectedStatus === 'going' ? (
+            {selectedStatus === 'going' && !preview.rsvpLocked ? (
               <View style={styles.visibilityNotice}>
                 <Ionicons name="eye-outline" size={17} color={COLORS.text} />
                 <Text style={styles.visibilityNoticeText}>
@@ -385,9 +508,10 @@ export function EventGuestInvitationScreen({ route }) {
 
             <Pressable
               onPress={saveRsvp}
-              disabled={saving}
+              disabled={saving || preview.rsvpLocked}
               style={({ pressed }) => [
                 styles.saveButton,
+                preview.rsvpLocked && styles.saveButtonLocked,
                 (pressed || saving) && styles.pressed,
               ]}
             >
@@ -395,7 +519,11 @@ export function EventGuestInvitationScreen({ route }) {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.saveButtonText}>
-                  {guest.claimed ? 'Save RSVP' : 'Submit RSVP'}
+                  {preview.rsvpLocked
+                    ? 'RSVPs closed'
+                    : guest.claimed
+                      ? 'Save RSVP'
+                      : 'Submit RSVP'}
                 </Text>
               )}
             </Pressable>
@@ -408,11 +536,15 @@ export function EventGuestInvitationScreen({ route }) {
             <View style={styles.attendeesCard}>
               <View style={styles.attendeesHeader}>
                 <View>
-                  <Text style={styles.attendeesTitle}>Who’s going</Text>
+                  <Text style={styles.attendeesTitle}>
+                    {attendeeList.completed ? 'Who was there' : 'Who’s going'}
+                  </Text>
                   <Text style={styles.attendeesCount}>
                     {attendeeList.goingCount === 1
-                      ? '1 person going'
-                      : `${attendeeList.goingCount} people going`}
+                      ? attendeeList.completed ? '1 person attended' : '1 person going'
+                      : attendeeList.completed
+                        ? `${attendeeList.goingCount} people attended`
+                        : `${attendeeList.goingCount} people going`}
                   </Text>
                 </View>
                 <Ionicons name="people-outline" size={22} color={COLORS.text} />
@@ -429,7 +561,9 @@ export function EventGuestInvitationScreen({ route }) {
                     ))}
                   </View>
                 ) : (
-                  <Text style={styles.attendeesEmpty}>No one is marked Going yet.</Text>
+                  <Text style={styles.attendeesEmpty}>
+                    {attendeeList.completed ? 'No attendance was confirmed.' : 'No one is marked Going yet.'}
+                  </Text>
                 )
               ) : (
                 <View style={styles.attendeesHidden}>
@@ -488,6 +622,44 @@ export function EventGuestInvitationScreen({ route }) {
               <Text style={styles.photosPrivacy}>
                 Event photos are view-only here. They do not reveal private Circle names, profiles, posts, messages, or connections.
               </Text>
+            </View>
+          ) : null}
+
+          {claimContent ? (
+            <View style={styles.claimCard}>
+              <View style={styles.claimIcon}>
+                <Ionicons name="people-circle-outline" size={26} color={COLORS.text} />
+              </View>
+              <View style={styles.claimCopy}>
+                <Text style={styles.claimTitle}>{claimContent.title}</Text>
+                <Text style={styles.claimBody}>{claimContent.body}</Text>
+
+                {['available', 'already_claimed'].includes(preview.accountClaim?.state) ? (
+                  <Pressable
+                    onPress={claimAttendanceInCircles}
+                    disabled={claimingAccount}
+                    style={({ pressed }) => [
+                      styles.claimButton,
+                      (pressed || claimingAccount) && styles.pressed,
+                    ]}
+                  >
+                    {claimingAccount ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.claimButtonText}>
+                        {preview.accountClaim?.state === 'already_claimed'
+                          ? 'Open this event in Circles'
+                          : 'Join Circles and keep this event'}
+                      </Text>
+                    )}
+                  </Pressable>
+                ) : null}
+
+                {claimError ? <Text style={styles.claimError}>{claimError}</Text> : null}
+                <Text style={styles.claimPrivacy}>
+                  Claiming creates shared-event context only. It does not join a Circle, reveal private profiles, or connect you automatically.
+                </Text>
+              </View>
             </View>
           ) : null}
 
@@ -664,6 +836,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
   },
+  inputLocked: { opacity: 0.65 },
   nameInput: {
     minHeight: 50,
     paddingHorizontal: 14,
@@ -702,6 +875,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  saveButtonLocked: { backgroundColor: '#9a9a9a' },
   saveButtonText: {
     color: '#fff',
     fontFamily: 'Manrope_700Bold',
@@ -914,6 +1088,66 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
+  },
+  claimCard: {
+    marginTop: 12,
+    padding: 17,
+    borderRadius: 17,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  claimIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f1f1',
+  },
+  claimCopy: { flex: 1 },
+  claimTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 16,
+  },
+  claimBody: {
+    marginTop: 4,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  claimButton: {
+    minHeight: 48,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+  },
+  claimButtonText: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  claimError: {
+    marginTop: 9,
+    color: '#a61b12',
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  claimPrivacy: {
+    marginTop: 10,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 10,
+    lineHeight: 15,
   },
   privacyCard: {
     marginTop: 12,

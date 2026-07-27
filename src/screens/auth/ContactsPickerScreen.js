@@ -18,7 +18,7 @@ import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { COLORS } from '../../theme/colors';
 import { supabase } from '../../lib/supabase';
 import { ensureAuthed } from '../../services/authService';
-import { replaceWithMainTabs } from '../../navigation/navigationActions';
+import { replaceAfterOnboarding } from '../../navigation/navigationActions';
 import { authStyles } from './authStyles';
 
 function getRegionCode() {
@@ -41,7 +41,8 @@ function normalizeToE164(raw, region) {
   return `+${digits}`;
 }
 
-export function ContactsPickerScreen({ navigation }) {
+export function ContactsPickerScreen({ route, navigation }) {
+  const eventClaimResult = route?.params?.eventClaimResult || null;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(Platform.OS !== 'web');
   const [submitting, setSubmitting] = useState(false);
@@ -61,7 +62,7 @@ export function ContactsPickerScreen({ navigation }) {
             'Contacts unavailable',
             'Contacts permission was not granted. You can sync them later.'
           );
-          replaceWithMainTabs(navigation);
+          replaceAfterOnboarding(navigation, eventClaimResult);
           return;
         }
 
@@ -90,7 +91,7 @@ export function ContactsPickerScreen({ navigation }) {
             'Could not load contacts',
             error?.message || 'Contacts could not be loaded.'
           );
-          replaceWithMainTabs(navigation);
+          replaceAfterOnboarding(navigation, eventClaimResult);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -102,7 +103,7 @@ export function ContactsPickerScreen({ navigation }) {
     return () => {
       cancelled = true;
     };
-  }, [navigation]);
+  }, [eventClaimResult, navigation]);
 
   const allSelected =
     items.length > 0 && items.every((item) => item.selected);
@@ -152,13 +153,14 @@ export function ContactsPickerScreen({ navigation }) {
 
       navigation.replace('Syncing', {
         summary: data || { uploaded: phones.length },
+        eventClaimResult,
       });
     } catch (error) {
       Alert.alert(
         'Could not sync contacts',
         error?.message || 'Failed to sync contacts.'
       );
-      replaceWithMainTabs(navigation);
+      replaceAfterOnboarding(navigation, eventClaimResult);
     } finally {
       setSubmitting(false);
     }
@@ -174,7 +176,7 @@ export function ContactsPickerScreen({ navigation }) {
 
         <Pressable
           style={authStyles.primaryButton}
-          onPress={() => replaceWithMainTabs(navigation)}
+          onPress={() => replaceAfterOnboarding(navigation, eventClaimResult)}
         >
           <Text style={authStyles.primaryButtonText}>
             Continue to Circles
@@ -312,7 +314,7 @@ export function ContactsPickerScreen({ navigation }) {
 
       <Pressable
         style={{ marginTop: 10 }}
-        onPress={() => replaceWithMainTabs(navigation)}
+        onPress={() => replaceAfterOnboarding(navigation, eventClaimResult)}
       >
         <Text style={authStyles.linkText}>Skip for now</Text>
       </Pressable>
