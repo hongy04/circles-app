@@ -14,11 +14,15 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
+import { EventRepeatCard } from '../../components/events/EventRepeatCard';
 import { COLORS } from '../../theme/colors';
 import {
   getEventDetails,
+  getEventRepeatSummary,
+  recordEventRepeatPlanStarted,
   removeEventGuest,
   respondToEvent,
+  setEventRepeatSignal,
   updateEventGuestResponse,
 } from '../../services/eventService';
 import {
@@ -251,6 +255,10 @@ export function EventDetailScreen({ route, navigation }) {
   const [eventPhotosEnabled, setEventPhotosEnabled] = useState(true);
   const [eventHistoryEnabled, setEventHistoryEnabled] = useState(true);
   const [sharedEventConnectionsEnabled, setSharedEventConnectionsEnabled] = useState(true);
+  const [repeatSignalsEnabled, setRepeatSignalsEnabled] = useState(true);
+  const [repeatSummary, setRepeatSummary] = useState(null);
+  const [updatingRepeatSignal, setUpdatingRepeatSignal] = useState(false);
+  const [planningRepeatEvent, setPlanningRepeatEvent] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async ({ quiet = false } = {}) => {
@@ -266,6 +274,7 @@ export function EventDetailScreen({ route, navigation }) {
         photosEnabled,
         historyEnabled,
         sharedConnectionsEnabled,
+        repeatSignalsAvailable,
       ] = await Promise.all([
         getEventDetails(eventId),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_OUTSIDE_GUESTS),
@@ -273,6 +282,7 @@ export function EventDetailScreen({ route, navigation }) {
         isFeatureEnabled(FEATURE_FLAGS.EVENT_PHOTO_GALLERY),
         isFeatureEnabled(FEATURE_FLAGS.EVENT_HISTORY),
         isFeatureEnabled(FEATURE_FLAGS.SHARED_EVENT_CONNECTIONS),
+        isFeatureEnabled(FEATURE_FLAGS.EVENT_REPEAT_SIGNALS),
       ]);
       setDetails(nextDetails);
       setOutsideGuestControlsEnabled(guestControlsEnabled);
@@ -280,6 +290,17 @@ export function EventDetailScreen({ route, navigation }) {
       setEventPhotosEnabled(photosEnabled);
       setEventHistoryEnabled(historyEnabled);
       setSharedEventConnectionsEnabled(sharedConnectionsEnabled);
+      setRepeatSignalsEnabled(repeatSignalsAvailable);
+
+      if (repeatSignalsAvailable && nextDetails?.event?.attendanceReviewed) {
+        try {
+          setRepeatSummary(await getEventRepeatSummary(eventId));
+        } catch {
+          setRepeatSummary(null);
+        }
+      } else {
+        setRepeatSummary(null);
+      }
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this event.');
     } finally {
@@ -407,6 +428,54 @@ export function EventDetailScreen({ route, navigation }) {
         },
       ]
     );
+  };
+
+  const updateRepeatSignal = async (interested) => {
+    if (updatingRepeatSignal) return;
+    setUpdatingRepeatSignal(true);
+
+    try {
+      await setEventRepeatSignal(eventId, interested);
+      setRepeatSummary(await getEventRepeatSummary(eventId));
+    } catch (repeatError) {
+      Alert.alert(
+        'Could not update repeat signal',
+        repeatError?.message || 'Please try again.'
+      );
+    } finally {
+      setUpdatingRepeatSignal(false);
+    }
+  };
+
+  const planAnotherEvent = async () => {
+    if (planningRepeatEvent || !details?.event) return;
+    setPlanningRepeatEvent(true);
+
+    try {
+      await recordEventRepeatPlanStarted(eventId);
+      const currentEvent = details.event;
+      navigation.navigate('CreateEvent', {
+        conversationId: currentEvent.circleId,
+        circleName: currentEvent.circleName,
+        repeatFrom: {
+          sourceEventId: currentEvent.id,
+          title: currentEvent.title,
+          description: currentEvent.description,
+          locationName: currentEvent.locationName,
+          circleIds: (currentEvent.circles || []).map((circle) => circle.id),
+          outsideGuestCap: currentEvent.outsideGuestCap,
+          membersCanInviteGuests: currentEvent.membersCanInviteGuests,
+          allowPlusOnes: currentEvent.allowPlusOnes,
+        },
+      });
+    } catch (repeatError) {
+      Alert.alert(
+        'Could not start another event',
+        repeatError?.message || 'Please try again.'
+      );
+    } finally {
+      setPlanningRepeatEvent(false);
+    }
   };
 
   const confirmRemoveGuest = (guest) => {
@@ -614,6 +683,16 @@ export function EventDetailScreen({ route, navigation }) {
             </Pressable>
           ) : null}
         </View>
+      ) : null}
+
+      {repeatSignalsEnabled && event.attendanceReviewed && repeatSummary?.available ? (
+        <EventRepeatCard
+          summary={repeatSummary}
+          updating={updatingRepeatSignal}
+          planning={planningRepeatEvent}
+          onToggle={updateRepeatSignal}
+          onPlanAnother={repeatSummary.isHost ? planAnotherEvent : undefined}
+        />
       ) : null}
 
       {sharedEventConnectionsEnabled && event.attendanceReviewed ? (

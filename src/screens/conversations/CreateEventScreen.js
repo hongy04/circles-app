@@ -116,7 +116,7 @@ function CircleSelectorRow({ title, subtitle, selected, locked = false, onPress 
 }
 
 export function CreateEventScreen({ route, navigation }) {
-  const { conversationId, circleName = 'Circle' } = route.params || {};
+  const { conversationId, circleName = 'Circle', repeatFrom = null } = route.params || {};
   const defaults = useMemo(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -127,23 +127,32 @@ export function CreateEventScreen({ route, navigation }) {
     };
   }, []);
 
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState(repeatFrom?.title || '');
+  const [description, setDescription] = useState(repeatFrom?.description || '');
   const [dateInput, setDateInput] = useState(defaults.date);
   const [startInput, setStartInput] = useState(defaults.start);
   const [endInput, setEndInput] = useState(defaults.end);
-  const [location, setLocation] = useState('');
+  const [location, setLocation] = useState(repeatFrom?.locationName || '');
   const [submitting, setSubmitting] = useState(false);
   const [multiCircleEnabled, setMultiCircleEnabled] = useState(false);
   const [availableCircles, setAvailableCircles] = useState([]);
-  const [selectedAdditionalCircleIds, setSelectedAdditionalCircleIds] = useState([]);
+  const [selectedAdditionalCircleIds, setSelectedAdditionalCircleIds] = useState(
+    (repeatFrom?.circleIds || []).filter((circleId) => circleId && circleId !== conversationId)
+  );
   const [loadingCircles, setLoadingCircles] = useState(true);
   const [circleLoadError, setCircleLoadError] = useState('');
   const [outsideGuestsEnabled, setOutsideGuestsEnabled] = useState(false);
-  const [allowOutsideGuests, setAllowOutsideGuests] = useState(false);
-  const [guestCapInput, setGuestCapInput] = useState('4');
-  const [membersCanInviteGuests, setMembersCanInviteGuests] = useState(false);
-  const [allowPlusOnes, setAllowPlusOnes] = useState(false);
+  const repeatGuestCap = Number(repeatFrom?.outsideGuestCap || 0);
+  const [allowOutsideGuests, setAllowOutsideGuests] = useState(repeatGuestCap > 0);
+  const [guestCapInput, setGuestCapInput] = useState(
+    repeatGuestCap > 0 ? String(repeatGuestCap) : '4'
+  );
+  const [membersCanInviteGuests, setMembersCanInviteGuests] = useState(
+    repeatGuestCap > 0 && Boolean(repeatFrom?.membersCanInviteGuests)
+  );
+  const [allowPlusOnes, setAllowPlusOnes] = useState(
+    repeatGuestCap > 0 && Boolean(repeatFrom?.allowPlusOnes)
+  );
 
   useEffect(() => {
     let active = true;
@@ -156,8 +165,14 @@ export function CreateEventScreen({ route, navigation }) {
       if (!active) return;
       setMultiCircleEnabled(multiCircleAvailable);
       setOutsideGuestsEnabled(outsideGuestAvailable);
+      if (!outsideGuestAvailable) {
+        setAllowOutsideGuests(false);
+        setMembersCanInviteGuests(false);
+        setAllowPlusOnes(false);
+      }
 
       if (!multiCircleAvailable) {
+        setSelectedAdditionalCircleIds([]);
         setLoadingCircles(false);
         return;
       }
@@ -165,14 +180,16 @@ export function CreateEventScreen({ route, navigation }) {
       try {
         const conversations = await listMyConversations();
         if (!active) return;
-        setAvailableCircles(
-          conversations
-            .filter((conversation) => (
-              conversation.kind === 'group'
-              && conversation.id !== conversationId
-            ))
-            .sort((a, b) => a.title.localeCompare(b.title))
-        );
+        const nextCircles = conversations
+          .filter((conversation) => (
+            conversation.kind === 'group'
+            && conversation.id !== conversationId
+          ))
+          .sort((a, b) => a.title.localeCompare(b.title));
+        setAvailableCircles(nextCircles);
+        setSelectedAdditionalCircleIds((current) => current.filter((circleId) => (
+          nextCircles.some((conversation) => conversation.id === circleId)
+        )));
       } catch (error) {
         if (!active) return;
         setCircleLoadError(error?.message || 'Other Circles could not load.');
@@ -272,6 +289,20 @@ export function CreateEventScreen({ route, navigation }) {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {repeatFrom ? (
+            <View style={styles.contextCard}>
+              <View style={styles.contextIcon}>
+                <Ionicons name="refresh-outline" size={20} color={COLORS.text} />
+              </View>
+              <View style={styles.contextCopy}>
+                <Text style={styles.contextTitle}>Planning another gathering</Text>
+                <Text style={styles.contextBody}>
+                  The title, location, Circle selection, and guest rules were copied as editable starting points. No prior guest or RSVP is carried into the new event.
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.contextCard}>
             <View style={styles.contextIcon}>
               <Ionicons name="lock-closed-outline" size={20} color={COLORS.text} />

@@ -14,10 +14,13 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
+import { EventRepeatCard } from '../../components/events/EventRepeatCard';
 import { COLORS } from '../../theme/colors';
 import {
+  getEventRepeatSummary,
   listEventConnectionCandidates,
   sendEventConnectionRequest,
+  setEventRepeatSignal,
 } from '../../services/eventService';
 
 function sharedEventLabel(count) {
@@ -130,6 +133,8 @@ export function EventConnectionsScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sendingUserId, setSendingUserId] = useState('');
+  const [repeatSummary, setRepeatSummary] = useState(null);
+  const [updatingRepeatSignal, setUpdatingRepeatSignal] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async ({ quiet = false } = {}) => {
@@ -140,6 +145,12 @@ export function EventConnectionsScreen({ navigation, route }) {
     try {
       const nextData = await listEventConnectionCandidates(eventId);
       setData(nextData);
+
+      try {
+        setRepeatSummary(await getEventRepeatSummary(eventId));
+      } catch {
+        setRepeatSummary(null);
+      }
     } catch (loadError) {
       setError(loadError?.message || 'Could not load people from this event.');
     } finally {
@@ -160,6 +171,23 @@ export function EventConnectionsScreen({ navigation, route }) {
       userId: candidate.userId,
       sourceEventId: eventId,
     });
+  };
+
+  const updateRepeatSignal = async (interested) => {
+    if (updatingRepeatSignal) return;
+    setUpdatingRepeatSignal(true);
+
+    try {
+      await setEventRepeatSignal(eventId, interested);
+      setRepeatSummary(await getEventRepeatSummary(eventId));
+    } catch (repeatError) {
+      Alert.alert(
+        'Could not update repeat signal',
+        repeatError?.message || 'Please try again.'
+      );
+    } finally {
+      setUpdatingRepeatSignal(false);
+    }
   };
 
   const connect = async (candidate) => {
@@ -238,6 +266,14 @@ export function EventConnectionsScreen({ navigation, route }) {
           </View>
         </View>
       )}
+
+      {repeatSummary?.available ? (
+        <EventRepeatCard
+          summary={repeatSummary}
+          updating={updatingRepeatSignal}
+          onToggle={updateRepeatSignal}
+        />
+      ) : null}
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Confirmed attendees</Text>

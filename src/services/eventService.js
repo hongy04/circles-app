@@ -519,3 +519,73 @@ export async function sendEventConnectionRequest(eventId, userId) {
   if (error) throw error;
   return data?.outcome || 'request_created';
 }
+
+function mapEventRepeatSummary(data = {}) {
+  return {
+    available: Boolean(data.available),
+    reason: data.reason || null,
+    canSignal: Boolean(data.can_signal),
+    isHost: Boolean(data.is_host),
+    viewerInterested: Boolean(data.viewer_interested),
+    interestedCount: Number(data.interested_count || 0),
+    interestedPeople: (data.interested_people || []).map((person) => ({
+      displayName: person.display_name || 'Circles member',
+      avatarUri: person.avatar_url || null,
+    })),
+  };
+}
+
+export async function getEventRepeatSummary(eventId) {
+  await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.EVENT_REPEAT_SIGNALS,
+    'Repeat-event signals are temporarily unavailable.'
+  );
+
+  if (!eventId) throw new Error('Event is missing.');
+
+  const { data, error } = await supabase.rpc('get_event_repeat_summary', {
+    p_event_id: eventId,
+  });
+
+  if (error) throw error;
+  return mapEventRepeatSummary(data || {});
+}
+
+export async function setEventRepeatSignal(eventId, interested) {
+  await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.EVENT_REPEAT_SIGNALS,
+    'Repeat-event signals are temporarily unavailable.'
+  );
+
+  if (!eventId) throw new Error('Event is missing.');
+
+  const { data, error } = await supabase.rpc('set_event_repeat_signal', {
+    p_event_id: eventId,
+    p_interested: Boolean(interested),
+  });
+
+  if (error) throw error;
+  return {
+    interested: Boolean(data?.interested),
+    interestedCount: Number(data?.interested_count || 0),
+  };
+}
+
+export async function recordEventRepeatPlanStarted(eventId) {
+  await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.EVENT_REPEAT_SIGNALS,
+    'Repeat-event planning is temporarily unavailable.'
+  );
+
+  if (!eventId) throw new Error('Event is missing.');
+
+  const { data, error } = await supabase.rpc('record_event_repeat_plan_started', {
+    p_event_id: eventId,
+  });
+
+  if (error) throw error;
+  return Number(data?.interested_count || 0);
+}
