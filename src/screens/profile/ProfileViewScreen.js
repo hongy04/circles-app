@@ -14,23 +14,29 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS } from '../../theme/colors';
 import { ProfileHeader } from '../../components/profile/ProfileHeader';
+import { TwoPersonCircleProposalCard } from '../../components/profile/TwoPersonCircleProposalCard';
 import { PreConnectionProfileShell } from '../../components/profile/PreConnectionProfileShell';
 import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import { deleteOwnPost } from '../../services/postService';
 import {
   fetchRomanticInterestStatus,
+  fetchTwoPersonCircleProposalStatus,
+  proposeTwoPersonCircle,
+  respondToTwoPersonCircleProposal,
+  setMyRomanticFocus,
   setMyRomanticInterest,
 } from '../../services/romanticService';
 import {
   fetchMyMutualPreviewPostId,
   fetchProfilePage,
   respondToProfileRequest,
+  removeProfileConnection,
   setMyMutualPreviewPost,
   sendProfileConnectionRequest,
 } from '../../services/profileService';
 
-function TopBar({ isSelf, profile, navigation }) {
+function TopBar({ isSelf, profile, navigation, onManageConnection }) {
   const title = isSelf
     ? profile?.username
       ? `@${profile.username}`
@@ -66,70 +72,139 @@ function TopBar({ isSelf, profile, navigation }) {
           >
             <Ionicons name="settings-outline" size={22} color={COLORS.text} />
           </Pressable>
+        ) : profile?.relationship_status === 'connected' ? (
+          <Pressable
+            onPress={onManageConnection}
+            hitSlop={10}
+            style={styles.iconButton}
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.text} />
+          </Pressable>
         ) : null}
       </View>
     </View>
   );
 }
 
-function RomanticInterestCard({ profile, status, busy, onPress }) {
+function RomanticInterestCard({
+  profile,
+  status,
+  busy,
+  onInterestPress,
+  onFocusPress,
+}) {
   const firstName = (profile?.display_name || 'them').trim().split(/\s+/)[0];
   const mutual = Boolean(status?.mutualRevealed);
   const selected = Boolean(status?.selectedByMe);
+  const focusSelected = Boolean(status?.focusSelectedByMe);
+  const focusActive = Boolean(status?.focusActive);
 
-  const title = mutual
-    ? 'The interest is mutual'
-    : selected
-      ? 'Interest saved privately'
-      : `Want to get to know ${firstName} better?`;
+  const title = focusActive
+    ? 'Focusing on each other'
+    : mutual
+      ? 'The interest is mutual'
+      : selected
+        ? 'Interest saved privately'
+        : `Want to get to know ${firstName} better?`;
 
-  const body = mutual
-    ? 'Keep getting to know each other. Your ordinary connection and private messages remain unchanged.'
-    : selected
-      ? 'Only you can see this unless they independently choose you too.'
-      : 'This stays private unless they choose you too.';
+  const body = focusActive
+    ? 'Romantic discovery with other connections is paused while you give this connection a real chance.'
+    : mutual
+      ? 'Keep getting to know each other. Focus is a separate private choice that becomes active only when you both choose it.'
+      : selected
+        ? 'Only you can see this unless they independently choose you too.'
+        : 'This stays private unless they choose you too.';
+
+  const focusLabel = focusActive
+    ? 'End Focus'
+    : focusSelected
+      ? 'Focus selected privately'
+      : 'Focus on this connection';
 
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={busy}
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      accessibilityHint={mutual
-        ? 'Double tap to end Mutual Interest.'
-        : selected
-          ? 'Double tap to remove your private interest.'
-          : 'Double tap to privately choose this connection.'}
-      style={({ pressed }) => [
-        styles.romanticChannelCard,
-        mutual && styles.romanticMutualCard,
-        pressed && styles.pressed,
-      ]}
-    >
-      <View style={[
-        styles.romanticChannelIcon,
-        selected && styles.romanticSelectedIcon,
-      ]}>
-        {busy ? (
-          <ActivityIndicator size="small" color={COLORS.text} />
-        ) : (
-          <Ionicons
-            name={selected ? 'heart' : 'heart-outline'}
-            size={20}
-            color={COLORS.text}
-          />
-        )}
-      </View>
-      <View style={styles.romanticChannelCopy}>
-        <Text style={styles.romanticChannelTitle}>{title}</Text>
-        <Text style={styles.romanticChannelBody}>{body}</Text>
-      </View>
-      <Ionicons
-        name={selected ? 'checkmark' : 'chevron-forward'}
-        size={18}
-        color={COLORS.subtext}
-      />
-    </Pressable>
+    <View style={[
+      styles.romanticChannelCard,
+      mutual && styles.romanticMutualCard,
+      focusActive && styles.romanticFocusCard,
+    ]}>
+      <Pressable
+        onPress={focusActive || focusSelected ? onFocusPress : onInterestPress}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        accessibilityHint={focusActive
+          ? 'Double tap to review ending Focus.'
+          : focusSelected
+            ? 'Double tap to review removing your private Focus choice.'
+          : mutual
+            ? 'Double tap to review ending Mutual Interest.'
+            : selected
+              ? 'Double tap to remove your private interest.'
+              : 'Double tap to privately choose this connection.'}
+        style={({ pressed }) => [
+          styles.romanticMainRow,
+          pressed && styles.pressed,
+        ]}
+      >
+        <View style={[
+          styles.romanticChannelIcon,
+          selected && styles.romanticSelectedIcon,
+          focusActive && styles.romanticFocusIcon,
+        ]}>
+          {busy ? (
+            <ActivityIndicator size="small" color={COLORS.text} />
+          ) : (
+            <Ionicons
+              name={focusActive ? 'infinite' : selected ? 'heart' : 'heart-outline'}
+              size={20}
+              color={COLORS.text}
+            />
+          )}
+        </View>
+        <View style={styles.romanticChannelCopy}>
+          <Text style={styles.romanticChannelTitle}>{title}</Text>
+          <Text style={styles.romanticChannelBody}>{body}</Text>
+        </View>
+        <Ionicons
+          name={selected ? 'checkmark' : 'chevron-forward'}
+          size={18}
+          color={COLORS.subtext}
+        />
+      </Pressable>
+
+      {mutual && status?.focusAvailable ? (
+        <>
+          <View style={styles.romanticCardSeparator} />
+          <Pressable
+            onPress={onFocusPress}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel={focusLabel}
+            style={({ pressed }) => [
+              styles.focusActionRow,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons
+              name={focusActive ? 'pause-circle-outline' : focusSelected ? 'checkmark-circle' : 'radio-button-on-outline'}
+              size={19}
+              color={COLORS.text}
+            />
+            <View style={styles.focusActionCopy}>
+              <Text style={styles.focusActionTitle}>{focusLabel}</Text>
+              {!focusActive ? (
+                <Text style={styles.focusActionBody}>
+                  {focusSelected
+                    ? 'They are not notified unless they independently choose Focus too.'
+                    : 'This remains private unless they make the same choice.'}
+                </Text>
+              ) : null}
+            </View>
+            <Ionicons name="chevron-forward" size={17} color={COLORS.subtext} />
+          </Pressable>
+        </>
+      ) : null}
+    </View>
   );
 }
 
@@ -200,8 +275,26 @@ export function ProfileViewScreen({
     channelOpen: false,
     selectedByMe: false,
     mutualRevealed: false,
+    focusAvailable: false,
+    focusSelectedByMe: false,
+    focusMutualRevealed: false,
+    focusActive: false,
   });
   const [romanticBusy, setRomanticBusy] = useState(false);
+  const [circleProposalBusy, setCircleProposalBusy] = useState(false);
+  const [circleProposalStatus, setCircleProposalStatus] = useState({
+    available: false,
+    state: 'unavailable',
+    canPropose: false,
+    accepted: false,
+    focusActive: false,
+    circleEnabled: false,
+    existingCircle: false,
+    reopening: false,
+    circleLocked: false,
+    circleAccessActive: false,
+    conversationId: null,
+  });
 
   const load = useCallback(async ({ refresh = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -216,21 +309,44 @@ export function ProfileViewScreen({
       const previewPostId = isOwnProfile
         ? await fetchMyMutualPreviewPostId()
         : null;
-      const romanticStatus =
-        result.profile?.relationship_status === 'connected'
-          ? await fetchRomanticInterestStatus(result.profile.id)
-          : {
+      const connected = result.profile?.relationship_status === 'connected';
+      const [romanticStatus, proposalStatus] = connected
+        ? await Promise.all([
+            fetchRomanticInterestStatus(result.profile.id),
+            fetchTwoPersonCircleProposalStatus(result.profile.id),
+          ])
+        : [
+            {
               available: false,
               channelOpen: false,
               selectedByMe: false,
               mutualRevealed: false,
-            };
+              focusAvailable: false,
+              focusSelectedByMe: false,
+              focusMutualRevealed: false,
+              focusActive: false,
+            },
+            {
+              available: false,
+              state: 'unavailable',
+              canPropose: false,
+              accepted: false,
+              focusActive: false,
+              circleEnabled: false,
+              existingCircle: false,
+              reopening: false,
+              circleLocked: false,
+              circleAccessActive: false,
+              conversationId: null,
+            },
+          ];
 
       setProfile(result.profile);
       setPosts(result.posts);
       setSocialStats(result.socialStats || null);
       setMutualPreviewPostId(previewPostId);
       setRomanticStatus(romanticStatus);
+      setCircleProposalStatus(proposalStatus);
     } catch (loadError) {
       setError(loadError?.message || 'Failed to load profile.');
     } finally {
@@ -439,6 +555,255 @@ export function ProfileViewScreen({
     );
   };
 
+  const updateRomanticFocus = async (selected) => {
+    if (!profile?.id || romanticBusy) return;
+
+    setRomanticBusy(true);
+    try {
+      const nextStatus = await setMyRomanticFocus(profile.id, selected);
+      const nextProposalStatus = await fetchTwoPersonCircleProposalStatus(
+        profile.id
+      );
+      setRomanticStatus(nextStatus);
+      setCircleProposalStatus(nextProposalStatus);
+    } catch (focusError) {
+      Alert.alert(
+        'Focus not updated',
+        focusError?.message || 'Please try again.'
+      );
+    } finally {
+      setRomanticBusy(false);
+    }
+  };
+
+  const handleRomanticFocus = () => {
+    if (!profile?.id || romanticBusy || !romanticStatus.mutualRevealed) return;
+
+    const firstName = (profile.display_name || 'this connection')
+      .trim()
+      .split(/\s+/)[0];
+
+    if (romanticStatus.focusActive) {
+      Alert.alert(
+        'End Mutual Focus?',
+        circleProposalStatus.existingCircle
+          ? 'This resets the romantic state and locks Our Circle while preserving its history. Your ordinary connection and messages remain. Romantic discovery with other connections stays paused until you resume it from Settings.'
+          : 'This resets the romantic state between you and returns you to an ordinary connection. Your messages remain. Romantic discovery with other connections will stay paused until you resume it from Settings.',
+        [
+          { text: 'Keep focusing', style: 'cancel' },
+          {
+            text: 'End Focus',
+            style: 'destructive',
+            onPress: () => updateRomanticFocus(false),
+          },
+        ]
+      );
+      return;
+    }
+
+    if (romanticStatus.focusSelectedByMe) {
+      Alert.alert(
+        'Remove your private Focus choice?',
+        'They have not been told about this choice. Removing it returns this connection to Mutual Interest.',
+        [
+          { text: 'Keep it', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: () => updateRomanticFocus(false),
+          },
+        ]
+      );
+      return;
+    }
+
+    Alert.alert(
+      `Focus on ${firstName}?`,
+      `This stays private unless ${firstName} independently chooses Focus too. If it becomes mutual, romantic discovery with other connections pauses for both of you.`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: `Focus on ${firstName}`,
+          onPress: () => updateRomanticFocus(true),
+        },
+      ]
+    );
+  };
+
+  const submitCircleProposal = async () => {
+    if (!profile?.id || circleProposalBusy) return;
+
+    setCircleProposalBusy(true);
+    try {
+      const nextStatus = await proposeTwoPersonCircle(profile.id);
+      setCircleProposalStatus(nextStatus);
+    } catch (proposalError) {
+      Alert.alert(
+        'Circle proposal not sent',
+        proposalError?.message || 'Please try again.'
+      );
+    } finally {
+      setCircleProposalBusy(false);
+    }
+  };
+
+  const handleCircleProposal = () => {
+    if (!profile?.id || circleProposalBusy || !circleProposalStatus.canPropose) {
+      return;
+    }
+
+    const firstName = (profile.display_name || 'this connection')
+      .trim()
+      .split(/\s+/)[0];
+
+    const reopening = circleProposalStatus.existingCircle;
+
+    Alert.alert(
+      reopening
+        ? `Open Our Circle again with ${firstName}?`
+        : `Create a Circle with ${firstName}?`,
+      reopening
+        ? `${firstName} can choose Open Our Circle, Not yet, or End Focus. The preserved shared history stays locked unless they accept.`
+        : `${firstName} can choose Create our Circle, Not yet, or End Focus. A Not yet response transfers the next proposal right to them, and Circles will not send reminders.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send proposal',
+          onPress: submitCircleProposal,
+        },
+      ]
+    );
+  };
+
+  const submitCircleProposalResponse = async (action) => {
+    if (!profile?.id || circleProposalBusy) return;
+
+    setCircleProposalBusy(true);
+    try {
+      const nextStatus = await respondToTwoPersonCircleProposal(
+        profile.id,
+        action
+      );
+      setCircleProposalStatus(nextStatus);
+
+      if (action === 'end_focus') {
+        const nextRomanticStatus = await fetchRomanticInterestStatus(profile.id);
+        setRomanticStatus(nextRomanticStatus);
+      }
+    } catch (proposalError) {
+      Alert.alert(
+        'Circle proposal not updated',
+        proposalError?.message || 'Please try again.'
+      );
+    } finally {
+      setCircleProposalBusy(false);
+    }
+  };
+
+  const handleAcceptCircleProposal = () => {
+    const firstName = (profile?.display_name || 'this connection')
+      .trim()
+      .split(/\s+/)[0];
+
+    const reopening = circleProposalStatus.existingCircle;
+
+    Alert.alert(
+      reopening ? 'Open Our Circle again?' : 'Create your Circle?',
+      reopening
+        ? `This unlocks the preserved shared Circle with ${firstName}. Messages and media exchanged while it was closed stay outside the Circle Timeline.`
+        : `This creates a private two-person Circle with ${firstName}. Your existing direct messages remain intact, and old private chat media will not be added to the new Circle Timeline.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: reopening ? 'Open Our Circle' : 'Create our Circle',
+          onPress: () => submitCircleProposalResponse('accept'),
+        },
+      ]
+    );
+  };
+
+  const handleNotYetCircleProposal = () => {
+    Alert.alert(
+      'Choose Not yet?',
+      'Mutual Focus stays active. The proposal will not repeat automatically, and only you will be able to make the next proposal.',
+      [
+        { text: 'Go back', style: 'cancel' },
+        {
+          text: 'Not yet',
+          onPress: () => submitCircleProposalResponse('not_yet'),
+        },
+      ]
+    );
+  };
+
+  const handleEndFocusFromProposal = () => {
+    Alert.alert(
+      'End Mutual Focus?',
+      circleProposalStatus.existingCircle
+        ? 'This declines the reopening proposal, resets the romantic state, and keeps Our Circle locked. Your ordinary connection and messages remain, while outside romantic discovery stays paused until each person resumes it.'
+        : 'This declines the Circle proposal and resets the romantic state between you. Your ordinary connection and messages remain, while outside romantic discovery stays paused until each person resumes it.',
+      [
+        { text: 'Keep focusing', style: 'cancel' },
+        {
+          text: 'End Focus',
+          style: 'destructive',
+          onPress: () => submitCircleProposalResponse('end_focus'),
+        },
+      ]
+    );
+  };
+
+  const handleRemoveConnection = () => {
+    if (!profile?.id || actionBusy) return;
+
+    const firstName = (profile.display_name || 'this person')
+      .trim()
+      .split(/\s+/)[0];
+    const circleCopy = circleProposalStatus.existingCircle
+      ? ' Your shared Circle will be locked and preserved. It will not reopen automatically if you connect again.'
+      : '';
+
+    Alert.alert(
+      `Remove ${firstName} as a connection?`,
+      `You will lose full-profile, Feed, and direct-message access.${circleCopy}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove connection',
+          style: 'destructive',
+          onPress: async () => {
+            setActionBusy(true);
+            try {
+              await removeProfileConnection(profile.id);
+              navigation.goBack();
+            } catch (removeError) {
+              Alert.alert(
+                'Connection not removed',
+                removeError?.message || 'Please try again.'
+              );
+            } finally {
+              setActionBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openTwoPersonCircle = () => {
+    if (!circleProposalStatus.conversationId) return;
+
+    navigation.navigate('MainTabs', {
+      screen: 'Circles',
+      params: {
+        screen: 'CircleProfile',
+        params: {
+          conversationId: circleProposalStatus.conversationId,
+        },
+      },
+    });
+  };
+
   const openPosts = () => {
     if (posts.length > 0) {
       navigation.navigate('ProfilePostsFeed', {
@@ -474,6 +839,7 @@ export function ProfileViewScreen({
         isSelf={resolvedIsSelf}
         profile={profile}
         navigation={navigation}
+        onManageConnection={handleRemoveConnection}
       />
 
       <ProfileHeader
@@ -498,7 +864,27 @@ export function ProfileViewScreen({
           profile={profile}
           status={romanticStatus}
           busy={romanticBusy}
-          onPress={handleRomanticInterest}
+          onInterestPress={handleRomanticInterest}
+          onFocusPress={handleRomanticFocus}
+        />
+      ) : null}
+
+      {!resolvedIsSelf
+      && profile.relationship_status === 'connected'
+      && (
+        circleProposalStatus.available
+        || circleProposalStatus.accepted
+        || circleProposalStatus.existingCircle
+      ) ? (
+        <TwoPersonCircleProposalCard
+          profile={profile}
+          status={circleProposalStatus}
+          busy={circleProposalBusy}
+          onPropose={handleCircleProposal}
+          onAccept={handleAcceptCircleProposal}
+          onNotYet={handleNotYetCircleProposal}
+          onEndFocus={handleEndFocusFromProposal}
+          onOpenCircle={openTwoPersonCircle}
         />
       ) : null}
 
@@ -664,18 +1050,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   romanticChannelCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginHorizontal: 18,
     marginBottom: 16,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     backgroundColor: '#fafafa',
+    overflow: 'hidden',
+  },
+  romanticMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 14,
   },
   romanticMutualCard: {
     backgroundColor: '#fff7f8',
+  },
+  romanticFocusCard: {
+    backgroundColor: '#f7f4ff',
   },
   romanticChannelIcon: {
     width: 38,
@@ -687,6 +1079,9 @@ const styles = StyleSheet.create({
   },
   romanticSelectedIcon: {
     backgroundColor: '#ffe8ec',
+  },
+  romanticFocusIcon: {
+    backgroundColor: '#ece7ff',
   },
   romanticChannelCopy: {
     flex: 1,
@@ -703,6 +1098,34 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     fontSize: 11.5,
     lineHeight: 17,
+  },
+  romanticCardSeparator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: COLORS.border,
+    marginLeft: 63,
+  },
+  focusActionRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 11,
+  },
+  focusActionCopy: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  focusActionTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12.5,
+  },
+  focusActionBody: {
+    marginTop: 2,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 10.5,
+    lineHeight: 15,
   },
   gridHeading: {
     height: 46,

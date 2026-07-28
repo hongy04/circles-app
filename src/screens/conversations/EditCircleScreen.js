@@ -18,7 +18,7 @@ import { Avatar } from '../../components/Avatar';
 import { COLORS } from '../../theme/colors';
 import {
   getConversationDetails,
-  updateGroupCircleProfile,
+  updateCircleProfile,
 } from '../../services/conversationService';
 import {
   removeConversationMedia,
@@ -30,6 +30,7 @@ export function EditCircleScreen({ route, navigation }) {
   const [details, setDetails] = useState(null);
   const [title, setTitle] = useState('');
   const [bio, setBio] = useState('');
+  const [silentMessage, setSilentMessage] = useState('');
   const [avatarAsset, setAvatarAsset] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,13 +40,22 @@ export function EditCircleScreen({ route, navigation }) {
 
     try {
       const result = await getConversationDetails(conversationId);
-      if (result?.conversation?.kind !== 'group') {
-        throw new Error('Only group Circles have editable shared identity.');
+      const conversation = result?.conversation;
+      const isEditableCircle = conversation?.kind === 'group'
+        || (
+          conversation?.kind === 'direct'
+          && conversation?.circle_enabled
+          && conversation?.circle_access_active
+        );
+
+      if (!isEditableCircle || !conversation?.can_edit) {
+        throw new Error('This Circle is not currently available for editing.');
       }
 
       setDetails(result);
-      setTitle(result.conversation.title || '');
-      setBio(result.conversation.bio || '');
+      setTitle(conversation.title || '');
+      setBio(conversation.bio || '');
+      setSilentMessage(conversation.my_silent_message || '');
     } catch (error) {
       Alert.alert('Circle unavailable', error?.message || 'Please try again.');
       navigation.goBack();
@@ -91,6 +101,8 @@ export function EditCircleScreen({ route, navigation }) {
   const save = async () => {
     const cleanTitle = title.trim();
     const cleanBio = bio.trim();
+    const cleanSilentMessage = silentMessage.trim();
+    const isTwoPersonCircle = details?.conversation?.kind === 'direct';
 
     if (!cleanTitle) {
       Alert.alert('Circle name required', 'Enter a name for this Circle.');
@@ -104,6 +116,11 @@ export function EditCircleScreen({ route, navigation }) {
 
     if (cleanBio.length > 160) {
       Alert.alert('Bio too long', 'Use 160 characters or fewer.');
+      return;
+    }
+
+    if (cleanSilentMessage.length > 160) {
+      Alert.alert('Message too long', 'Use 160 characters or fewer.');
       return;
     }
 
@@ -121,10 +138,11 @@ export function EditCircleScreen({ route, navigation }) {
         uploadedPath = upload.storagePath;
       }
 
-      await updateGroupCircleProfile({
+      await updateCircleProfile({
         conversationId,
         title: cleanTitle,
-        bio: cleanBio,
+        bio: isTwoPersonCircle ? '' : cleanBio,
+        silentMessage: isTwoPersonCircle ? cleanSilentMessage : '',
         avatarPath: uploadedPath,
       });
 
@@ -152,6 +170,7 @@ export function EditCircleScreen({ route, navigation }) {
   }
 
   const conversation = details?.conversation;
+  const isTwoPersonCircle = conversation?.kind === 'direct';
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
@@ -183,10 +202,14 @@ export function EditCircleScreen({ route, navigation }) {
 
         <Text style={styles.changePhoto}>Change Circle photo</Text>
         <Text style={styles.helper}>
-          Any accepted member can update this shared group identity.
+          {isTwoPersonCircle
+            ? 'Both of you can update this shared identity while the Circle is open.'
+            : 'Any accepted member can update this shared group identity.'}
         </Text>
 
-        <Text style={styles.label}>CIRCLE NAME</Text>
+        <Text style={styles.label}>
+          {isTwoPersonCircle ? 'OUR CIRCLE NAME' : 'CIRCLE NAME'}
+        </Text>
         <TextInput
           value={title}
           onChangeText={setTitle}
@@ -197,17 +220,38 @@ export function EditCircleScreen({ route, navigation }) {
         />
         <Text style={styles.counter}>{title.length}/60</Text>
 
-        <Text style={styles.label}>CIRCLE BIO</Text>
-        <TextInput
-          value={bio}
-          onChangeText={setBio}
-          maxLength={160}
-          editable={!saving}
-          placeholder="What is this Circle about?"
-          multiline
-          style={[styles.input, styles.bioInput]}
-        />
-        <Text style={styles.counter}>{bio.length}/160</Text>
+        {isTwoPersonCircle ? (
+          <>
+            <Text style={styles.label}>YOUR SILENT MESSAGE</Text>
+            <TextInput
+              value={silentMessage}
+              onChangeText={setSilentMessage}
+              maxLength={160}
+              editable={!saving}
+              placeholder="Leave a quiet message for the other person…"
+              multiline
+              style={[styles.input, styles.bioInput]}
+            />
+            <Text style={styles.counter}>{silentMessage.length}/160</Text>
+            <Text style={styles.fieldHelper}>
+              This appears privately on your shared Circle without sending a notification.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.label}>CIRCLE BIO</Text>
+            <TextInput
+              value={bio}
+              onChangeText={setBio}
+              maxLength={160}
+              editable={!saving}
+              placeholder="What is this Circle about?"
+              multiline
+              style={[styles.input, styles.bioInput]}
+            />
+            <Text style={styles.counter}>{bio.length}/160</Text>
+          </>
+        )}
 
         <Pressable
           onPress={save}
@@ -227,8 +271,9 @@ export function EditCircleScreen({ route, navigation }) {
         <View style={styles.privacyNote}>
           <Ionicons name="lock-closed-outline" size={20} color={COLORS.text} />
           <Text style={styles.privacyText}>
-            The Circle photo is stored privately and is only available to
-            accepted members.
+            {isTwoPersonCircle
+              ? 'The shared photo and silent message are private to the two of you while this Circle is open.'
+              : 'The Circle photo is stored privately and is only available to accepted members.'}
           </Text>
         </View>
       </ScrollView>
@@ -328,6 +373,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
     textAlign: 'right',
+  },
+  fieldHelper: {
+    marginTop: 7,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 16,
   },
   saveButton: {
     minHeight: 48,

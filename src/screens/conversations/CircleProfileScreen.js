@@ -136,12 +136,23 @@ export function CircleProfileScreen({ route, navigation }) {
 
     try {
       const detailRows = await getConversationDetails(conversationId);
-      const isCircle = detailRows?.conversation?.is_circle == null
-        ? detailRows?.conversation?.kind === 'group'
-        : Boolean(detailRows.conversation.is_circle);
+      const conversation = detailRows?.conversation;
+      const hasCircle = conversation?.kind === 'group'
+        || Boolean(conversation?.circle_enabled);
 
-      if (!isCircle) {
+      if (!hasCircle) {
         throw new Error('This direct chat has no Circle profile.');
+      }
+
+      setDetails(detailRows);
+
+      if (
+        conversation?.kind === 'direct'
+        && !conversation?.circle_access_active
+      ) {
+        setTimeline([]);
+        setPosts([]);
+        return;
       }
 
       const [timelineRows, postRows] = await Promise.all([
@@ -149,7 +160,6 @@ export function CircleProfileScreen({ route, navigation }) {
         listCirclePosts(conversationId),
       ]);
 
-      setDetails(detailRows);
       setTimeline(timelineRows);
       setPosts(postRows);
     } catch (loadError) {
@@ -190,6 +200,9 @@ export function CircleProfileScreen({ route, navigation }) {
 
   const conversation = details?.conversation;
   const members = details?.members || [];
+  const isTwoPersonCircle = conversation?.kind === 'direct';
+  const circleLocked = isTwoPersonCircle
+    && !conversation?.circle_access_active;
   const gridWidth = Math.min(width, 720);
   const tileSize = Math.floor(gridWidth / 3);
 
@@ -241,9 +254,29 @@ export function CircleProfileScreen({ route, navigation }) {
           </Text>
         </View>
 
-        <Text style={styles.bio}>
-          {conversation.bio || 'A private shared profile for this Circle.'}
-        </Text>
+        {isTwoPersonCircle ? (
+          conversation.silent_message ? (
+            <View style={styles.silentMessageCard}>
+              <View style={styles.silentMessageHeading}>
+                <Ionicons name="moon-outline" size={14} color={COLORS.text} />
+                <Text style={styles.silentMessageLabel}>
+                  A quiet message from {conversation.silent_message_author || 'them'}
+                </Text>
+              </View>
+              <Text style={styles.silentMessageText}>
+                {conversation.silent_message}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.bio}>
+              A private shared space chosen by the two of you.
+            </Text>
+          )
+        ) : (
+          <Text style={styles.bio}>
+            {conversation.bio || 'A private shared profile for this Circle.'}
+          </Text>
+        )}
 
         <View style={styles.statsRow}>
           <Stat
@@ -256,11 +289,13 @@ export function CircleProfileScreen({ route, navigation }) {
             label="Timeline"
             onPress={() => setActiveTab('timeline')}
           />
-          <Stat
-            value={members.length}
-            label="People"
-            onPress={openPeople}
-          />
+          {!isTwoPersonCircle ? (
+            <Stat
+              value={members.length}
+              label="People"
+              onPress={openPeople}
+            />
+          ) : null}
         </View>
 
         <View style={styles.actionRow}>
@@ -275,16 +310,18 @@ export function CircleProfileScreen({ route, navigation }) {
             <Text style={styles.primaryActionText}>New Post</Text>
           </Pressable>
 
-          <Pressable
-            onPress={openPeople}
-            style={({ pressed }) => [
-              styles.secondaryAction,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Ionicons name="people-outline" size={16} color={COLORS.text} />
-            <Text style={styles.secondaryActionText}>People</Text>
-          </Pressable>
+          {!isTwoPersonCircle ? (
+            <Pressable
+              onPress={openPeople}
+              style={({ pressed }) => [
+                styles.secondaryAction,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons name="people-outline" size={16} color={COLORS.text} />
+              <Text style={styles.secondaryActionText}>People</Text>
+            </Pressable>
+          ) : null}
 
           {conversation.can_edit ? (
             <Pressable
@@ -302,24 +339,38 @@ export function CircleProfileScreen({ route, navigation }) {
           ) : null}
         </View>
 
-        <Pressable
-          onPress={openEvents}
-          style={({ pressed }) => [
-            styles.plansRow,
-            pressed && styles.pressed,
-          ]}
-        >
-          <View style={styles.plansIcon}>
-            <Ionicons name="calendar-outline" size={20} color={COLORS.text} />
+        {!isTwoPersonCircle ? (
+          <Pressable
+            onPress={openEvents}
+            style={({ pressed }) => [
+              styles.plansRow,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={styles.plansIcon}>
+              <Ionicons name="calendar-outline" size={20} color={COLORS.text} />
+            </View>
+            <View style={styles.plansCopy}>
+              <Text style={styles.plansTitle}>Plans & Events</Text>
+              <Text style={styles.plansBody}>
+                Make a real plan and let every Circle member RSVP.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
+          </Pressable>
+        ) : (
+          <View style={styles.plansRow}>
+            <View style={styles.plansIcon}>
+              <Ionicons name="sparkles-outline" size={20} color={COLORS.text} />
+            </View>
+            <View style={styles.plansCopy}>
+              <Text style={styles.plansTitle}>Shared plans coming next</Text>
+              <Text style={styles.plansBody}>
+                Your Circle is active. A two-person planning flow is the next bounded build step.
+              </Text>
+            </View>
           </View>
-          <View style={styles.plansCopy}>
-            <Text style={styles.plansTitle}>Plans & Events</Text>
-            <Text style={styles.plansBody}>
-              Make a real plan and let every Circle member RSVP.
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
-        </Pressable>
+        )}
 
         <Pressable
           onPress={openNotificationSettings}
@@ -334,52 +385,56 @@ export function CircleProfileScreen({ route, navigation }) {
           <View style={styles.notificationSettingsText}>
             <Text style={styles.notificationSettingsTitle}>Notifications</Text>
             <Text style={styles.notificationSettingsBody}>
-              Mute this Circle or choose which private activity alerts you.
+              {isTwoPersonCircle
+                ? 'Mute this private conversation or choose which activity alerts you.'
+                : 'Mute this Circle or choose which private activity alerts you.'}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
         </Pressable>
       </View>
 
-      <View style={styles.membersStrip}>
-        <View style={styles.membersHeadingRow}>
-          <Text style={styles.membersHeading}>People</Text>
-          <Pressable
-            onPress={openPeople}
-            hitSlop={8}
-            style={({ pressed }) => pressed && styles.pressed}
-          >
-            <Text style={styles.seeAllText}>See all</Text>
-          </Pressable>
-        </View>
-        <FlatList
-          horizontal
-          data={members}
-          keyExtractor={(item) => item.user_id}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.membersList}
-          renderItem={({ item }) => (
+      {!isTwoPersonCircle ? (
+        <View style={styles.membersStrip}>
+          <View style={styles.membersHeadingRow}>
+            <Text style={styles.membersHeading}>People</Text>
             <Pressable
-              onPress={() => navigation.navigate('Profile', {
-                userId: item.user_id,
-              })}
-              style={({ pressed }) => [
-                styles.member,
-                pressed && styles.pressed,
-              ]}
+              onPress={openPeople}
+              hitSlop={8}
+              style={({ pressed }) => pressed && styles.pressed}
             >
-              <Avatar
-                size={52}
-                name={item.display_name || 'Member'}
-                uri={item.avatar_url}
-              />
-              <Text style={styles.memberName} numberOfLines={1}>
-                {item.is_me ? 'You' : item.display_name || 'Member'}
-              </Text>
+              <Text style={styles.seeAllText}>See all</Text>
             </Pressable>
-          )}
-        />
-      </View>
+          </View>
+          <FlatList
+            horizontal
+            data={members}
+            keyExtractor={(item) => item.user_id}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.membersList}
+            renderItem={({ item }) => (
+              <Pressable
+                onPress={() => navigation.navigate('Profile', {
+                  userId: item.user_id,
+                })}
+                style={({ pressed }) => [
+                  styles.member,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Avatar
+                  size={52}
+                  name={item.display_name || 'Member'}
+                  uri={item.avatar_url}
+                />
+                <Text style={styles.memberName} numberOfLines={1}>
+                  {item.is_me ? 'You' : item.display_name || 'Member'}
+                </Text>
+              </Pressable>
+            )}
+          />
+        </View>
+      ) : null}
 
       <View style={styles.tabs}>
         <Pressable
@@ -441,6 +496,29 @@ export function CircleProfileScreen({ route, navigation }) {
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
+
+  if (circleLocked) {
+    return (
+      <SafeAreaView edges={['bottom']} style={styles.lockedScreen}>
+        <View style={styles.lockedIcon}>
+          <Ionicons name="lock-closed" size={28} color={COLORS.text} />
+        </View>
+        <Text style={styles.lockedTitle}>Our Circle is closed</Text>
+        <Text style={styles.lockedBody}>
+          Your shared history is preserved, but neither person can open it right now. It can reopen only after fresh Mutual Interest, fresh Mutual Focus, and a new mutual decision.
+        </Text>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={({ pressed }) => [
+            styles.lockedButton,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.lockedButtonText}>Go back</Text>
         </Pressable>
       </SafeAreaView>
     );
@@ -570,6 +648,32 @@ const styles = StyleSheet.create({
     color: COLORS.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,
+  },
+  silentMessageCard: {
+    width: '100%',
+    maxWidth: 440,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#f5f3f8',
+  },
+  silentMessageHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  silentMessageLabel: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 11.5,
+  },
+  silentMessageText: {
+    marginTop: 7,
+    color: COLORS.text,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 13,
+    lineHeight: 19,
   },
   bio: {
     maxWidth: 440,
@@ -851,6 +955,52 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   emptyButtonText: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+  },
+  lockedScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+    backgroundColor: COLORS.bg,
+  },
+  lockedIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0eef4',
+  },
+  lockedTitle: {
+    marginTop: 18,
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 20,
+    textAlign: 'center',
+  },
+  lockedBody: {
+    maxWidth: 430,
+    marginTop: 9,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  lockedButton: {
+    minWidth: 150,
+    minHeight: 44,
+    marginTop: 22,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+  },
+  lockedButtonText: {
     color: '#fff',
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,

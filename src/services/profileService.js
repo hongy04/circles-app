@@ -175,6 +175,19 @@ export async function fetchProfilePage(userId) {
   };
 }
 
+
+export async function removeProfileConnection(otherUserId) {
+  await ensureAuthed();
+
+  const { data, error } = await supabase.rpc(
+    'remove_profile_connection',
+    { p_other_user_id: otherUserId }
+  );
+
+  if (error) throw error;
+  return data || { removed: true, shared_circle_locked: false };
+}
+
 export async function fetchMyMutualPreviewPostId() {
   await ensureAuthed();
 

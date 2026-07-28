@@ -216,6 +216,13 @@ function GateScreen({ navigation }) {
 }
 
 /* ---------------- Tabs ---------------- */
+let relationshipTabBadgeChannelCounter = 0;
+
+function nextRelationshipTabBadgeChannelName() {
+  relationshipTabBadgeChannelCounter += 1;
+  return `relationship_tab_badges_${Date.now()}_${relationshipTabBadgeChannelCounter}`;
+}
+
 function AppTabs() {
   const insets = useSafeAreaInsets();
   const [reqCount, setReqCount] = useState(0);
@@ -256,7 +263,7 @@ function AppTabs() {
       }
     };
     loadCount();
-    const ch = supabase.channel('relationship_tabbadges')
+    const ch = supabase.channel(nextRelationshipTabBadgeChannelName())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests' }, () => loadCount())
       .subscribe();
     const unsubscribeNotifications = subscribeToNotificationChanges(loadCount);

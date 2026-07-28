@@ -17,6 +17,7 @@ import { Avatar } from '../../components/Avatar';
 import { COLORS } from '../../theme/colors';
 import {
   fetchMyRomanticSettings,
+  resumeMyRomanticDiscovery,
   saveMyRomanticSettings,
   setMyRomanticVisibility,
 } from '../../services/romanticService';
@@ -170,7 +171,7 @@ export function RomanticSettingsScreen() {
   };
 
   const changePersonVisibility = async (person, visible) => {
-    if (!settings?.enabled || busyUserId) return;
+    if (!settings?.enabled || settings?.focusPaused || busyUserId) return;
 
     const previous = settings;
     setBusyUserId(person.userId);
@@ -196,6 +197,39 @@ export function RomanticSettingsScreen() {
     } finally {
       setBusyUserId(null);
     }
+  };
+
+  const resumeDiscovery = async () => {
+    if (!settings?.focusPaused || settings?.focusActive || saving) return;
+
+    const perform = async () => {
+      setSaving(true);
+      try {
+        setSettings(await resumeMyRomanticDiscovery());
+      } catch (resumeError) {
+        Alert.alert(
+          'Romantic discovery not resumed',
+          resumeError?.message || 'Please try again.'
+        );
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const message =
+      'Your saved audience settings will become active again. Existing friendships and messages are unchanged.';
+
+    if (Platform.OS === 'web') {
+      if (globalThis.confirm?.(`Resume romantic discovery?\n\n${message}`)) {
+        perform();
+      }
+      return;
+    }
+
+    Alert.alert('Resume romantic discovery?', message, [
+      { text: 'Not now', style: 'cancel' },
+      { text: 'Resume', onPress: perform },
+    ]);
   };
 
   if (loading && !settings) {
@@ -230,7 +264,7 @@ export function RomanticSettingsScreen() {
         renderItem={({ item }) => (
           <ConnectionVisibilityRow
             person={item}
-            disabled={!settings.enabled || saving}
+            disabled={!settings.enabled || settings.focusPaused || saving}
             busy={busyUserId === item.userId}
             onChange={(visible) => changePersonVisibility(item, visible)}
           />
@@ -244,7 +278,7 @@ export function RomanticSettingsScreen() {
               <View style={styles.introCopy}>
                 <Text style={styles.introTitle}>Reciprocal by design</Text>
                 <Text style={styles.introBody}>
-                  Your audience choices are private. Romantic features become available between two accepted connections only when both people independently include each other.
+                  Your audience choices are private. Romantic features become available between two accepted connections only when both people independently include each other. Mutual Focus can later pause discovery outside one connection.
                 </Text>
               </View>
             </View>
@@ -269,13 +303,46 @@ export function RomanticSettingsScreen() {
               </View>
             </View>
 
+            {settings.focusPaused ? (
+              <View style={styles.focusPauseCard}>
+                <View style={styles.focusPauseIcon}>
+                  <Ionicons name="pause" size={21} color={COLORS.text} />
+                </View>
+                <View style={styles.focusPauseCopy}>
+                  <Text style={styles.focusPauseTitle}>
+                    {settings.focusActive
+                      ? 'Outside romantic discovery is paused'
+                      : 'Romantic discovery remains paused'}
+                  </Text>
+                  <Text style={styles.focusPauseBody}>
+                    {settings.focusActive
+                      ? 'You are focusing on one connection. Hearts and romantic discovery with everyone else remain unavailable.'
+                      : 'Ending Focus does not automatically reopen romantic discovery. Resume only when you are ready.'}
+                  </Text>
+                  {!settings.focusActive ? (
+                    <Pressable
+                      onPress={resumeDiscovery}
+                      disabled={saving}
+                      style={({ pressed }) => [
+                        styles.resumeButton,
+                        pressed && styles.pressed,
+                        saving && styles.disabled,
+                      ]}
+                    >
+                      <Text style={styles.resumeButtonText}>Resume romantic discovery</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+
             <Text style={styles.sectionLabel}>AUDIENCE</Text>
             <View style={styles.sectionCard}>
               <AudienceOption
                 selected={settings.audienceMode === 'all_connections'}
                 title="All accepted connections"
                 body="Current and future accepted connections are included by default. You can exclude individual people below."
-                disabled={!settings.enabled || saving}
+                disabled={!settings.enabled || settings.focusPaused || saving}
                 onPress={() => changeAudience('all_connections')}
               />
               <View style={styles.separator} />
@@ -283,7 +350,7 @@ export function RomanticSettingsScreen() {
                 selected={settings.audienceMode === 'selected_connections'}
                 title="Selected people only"
                 body="No connection is included unless you turn them on individually below."
-                disabled={!settings.enabled || saving}
+                disabled={!settings.enabled || settings.focusPaused || saving}
                 onPress={() => changeAudience('selected_connections')}
               />
             </View>
@@ -298,7 +365,11 @@ export function RomanticSettingsScreen() {
             <View style={styles.listHeadingRow}>
               <Text style={styles.sectionLabel}>INDIVIDUAL CONNECTIONS</Text>
               <Text style={styles.visibleCount}>
-                {settings.enabled ? `${settings.visibleCount} included` : 'Romance off'}
+                {settings.focusPaused
+                  ? 'Paused'
+                  : settings.enabled
+                    ? `${settings.visibleCount} included`
+                    : 'Romance off'}
               </Text>
             </View>
           </View>
@@ -391,6 +462,54 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
+  },
+  focusPauseCard: {
+    flexDirection: 'row',
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: '#f7f4ff',
+    padding: 16,
+    marginBottom: 18,
+  },
+  focusPauseIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ece7ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  focusPauseCopy: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  focusPauseTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 15,
+  },
+  focusPauseBody: {
+    marginTop: 5,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  resumeButton: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    minHeight: 38,
+    borderRadius: 11,
+    backgroundColor: COLORS.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  resumeButtonText: {
+    color: COLORS.bg,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
   },
   sectionLabel: {
     color: COLORS.subtext,

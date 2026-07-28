@@ -33,7 +33,10 @@ import {
   sendConversationMessage,
   subscribeToConversationChanges,
 } from '../../services/conversationService';
-import { openRomanticMutualReveal } from '../../services/romanticService';
+import {
+  openRomanticFocusReveal,
+  openRomanticMutualReveal,
+} from '../../services/romanticService';
 import {
   removeConversationMedia,
   uploadConversationAsset,
@@ -64,6 +67,45 @@ function MutualInterestRevealModal({ visible, onContinue }) {
           <Text style={styles.mutualModalTitle}>The interest is mutual.</Text>
           <Text style={styles.mutualModalBody}>
             Keep getting to know each other. When you are both ready, you can choose what comes next.
+          </Text>
+          <Pressable
+            onPress={onContinue}
+            accessibilityRole="button"
+            accessibilityLabel="Continue chatting"
+            style={({ pressed }) => [
+              styles.mutualContinueButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.mutualContinueText}>Continue chatting</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function MutualFocusRevealModal({ visible, onContinue }) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={onContinue}
+    >
+      <View style={styles.mutualModalBackdrop}>
+        <View style={[styles.mutualModalCard, styles.focusModalCard]}>
+          <View style={styles.mutualMark}>
+            <View style={styles.mutualMarkOuter}>
+              <View style={[styles.mutualMarkInner, styles.focusMarkInner]}>
+                <Ionicons name="infinite" size={32} color={COLORS.text} />
+              </View>
+            </View>
+          </View>
+          <Text style={styles.mutualModalTitle}>You’re focusing on each other.</Text>
+          <Text style={styles.mutualModalBody}>
+            Romantic discovery with other connections is now paused while you give this connection a real chance. Your friendships and messages remain unchanged.
           </Text>
           <Pressable
             onPress={onContinue}
@@ -243,6 +285,7 @@ export function ChatScreen({ route, navigation }) {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [error, setError] = useState(null);
   const [mutualRevealVisible, setMutualRevealVisible] = useState(false);
+  const [focusRevealVisible, setFocusRevealVisible] = useState(false);
 
   const load = useCallback(async ({
     quiet = false,
@@ -263,9 +306,14 @@ export function ChatScreen({ route, navigation }) {
       if (details?.conversation) setConversation(details.conversation);
 
       if (checkRomanticReveal && details?.conversation?.kind === 'direct') {
-        const reveal = await openRomanticMutualReveal(conversationId);
-        if (reveal.shouldReveal) {
+        const mutualReveal = await openRomanticMutualReveal(conversationId);
+        if (mutualReveal.shouldReveal) {
           setMutualRevealVisible(true);
+        } else {
+          const focusReveal = await openRomanticFocusReveal(conversationId);
+          if (focusReveal.shouldReveal) {
+            setFocusRevealVisible(true);
+          }
         }
       }
 
@@ -670,6 +718,10 @@ export function ChatScreen({ route, navigation }) {
         visible={mutualRevealVisible}
         onContinue={() => setMutualRevealVisible(false)}
       />
+      <MutualFocusRevealModal
+        visible={focusRevealVisible}
+        onContinue={() => setFocusRevealVisible(false)}
+      />
 
       <View style={[styles.chatHeader, { paddingTop: insets.top }]}>
         <View style={styles.chatHeaderRow}>
@@ -872,6 +924,9 @@ const styles = StyleSheet.create({
     paddingTop: 30,
     paddingBottom: 24,
   },
+  focusModalCard: {
+    backgroundColor: '#fbfaff',
+  },
   mutualMark: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -893,6 +948,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffe8ec',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  focusMarkInner: {
+    backgroundColor: '#ece7ff',
   },
   mutualModalTitle: {
     color: COLORS.text,

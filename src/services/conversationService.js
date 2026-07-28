@@ -332,19 +332,21 @@ export async function listConversationTimeline(conversationId) {
   return hydrateConversationMediaItems((data || []).map(mapMedia));
 }
 
-export async function updateGroupCircleProfile({
+export async function updateCircleProfile({
   conversationId,
   title,
   bio,
+  silentMessage,
   avatarPath,
 }) {
   await ensureAuthed();
   const { data, error } = await supabase.rpc(
-    'update_group_circle_profile',
+    'update_circle_profile',
     {
       p_conversation_id: conversationId,
       p_title: title,
       p_bio: bio || null,
+      p_silent_message: silentMessage || null,
       p_avatar_path: avatarPath || null,
     }
   );

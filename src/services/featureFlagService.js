@@ -18,6 +18,8 @@ export const FEATURE_FLAGS = Object.freeze({
   EVENT_REPEAT_SIGNALS: 'event_repeat_signals',
   ROMANTIC_CHANNEL_BETA: 'romantic_channel_beta',
   ROMANTIC_INTEREST_BETA: 'romantic_interest_beta',
+  ROMANTIC_FOCUS_BETA: 'romantic_focus_beta',
+  TWO_PERSON_CIRCLE_PROPOSALS: 'two_person_circle_proposals',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -38,6 +40,8 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.EVENT_REPEAT_SIGNALS]: true,
   [FEATURE_FLAGS.ROMANTIC_CHANNEL_BETA]: true,
   [FEATURE_FLAGS.ROMANTIC_INTEREST_BETA]: true,
+  [FEATURE_FLAGS.ROMANTIC_FOCUS_BETA]: true,
+  [FEATURE_FLAGS.TWO_PERSON_CIRCLE_PROPOSALS]: true,
 });
 
 const CACHE_TTL_MS = 60_000;
