@@ -29,6 +29,10 @@ import {
   listTwoPersonPlans,
   subscribeToTwoPersonPlanChanges,
 } from '../../services/twoPersonPlanService';
+import {
+  listTwoPersonImportantDates,
+  subscribeToTwoPersonImportantDateChanges,
+} from '../../services/twoPersonImportantDateService';
 
 function Stat({ value, label, onPress }) {
   const content = (
@@ -151,6 +155,7 @@ export function CircleProfileScreen({ route, navigation }) {
   const [timeline, setTimeline] = useState([]);
   const [posts, setPosts] = useState([]);
   const [plans, setPlans] = useState([]);
+  const [importantDates, setImportantDates] = useState([]);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -186,6 +191,7 @@ export function CircleProfileScreen({ route, navigation }) {
         setTimeline([]);
         setPosts([]);
         setPlans([]);
+        setImportantDates([]);
         return;
       }
 
@@ -195,6 +201,7 @@ export function CircleProfileScreen({ route, navigation }) {
       ]);
 
       let planRows = [];
+      let importantDateRows = [];
       if (conversation?.kind === 'direct') {
         try {
           planRows = await listTwoPersonPlans(conversationId);
@@ -202,11 +209,18 @@ export function CircleProfileScreen({ route, navigation }) {
           // The Circle remains usable if the plans migration is not installed yet.
           planRows = [];
         }
+        try {
+          importantDateRows = await listTwoPersonImportantDates(conversationId);
+        } catch {
+          // The Circle remains usable until the important-dates migration is installed.
+          importantDateRows = [];
+        }
       }
 
       setTimeline(timelineRows);
       setPosts(postRows);
       setPlans(planRows);
+      setImportantDates(importantDateRows);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this private Circle.');
     } finally {
@@ -247,6 +261,16 @@ export function CircleProfileScreen({ route, navigation }) {
     useCallback(() => {
       if (!conversationId) return undefined;
       return subscribeToTwoPersonPlanChanges({
+        conversationId,
+        onChange: () => load({ quiet: true }),
+      });
+    }, [conversationId, load])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) return undefined;
+      return subscribeToTwoPersonImportantDateChanges({
         conversationId,
         onChange: () => load({ quiet: true }),
       });
@@ -296,6 +320,13 @@ export function CircleProfileScreen({ route, navigation }) {
 
   const openPlans = () => {
     navigation.navigate('TwoPersonPlans', {
+      conversationId,
+      circleName: conversation?.title || 'Our Circle',
+    });
+  };
+
+  const openImportantDates = () => {
+    navigation.navigate('TwoPersonImportantDates', {
       conversationId,
       circleName: conversation?.title || 'Our Circle',
     });
@@ -362,6 +393,13 @@ export function CircleProfileScreen({ route, navigation }) {
               value={plans.length}
               label="Plans"
               onPress={openPlans}
+            />
+          ) : null}
+          {isTwoPersonCircle ? (
+            <Stat
+              value={importantDates.length}
+              label="Dates"
+              onPress={openImportantDates}
             />
           ) : null}
           <Stat
@@ -460,6 +498,29 @@ export function CircleProfileScreen({ route, navigation }) {
             <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
           </Pressable>
         )}
+
+        {isTwoPersonCircle ? (
+          <Pressable
+            onPress={openImportantDates}
+            style={({ pressed }) => [
+              styles.plansRow,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={styles.plansIcon}>
+              <Ionicons name="calendar-outline" size={20} color={COLORS.text} />
+            </View>
+            <View style={styles.plansCopy}>
+              <Text style={styles.plansTitle}>Important Dates</Text>
+              <Text style={styles.plansBody}>
+                {importantDates.length
+                  ? `${importantDates.length} date${importantDates.length === 1 ? '' : 's'} saved in your shared story.`
+                  : 'Keep anniversaries, birthdays, trips, and traditions that matter.'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
+          </Pressable>
+        ) : null}
 
         <Pressable
           onPress={openNotificationSettings}

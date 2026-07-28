@@ -80,6 +80,8 @@ import { AvailabilityPollDetailScreen } from './src/screens/conversations/Availa
 import { TwoPersonPlansScreen } from './src/screens/conversations/TwoPersonPlansScreen';
 import { TwoPersonPlanEditorScreen } from './src/screens/conversations/TwoPersonPlanEditorScreen';
 import { TwoPersonPlanDetailScreen } from './src/screens/conversations/TwoPersonPlanDetailScreen';
+import { TwoPersonImportantDatesScreen } from './src/screens/conversations/TwoPersonImportantDatesScreen';
+import { TwoPersonImportantDateEditorScreen } from './src/screens/conversations/TwoPersonImportantDateEditorScreen';
 import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
 import { getInviteLinkingPrefixes } from './src/services/inviteService';
 import { timeAgo } from './src/utils/timeAgo';
@@ -434,6 +436,16 @@ function CirclesStack() {
         name="TwoPersonPlanDetail"
         component={TwoPersonPlanDetailScreen}
         options={{ title: 'Plan' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonImportantDates"
+        component={TwoPersonImportantDatesScreen}
+        options={{ title: 'Important Dates' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonImportantDateEditor"
+        component={TwoPersonImportantDateEditorScreen}
+        options={{ title: 'Important Date' }}
       />
       <CirclesStackNav.Screen
         name="InviteCirclePeople"
