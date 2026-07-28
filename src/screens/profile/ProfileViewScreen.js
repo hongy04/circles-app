@@ -18,6 +18,7 @@ import { PreConnectionProfileShell } from '../../components/profile/PreConnectio
 import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import { deleteOwnPost } from '../../services/postService';
+import { fetchRomanticChannelStatus } from '../../services/romanticService';
 import {
   fetchMyMutualPreviewPostId,
   fetchProfilePage,
@@ -130,6 +131,7 @@ export function ProfileViewScreen({
   const [mutualPreviewPostId, setMutualPreviewPostId] = useState(null);
   const [previewSaving, setPreviewSaving] = useState(false);
   const [socialStats, setSocialStats] = useState(null);
+  const [romanticChannelOpen, setRomanticChannelOpen] = useState(false);
 
   const load = useCallback(async ({ refresh = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -144,11 +146,16 @@ export function ProfileViewScreen({
       const previewPostId = isOwnProfile
         ? await fetchMyMutualPreviewPostId()
         : null;
+      const romanticStatus =
+        result.profile?.relationship_status === 'connected'
+          ? await fetchRomanticChannelStatus(result.profile.id)
+          : { channelOpen: false };
 
       setProfile(result.profile);
       setPosts(result.posts);
       setSocialStats(result.socialStats || null);
       setMutualPreviewPostId(previewPostId);
+      setRomanticChannelOpen(Boolean(romanticStatus.channelOpen));
     } catch (loadError) {
       setError(loadError?.message || 'Failed to load profile.');
     } finally {
@@ -340,6 +347,22 @@ export function ProfileViewScreen({
         onConnectionsPress={openConnections}
       />
 
+      {!resolvedIsSelf
+      && profile.relationship_status === 'connected'
+      && romanticChannelOpen ? (
+        <View style={styles.romanticChannelCard}>
+          <View style={styles.romanticChannelIcon}>
+            <Ionicons name="heart-outline" size={20} color={COLORS.text} />
+          </View>
+          <View style={styles.romanticChannelCopy}>
+            <Text style={styles.romanticChannelTitle}>Romantic channel available</Text>
+            <Text style={styles.romanticChannelBody}>
+              Both of you independently made romantic features available to each other. No interest has been shared.
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
       {profile.can_view_posts ? (
         <View style={styles.gridHeading}>
           <Ionicons name="grid-outline" size={18} color={COLORS.text} />
@@ -500,6 +523,41 @@ const styles = StyleSheet.create({
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  romanticChannelCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginHorizontal: 18,
+    marginBottom: 16,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: '#fafafa',
+    padding: 14,
+  },
+  romanticChannelIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  romanticChannelCopy: {
+    flex: 1,
+    marginLeft: 11,
+  },
+  romanticChannelTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13.5,
+  },
+  romanticChannelBody: {
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11.5,
+    lineHeight: 17,
   },
   gridHeading: {
     height: 46,

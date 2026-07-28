@@ -16,6 +16,7 @@ export const FEATURE_FLAGS = Object.freeze({
   GUEST_ATTENDANCE_CLAIMS: 'guest_attendance_claims',
   TRUSTED_MUTUALS_RANKING: 'trusted_mutuals_ranking',
   EVENT_REPEAT_SIGNALS: 'event_repeat_signals',
+  ROMANTIC_CHANNEL_BETA: 'romantic_channel_beta',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -34,6 +35,7 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.GUEST_ATTENDANCE_CLAIMS]: true,
   [FEATURE_FLAGS.TRUSTED_MUTUALS_RANKING]: true,
   [FEATURE_FLAGS.EVENT_REPEAT_SIGNALS]: true,
+  [FEATURE_FLAGS.ROMANTIC_CHANNEL_BETA]: true,
 });
 
 const CACHE_TTL_MS = 60_000;

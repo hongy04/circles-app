@@ -159,6 +159,16 @@ export function AccountSettingsScreen({ navigation }) {
             />
           </View>
 
+          <Text style={styles.sectionLabel}>RELATIONSHIPS</Text>
+          <View style={styles.section}>
+            <SettingRow
+              icon="heart-outline"
+              title="Romantic connections"
+              subtitle="Off by default. Manage reciprocal visibility with accepted connections."
+              onPress={() => navigation.navigate('RomanticSettings')}
+            />
+          </View>
+
           <Text style={styles.sectionLabel}>ACCOUNT</Text>
           <View style={styles.section}>
             <SettingRow

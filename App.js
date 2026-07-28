@@ -47,6 +47,7 @@ import { ProfileConnectionsScreen } from './src/screens/profile/ProfileConnectio
 import { GuestClaimProfileSetupScreen } from './src/screens/profile/GuestClaimProfileSetupScreen';
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
+import { RomanticSettingsScreen } from './src/screens/profile/RomanticSettingsScreen';
 import { InvitePeopleScreen } from './src/screens/profile/InvitePeopleScreen';
 import { InvitationLandingScreen } from './src/screens/invitations/InvitationLandingScreen';
 import { EventGuestInvitationScreen } from './src/screens/invitations/EventGuestInvitationScreen';
@@ -152,6 +153,18 @@ export default function App() {
           />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
+          <RootStack.Screen
+            name="RomanticSettings"
+            component={RomanticSettingsScreen}
+            options={{
+              headerShown: true,
+              title: 'Romantic Connections',
+              headerShadowVisible: false,
+              headerBackTitleVisible: false,
+              headerTintColor: COLORS.text,
+              headerTitleStyle: { fontFamily: 'Manrope_700Bold' },
+            }}
+          />
           <RootStack.Screen name="InvitePeople" component={InvitePeopleScreen} />
           {IS_DEVELOPMENT ? (
             <RootStack.Screen name="DevAccounts" component={DevAccountsScreen} />
