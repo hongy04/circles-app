@@ -8,6 +8,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -32,6 +33,7 @@ import {
   sendConversationMessage,
   subscribeToConversationChanges,
 } from '../../services/conversationService';
+import { openRomanticMutualReveal } from '../../services/romanticService';
 import {
   removeConversationMedia,
   uploadConversationAsset,
@@ -40,6 +42,45 @@ import {
 const MAX_ATTACHMENTS = 6;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_DURATION_MS = 30 * 1000;
+
+function MutualInterestRevealModal({ visible, onContinue }) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={onContinue}
+    >
+      <View style={styles.mutualModalBackdrop}>
+        <View style={styles.mutualModalCard}>
+          <View style={styles.mutualMark}>
+            <View style={styles.mutualMarkOuter}>
+              <View style={styles.mutualMarkInner}>
+                <Ionicons name="heart" size={30} color={COLORS.text} />
+              </View>
+            </View>
+          </View>
+          <Text style={styles.mutualModalTitle}>The interest is mutual.</Text>
+          <Text style={styles.mutualModalBody}>
+            Keep getting to know each other. When you are both ready, you can choose what comes next.
+          </Text>
+          <Pressable
+            onPress={onContinue}
+            accessibilityRole="button"
+            accessibilityLabel="Continue chatting"
+            style={({ pressed }) => [
+              styles.mutualContinueButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.mutualContinueText}>Continue chatting</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 function formatTime(timestamp) {
   const date = new Date(timestamp);
@@ -201,8 +242,12 @@ export function ChatScreen({ route, navigation }) {
   const [deletingMessageId, setDeletingMessageId] = useState(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [error, setError] = useState(null);
+  const [mutualRevealVisible, setMutualRevealVisible] = useState(false);
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  const load = useCallback(async ({
+    quiet = false,
+    checkRomanticReveal = false,
+  } = {}) => {
     if (!conversationId) return;
     if (!quiet) setLoading(true);
     setError(null);
@@ -216,6 +261,13 @@ export function ChatScreen({ route, navigation }) {
       setCurrentUserId(user.id);
       setMessages(rows);
       if (details?.conversation) setConversation(details.conversation);
+
+      if (checkRomanticReveal && details?.conversation?.kind === 'direct') {
+        const reveal = await openRomanticMutualReveal(conversationId);
+        if (reveal.shouldReveal) {
+          setMutualRevealVisible(true);
+        }
+      }
 
       if (
         screenFocusedRef.current
@@ -233,7 +285,7 @@ export function ChatScreen({ route, navigation }) {
   useFocusEffect(
     useCallback(() => {
       screenFocusedRef.current = true;
-      load();
+      load({ checkRomanticReveal: true });
 
       return () => {
         screenFocusedRef.current = false;
@@ -246,7 +298,7 @@ export function ChatScreen({ route, navigation }) {
       appStateRef.current = nextState;
 
       if (nextState === 'active' && screenFocusedRef.current) {
-        load({ quiet: true });
+        load({ quiet: true, checkRomanticReveal: true });
       }
     });
 
@@ -614,6 +666,11 @@ export function ChatScreen({ route, navigation }) {
 
   return (
     <View style={styles.screen}>
+      <MutualInterestRevealModal
+        visible={mutualRevealVisible}
+        onContinue={() => setMutualRevealVisible(false)}
+      />
+
       <View style={[styles.chatHeader, { paddingTop: insets.top }]}>
         <View style={styles.chatHeaderRow}>
           <Pressable
@@ -798,6 +855,73 @@ export function ChatScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  mutualModalBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  mutualModalCard: {
+    width: '100%',
+    maxWidth: 390,
+    alignItems: 'center',
+    borderRadius: 24,
+    backgroundColor: COLORS.bg,
+    paddingHorizontal: 26,
+    paddingTop: 30,
+    paddingBottom: 24,
+  },
+  mutualMark: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  mutualMarkOuter: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 1.5,
+    borderColor: COLORS.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mutualMarkInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: '#ffe8ec',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mutualModalTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 22,
+    textAlign: 'center',
+  },
+  mutualModalBody: {
+    marginTop: 10,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  mutualContinueButton: {
+    width: '100%',
+    minHeight: 48,
+    marginTop: 22,
+    borderRadius: 14,
+    backgroundColor: COLORS.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mutualContinueText: {
+    color: COLORS.bg,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+  },
   screen: {
     flex: 1,
     backgroundColor: COLORS.bg,

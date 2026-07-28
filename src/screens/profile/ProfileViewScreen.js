@@ -18,7 +18,10 @@ import { PreConnectionProfileShell } from '../../components/profile/PreConnectio
 import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import { deleteOwnPost } from '../../services/postService';
-import { fetchRomanticChannelStatus } from '../../services/romanticService';
+import {
+  fetchRomanticInterestStatus,
+  setMyRomanticInterest,
+} from '../../services/romanticService';
 import {
   fetchMyMutualPreviewPostId,
   fetchProfilePage,
@@ -66,6 +69,67 @@ function TopBar({ isSelf, profile, navigation }) {
         ) : null}
       </View>
     </View>
+  );
+}
+
+function RomanticInterestCard({ profile, status, busy, onPress }) {
+  const firstName = (profile?.display_name || 'them').trim().split(/\s+/)[0];
+  const mutual = Boolean(status?.mutualRevealed);
+  const selected = Boolean(status?.selectedByMe);
+
+  const title = mutual
+    ? 'The interest is mutual'
+    : selected
+      ? 'Interest saved privately'
+      : `Want to get to know ${firstName} better?`;
+
+  const body = mutual
+    ? 'Keep getting to know each other. Your ordinary connection and private messages remain unchanged.'
+    : selected
+      ? 'Only you can see this unless they independently choose you too.'
+      : 'This stays private unless they choose you too.';
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={busy}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityHint={mutual
+        ? 'Double tap to end Mutual Interest.'
+        : selected
+          ? 'Double tap to remove your private interest.'
+          : 'Double tap to privately choose this connection.'}
+      style={({ pressed }) => [
+        styles.romanticChannelCard,
+        mutual && styles.romanticMutualCard,
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={[
+        styles.romanticChannelIcon,
+        selected && styles.romanticSelectedIcon,
+      ]}>
+        {busy ? (
+          <ActivityIndicator size="small" color={COLORS.text} />
+        ) : (
+          <Ionicons
+            name={selected ? 'heart' : 'heart-outline'}
+            size={20}
+            color={COLORS.text}
+          />
+        )}
+      </View>
+      <View style={styles.romanticChannelCopy}>
+        <Text style={styles.romanticChannelTitle}>{title}</Text>
+        <Text style={styles.romanticChannelBody}>{body}</Text>
+      </View>
+      <Ionicons
+        name={selected ? 'checkmark' : 'chevron-forward'}
+        size={18}
+        color={COLORS.subtext}
+      />
+    </Pressable>
   );
 }
 
@@ -131,7 +195,13 @@ export function ProfileViewScreen({
   const [mutualPreviewPostId, setMutualPreviewPostId] = useState(null);
   const [previewSaving, setPreviewSaving] = useState(false);
   const [socialStats, setSocialStats] = useState(null);
-  const [romanticChannelOpen, setRomanticChannelOpen] = useState(false);
+  const [romanticStatus, setRomanticStatus] = useState({
+    available: false,
+    channelOpen: false,
+    selectedByMe: false,
+    mutualRevealed: false,
+  });
+  const [romanticBusy, setRomanticBusy] = useState(false);
 
   const load = useCallback(async ({ refresh = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -148,14 +218,19 @@ export function ProfileViewScreen({
         : null;
       const romanticStatus =
         result.profile?.relationship_status === 'connected'
-          ? await fetchRomanticChannelStatus(result.profile.id)
-          : { channelOpen: false };
+          ? await fetchRomanticInterestStatus(result.profile.id)
+          : {
+              available: false,
+              channelOpen: false,
+              selectedByMe: false,
+              mutualRevealed: false,
+            };
 
       setProfile(result.profile);
       setPosts(result.posts);
       setSocialStats(result.socialStats || null);
       setMutualPreviewPostId(previewPostId);
-      setRomanticChannelOpen(Boolean(romanticStatus.channelOpen));
+      setRomanticStatus(romanticStatus);
     } catch (loadError) {
       setError(loadError?.message || 'Failed to load profile.');
     } finally {
@@ -295,6 +370,75 @@ export function ProfileViewScreen({
     }
   };
 
+  const updateRomanticInterest = async (selected) => {
+    if (!profile?.id || romanticBusy) return;
+
+    setRomanticBusy(true);
+    try {
+      const nextStatus = await setMyRomanticInterest(profile.id, selected);
+      setRomanticStatus(nextStatus);
+    } catch (interestError) {
+      Alert.alert(
+        'Romantic interest not updated',
+        interestError?.message || 'Please try again.'
+      );
+    } finally {
+      setRomanticBusy(false);
+    }
+  };
+
+  const handleRomanticInterest = () => {
+    if (!profile?.id || romanticBusy || !romanticStatus.channelOpen) return;
+
+    const firstName = (profile.display_name || 'this connection')
+      .trim()
+      .split(/\s+/)[0];
+
+    if (romanticStatus.mutualRevealed) {
+      Alert.alert(
+        'End Mutual Interest?',
+        'This resets both private selections and returns you to an ordinary connection. Your messages remain.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'End Mutual Interest',
+            style: 'destructive',
+            onPress: () => updateRomanticInterest(false),
+          },
+        ]
+      );
+      return;
+    }
+
+    if (romanticStatus.selectedByMe) {
+      Alert.alert(
+        'Remove your private interest?',
+        'Removing this clears your selection and any active mutual state for this connection.',
+        [
+          { text: 'Keep it', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: () => updateRomanticInterest(false),
+          },
+        ]
+      );
+      return;
+    }
+
+    Alert.alert(
+      `Want to get to know ${firstName} better?`,
+      `This stays private unless ${firstName} chooses you too.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Choose ${firstName}`,
+          onPress: () => updateRomanticInterest(true),
+        },
+      ]
+    );
+  };
+
   const openPosts = () => {
     if (posts.length > 0) {
       navigation.navigate('ProfilePostsFeed', {
@@ -349,18 +493,13 @@ export function ProfileViewScreen({
 
       {!resolvedIsSelf
       && profile.relationship_status === 'connected'
-      && romanticChannelOpen ? (
-        <View style={styles.romanticChannelCard}>
-          <View style={styles.romanticChannelIcon}>
-            <Ionicons name="heart-outline" size={20} color={COLORS.text} />
-          </View>
-          <View style={styles.romanticChannelCopy}>
-            <Text style={styles.romanticChannelTitle}>Romantic channel available</Text>
-            <Text style={styles.romanticChannelBody}>
-              Both of you independently made romantic features available to each other. No interest has been shared.
-            </Text>
-          </View>
-        </View>
+      && romanticStatus.channelOpen ? (
+        <RomanticInterestCard
+          profile={profile}
+          status={romanticStatus}
+          busy={romanticBusy}
+          onPress={handleRomanticInterest}
+        />
       ) : null}
 
       {profile.can_view_posts ? (
@@ -526,7 +665,7 @@ const styles = StyleSheet.create({
   },
   romanticChannelCard: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginHorizontal: 18,
     marginBottom: 16,
     borderRadius: 14,
@@ -535,6 +674,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#fafafa',
     padding: 14,
   },
+  romanticMutualCard: {
+    backgroundColor: '#fff7f8',
+  },
   romanticChannelIcon: {
     width: 38,
     height: 38,
@@ -542,6 +684,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  romanticSelectedIcon: {
+    backgroundColor: '#ffe8ec',
   },
   romanticChannelCopy: {
     flex: 1,

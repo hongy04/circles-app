@@ -25,6 +25,15 @@ function normalizeSettings(data = {}) {
   };
 }
 
+function normalizeInterestStatus(data = {}) {
+  return {
+    available: Boolean(data.available),
+    channelOpen: Boolean(data.channel_open),
+    selectedByMe: Boolean(data.selected_by_me),
+    mutualRevealed: Boolean(data.mutual_revealed),
+  };
+}
+
 export async function fetchMyRomanticSettings() {
   await ensureAuthed();
   await requireFeature(
@@ -78,7 +87,7 @@ export async function setMyRomanticVisibility(targetUserId, visible) {
   return normalizeSettings(data);
 }
 
-export async function fetchRomanticChannelStatus(otherUserId) {
+export async function fetchRomanticInterestStatus(otherUserId) {
   await ensureAuthed();
 
   try {
@@ -86,20 +95,89 @@ export async function fetchRomanticChannelStatus(otherUserId) {
       FEATURE_FLAGS.ROMANTIC_CHANNEL_BETA,
       'Romantic settings are temporarily unavailable.'
     );
+    await requireFeature(
+      FEATURE_FLAGS.ROMANTIC_INTEREST_BETA,
+      'Romantic interest is temporarily unavailable.'
+    );
+  } catch {
+    return normalizeInterestStatus();
+  }
 
-    const { data, error } = await supabase.rpc('get_romantic_channel_status', {
-      p_other_user_id: otherUserId,
-    });
+  try {
+    const { data, error } = await supabase.rpc(
+      'get_romantic_interest_status',
+      { p_other_user_id: otherUserId }
+    );
+
+    if (error) throw error;
+    return normalizeInterestStatus(data);
+  } catch {
+    // Keep profiles usable in the brief copy-before-migration window. The
+    // Phase 4A fallback exposes only the reciprocal channel result and never a
+    // one-sided interest choice.
+    try {
+      const { data, error } = await supabase.rpc(
+        'get_romantic_channel_status',
+        { p_other_user_id: otherUserId }
+      );
+      if (error) throw error;
+      return normalizeInterestStatus(data);
+    } catch {
+      return normalizeInterestStatus();
+    }
+  }
+}
+
+// Backward-compatible Phase 4A name retained for existing call sites.
+export const fetchRomanticChannelStatus = fetchRomanticInterestStatus;
+
+export async function setMyRomanticInterest(targetUserId, selected) {
+  await ensureAuthed();
+  await requireFeature(
+    FEATURE_FLAGS.ROMANTIC_CHANNEL_BETA,
+    'Romantic settings are temporarily unavailable.'
+  );
+  await requireFeature(
+    FEATURE_FLAGS.ROMANTIC_INTEREST_BETA,
+    'Romantic interest is temporarily unavailable.'
+  );
+
+  const { data, error } = await supabase.rpc('set_my_romantic_interest', {
+    p_target_user_id: targetUserId,
+    p_selected: Boolean(selected),
+  });
+
+  if (error) throw error;
+  return normalizeInterestStatus(data);
+}
+
+export async function openRomanticMutualReveal(conversationId) {
+  await ensureAuthed();
+
+  try {
+    await requireFeature(
+      FEATURE_FLAGS.ROMANTIC_INTEREST_BETA,
+      'Romantic interest is temporarily unavailable.'
+    );
+
+    const { data, error } = await supabase.rpc(
+      'open_romantic_mutual_reveal',
+      { p_conversation_id: conversationId }
+    );
 
     if (error) throw error;
 
     return {
-      available: Boolean(data?.available),
-      channelOpen: Boolean(data?.channel_open),
+      mutualActive: Boolean(data?.mutual_active),
+      shouldReveal: Boolean(data?.should_reveal),
+      activatedAt: data?.activated_at || null,
     };
   } catch {
-    // A profile must remain usable if the beta is disabled or the migration has
-    // not been applied yet. Absence never explains either person's settings.
-    return { available: false, channelOpen: false };
+    // Romantic state must never prevent a private conversation from opening.
+    return {
+      mutualActive: false,
+      shouldReveal: false,
+      activatedAt: null,
+    };
   }
 }
