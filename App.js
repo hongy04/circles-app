@@ -82,6 +82,12 @@ import { TwoPersonPlanEditorScreen } from './src/screens/conversations/TwoPerson
 import { TwoPersonPlanDetailScreen } from './src/screens/conversations/TwoPersonPlanDetailScreen';
 import { TwoPersonImportantDatesScreen } from './src/screens/conversations/TwoPersonImportantDatesScreen';
 import { TwoPersonImportantDateEditorScreen } from './src/screens/conversations/TwoPersonImportantDateEditorScreen';
+import { TwoPersonThoughtsScreen } from './src/screens/conversations/TwoPersonThoughtsScreen';
+import { TwoPersonThoughtEditorScreen } from './src/screens/conversations/TwoPersonThoughtEditorScreen';
+import { TwoPersonThoughtDetailScreen } from './src/screens/conversations/TwoPersonThoughtDetailScreen';
+import { TwoPersonAlbumsScreen } from './src/screens/conversations/TwoPersonAlbumsScreen';
+import { TwoPersonAlbumEditorScreen } from './src/screens/conversations/TwoPersonAlbumEditorScreen';
+import { TwoPersonAlbumDetailScreen } from './src/screens/conversations/TwoPersonAlbumDetailScreen';
 import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
 import { getInviteLinkingPrefixes } from './src/services/inviteService';
 import { timeAgo } from './src/utils/timeAgo';
@@ -446,6 +452,36 @@ function CirclesStack() {
         name="TwoPersonImportantDateEditor"
         component={TwoPersonImportantDateEditorScreen}
         options={{ title: 'Important Date' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonThoughts"
+        component={TwoPersonThoughtsScreen}
+        options={{ title: 'Write Your Thoughts' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonThoughtEditor"
+        component={TwoPersonThoughtEditorScreen}
+        options={{ title: 'Private Draft' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonThoughtDetail"
+        component={TwoPersonThoughtDetailScreen}
+        options={{ title: 'Shared Thought' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonAlbums"
+        component={TwoPersonAlbumsScreen}
+        options={{ title: 'Shared Albums' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonAlbumEditor"
+        component={TwoPersonAlbumEditorScreen}
+        options={{ title: 'Shared Album' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonAlbumDetail"
+        component={TwoPersonAlbumDetailScreen}
+        options={{ title: 'Album' }}
       />
       <CirclesStackNav.Screen
         name="InviteCirclePeople"

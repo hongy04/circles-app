@@ -22,6 +22,8 @@ export const FEATURE_FLAGS = Object.freeze({
   TWO_PERSON_CIRCLE_PROPOSALS: 'two_person_circle_proposals',
   TWO_PERSON_CIRCLE_PLANS: 'two_person_circle_plans',
   TWO_PERSON_CIRCLE_IMPORTANT_DATES: 'two_person_circle_important_dates',
+  TWO_PERSON_CIRCLE_THOUGHTS: 'two_person_circle_thoughts',
+  TWO_PERSON_CIRCLE_ALBUMS: 'two_person_circle_albums',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -46,6 +48,8 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.TWO_PERSON_CIRCLE_PROPOSALS]: true,
   [FEATURE_FLAGS.TWO_PERSON_CIRCLE_PLANS]: true,
   [FEATURE_FLAGS.TWO_PERSON_CIRCLE_IMPORTANT_DATES]: true,
+  [FEATURE_FLAGS.TWO_PERSON_CIRCLE_THOUGHTS]: true,
+  [FEATURE_FLAGS.TWO_PERSON_CIRCLE_ALBUMS]: true,
 });
 
 const CACHE_TTL_MS = 60_000;

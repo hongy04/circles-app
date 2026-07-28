@@ -33,6 +33,14 @@ import {
   listTwoPersonImportantDates,
   subscribeToTwoPersonImportantDateChanges,
 } from '../../services/twoPersonImportantDateService';
+import {
+  listTwoPersonThoughts,
+  subscribeToTwoPersonThoughtChanges,
+} from '../../services/twoPersonThoughtService';
+import {
+  listTwoPersonAlbums,
+  subscribeToTwoPersonAlbumChanges,
+} from '../../services/twoPersonAlbumService';
 
 function Stat({ value, label, onPress }) {
   const content = (
@@ -156,6 +164,8 @@ export function CircleProfileScreen({ route, navigation }) {
   const [posts, setPosts] = useState([]);
   const [plans, setPlans] = useState([]);
   const [importantDates, setImportantDates] = useState([]);
+  const [thoughts, setThoughts] = useState([]);
+  const [albums, setAlbums] = useState([]);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -192,6 +202,8 @@ export function CircleProfileScreen({ route, navigation }) {
         setPosts([]);
         setPlans([]);
         setImportantDates([]);
+        setThoughts([]);
+        setAlbums([]);
         return;
       }
 
@@ -202,6 +214,8 @@ export function CircleProfileScreen({ route, navigation }) {
 
       let planRows = [];
       let importantDateRows = [];
+      let thoughtRows = [];
+      let albumRows = [];
       if (conversation?.kind === 'direct') {
         try {
           planRows = await listTwoPersonPlans(conversationId);
@@ -215,12 +229,26 @@ export function CircleProfileScreen({ route, navigation }) {
           // The Circle remains usable until the important-dates migration is installed.
           importantDateRows = [];
         }
+        try {
+          thoughtRows = await listTwoPersonThoughts(conversationId);
+        } catch {
+          // The Circle remains usable until the thoughts migration is installed.
+          thoughtRows = [];
+        }
+        try {
+          albumRows = await listTwoPersonAlbums(conversationId);
+        } catch {
+          // The Circle remains usable until the albums migration is installed.
+          albumRows = [];
+        }
       }
 
       setTimeline(timelineRows);
       setPosts(postRows);
       setPlans(planRows);
       setImportantDates(importantDateRows);
+      setThoughts(thoughtRows);
+      setAlbums(albumRows);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this private Circle.');
     } finally {
@@ -277,6 +305,26 @@ export function CircleProfileScreen({ route, navigation }) {
     }, [conversationId, load])
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) return undefined;
+      return subscribeToTwoPersonThoughtChanges({
+        conversationId,
+        onChange: () => load({ quiet: true }),
+      });
+    }, [conversationId, load])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) return undefined;
+      return subscribeToTwoPersonAlbumChanges({
+        conversationId,
+        onChange: () => load({ quiet: true }),
+      });
+    }, [conversationId, load])
+  );
+
   const conversation = details?.conversation;
   const members = details?.members || [];
   const isTwoPersonCircle = conversation?.kind === 'direct';
@@ -327,6 +375,20 @@ export function CircleProfileScreen({ route, navigation }) {
 
   const openImportantDates = () => {
     navigation.navigate('TwoPersonImportantDates', {
+      conversationId,
+      circleName: conversation?.title || 'Our Circle',
+    });
+  };
+
+  const openThoughts = () => {
+    navigation.navigate('TwoPersonThoughts', {
+      conversationId,
+      circleName: conversation?.title || 'Our Circle',
+    });
+  };
+
+  const openAlbums = () => {
+    navigation.navigate('TwoPersonAlbums', {
       conversationId,
       circleName: conversation?.title || 'Our Circle',
     });
@@ -400,6 +462,13 @@ export function CircleProfileScreen({ route, navigation }) {
               value={importantDates.length}
               label="Dates"
               onPress={openImportantDates}
+            />
+          ) : null}
+          {isTwoPersonCircle ? (
+            <Stat
+              value={albums.length}
+              label="Albums"
+              onPress={openAlbums}
             />
           ) : null}
           <Stat
@@ -516,6 +585,52 @@ export function CircleProfileScreen({ route, navigation }) {
                 {importantDates.length
                   ? `${importantDates.length} date${importantDates.length === 1 ? '' : 's'} saved in your shared story.`
                   : 'Keep anniversaries, birthdays, trips, and traditions that matter.'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
+          </Pressable>
+        ) : null}
+
+        {isTwoPersonCircle ? (
+          <Pressable
+            onPress={openThoughts}
+            style={({ pressed }) => [
+              styles.plansRow,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={styles.plansIcon}>
+              <Ionicons name="document-text-outline" size={20} color={COLORS.text} />
+            </View>
+            <View style={styles.plansCopy}>
+              <Text style={styles.plansTitle}>Write Your Thoughts</Text>
+              <Text style={styles.plansBody}>
+                {thoughts.length
+                  ? `${thoughts.filter((item) => item.status === 'shared').length} shared · ${thoughts.filter((item) => item.status === 'draft').length} private draft${thoughts.filter((item) => item.status === 'draft').length === 1 ? '' : 's'}`
+                  : 'Write privately, revise at your own pace, and share only when the words feel ready.'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
+          </Pressable>
+        ) : null}
+
+        {isTwoPersonCircle ? (
+          <Pressable
+            onPress={openAlbums}
+            style={({ pressed }) => [
+              styles.plansRow,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={styles.plansIcon}>
+              <Ionicons name="albums-outline" size={20} color={COLORS.text} />
+            </View>
+            <View style={styles.plansCopy}>
+              <Text style={styles.plansTitle}>Shared Albums</Text>
+              <Text style={styles.plansBody}>
+                {albums.length
+                  ? `${albums.length} album${albums.length === 1 ? '' : 's'} · ${albums.reduce((sum, album) => sum + Number(album.photoCount || 0), 0)} photos`
+                  : 'Keep trips, dates, and meaningful occasions together in deliberate photo collections.'}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
