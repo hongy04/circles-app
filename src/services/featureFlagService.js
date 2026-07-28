@@ -20,6 +20,7 @@ export const FEATURE_FLAGS = Object.freeze({
   ROMANTIC_INTEREST_BETA: 'romantic_interest_beta',
   ROMANTIC_FOCUS_BETA: 'romantic_focus_beta',
   TWO_PERSON_CIRCLE_PROPOSALS: 'two_person_circle_proposals',
+  TWO_PERSON_CIRCLE_PLANS: 'two_person_circle_plans',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -42,6 +43,7 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.ROMANTIC_INTEREST_BETA]: true,
   [FEATURE_FLAGS.ROMANTIC_FOCUS_BETA]: true,
   [FEATURE_FLAGS.TWO_PERSON_CIRCLE_PROPOSALS]: true,
+  [FEATURE_FLAGS.TWO_PERSON_CIRCLE_PLANS]: true,
 });
 
 const CACHE_TTL_MS = 60_000;

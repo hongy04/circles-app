@@ -77,6 +77,9 @@ import { AddEventGuestScreen } from './src/screens/conversations/AddEventGuestSc
 import { EventGuestSettingsScreen } from './src/screens/conversations/EventGuestSettingsScreen';
 import { CreateAvailabilityPollScreen } from './src/screens/conversations/CreateAvailabilityPollScreen';
 import { AvailabilityPollDetailScreen } from './src/screens/conversations/AvailabilityPollDetailScreen';
+import { TwoPersonPlansScreen } from './src/screens/conversations/TwoPersonPlansScreen';
+import { TwoPersonPlanEditorScreen } from './src/screens/conversations/TwoPersonPlanEditorScreen';
+import { TwoPersonPlanDetailScreen } from './src/screens/conversations/TwoPersonPlanDetailScreen';
 import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
 import { getInviteLinkingPrefixes } from './src/services/inviteService';
 import { timeAgo } from './src/utils/timeAgo';
@@ -416,6 +419,21 @@ function CirclesStack() {
         name="AvailabilityPollDetail"
         component={AvailabilityPollDetailScreen}
         options={{ title: 'Availability' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonPlans"
+        component={TwoPersonPlansScreen}
+        options={{ title: 'Plans' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonPlanEditor"
+        component={TwoPersonPlanEditorScreen}
+        options={{ title: 'Shared Plan' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonPlanDetail"
+        component={TwoPersonPlanDetailScreen}
+        options={{ title: 'Plan' }}
       />
       <CirclesStackNav.Screen
         name="InviteCirclePeople"

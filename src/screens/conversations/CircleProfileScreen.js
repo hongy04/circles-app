@@ -25,6 +25,10 @@ import {
   listCirclePosts,
   subscribeToCirclePostChanges,
 } from '../../services/circlePostService';
+import {
+  listTwoPersonPlans,
+  subscribeToTwoPersonPlanChanges,
+} from '../../services/twoPersonPlanService';
 
 function Stat({ value, label, onPress }) {
   const content = (
@@ -68,6 +72,34 @@ function TimelineTile({ item, size, onPress }) {
         <View style={styles.mediaBadge}>
           <Ionicons name="videocam" size={13} color="#fff" />
         </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function PlanMemoryTile({ item, size, onPress }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.gridTile,
+        styles.planMemoryTile,
+        { width: size, height: size },
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={styles.planMemoryIcon}>
+        <Ionicons name="sparkles" size={21} color={COLORS.text} />
+      </View>
+      <Text style={styles.planMemoryLabel}>PLAN MEMORY</Text>
+      <Text style={styles.planMemoryTitle} numberOfLines={3}>{item.title}</Text>
+      {item.completedAt ? (
+        <Text style={styles.planMemoryDate} numberOfLines={1}>
+          {new Date(item.completedAt).toLocaleDateString([], {
+            month: 'short',
+            day: 'numeric',
+          })}
+        </Text>
       ) : null}
     </Pressable>
   );
@@ -118,6 +150,7 @@ export function CircleProfileScreen({ route, navigation }) {
   const [details, setDetails] = useState(null);
   const [timeline, setTimeline] = useState([]);
   const [posts, setPosts] = useState([]);
+  const [plans, setPlans] = useState([]);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -152,6 +185,7 @@ export function CircleProfileScreen({ route, navigation }) {
       ) {
         setTimeline([]);
         setPosts([]);
+        setPlans([]);
         return;
       }
 
@@ -160,8 +194,19 @@ export function CircleProfileScreen({ route, navigation }) {
         listCirclePosts(conversationId),
       ]);
 
+      let planRows = [];
+      if (conversation?.kind === 'direct') {
+        try {
+          planRows = await listTwoPersonPlans(conversationId);
+        } catch {
+          // The Circle remains usable if the plans migration is not installed yet.
+          planRows = [];
+        }
+      }
+
       setTimeline(timelineRows);
       setPosts(postRows);
+      setPlans(planRows);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this private Circle.');
     } finally {
@@ -198,6 +243,16 @@ export function CircleProfileScreen({ route, navigation }) {
     }, [conversationId, load])
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) return undefined;
+      return subscribeToTwoPersonPlanChanges({
+        conversationId,
+        onChange: () => load({ quiet: true }),
+      });
+    }, [conversationId, load])
+  );
+
   const conversation = details?.conversation;
   const members = details?.members || [];
   const isTwoPersonCircle = conversation?.kind === 'direct';
@@ -205,6 +260,17 @@ export function CircleProfileScreen({ route, navigation }) {
     && !conversation?.circle_access_active;
   const gridWidth = Math.min(width, 720);
   const tileSize = Math.floor(gridWidth / 3);
+  const completedPlans = plans.filter((plan) => plan.status === 'completed');
+  const timelineItems = [
+    ...timeline.map((item) => ({ ...item, kind: 'media' })),
+    ...completedPlans.map((plan) => ({
+      ...plan,
+      id: `plan-memory-${plan.id}`,
+      planId: plan.id,
+      kind: 'plan_memory',
+      createdAt: plan.completedAt || plan.updatedAt,
+    })),
+  ].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
   const createPost = () => {
     setActiveTab('posts');
@@ -225,6 +291,13 @@ export function CircleProfileScreen({ route, navigation }) {
     navigation.navigate('CircleEvents', {
       conversationId,
       circleName: conversation?.title || 'Circle',
+    });
+  };
+
+  const openPlans = () => {
+    navigation.navigate('TwoPersonPlans', {
+      conversationId,
+      circleName: conversation?.title || 'Our Circle',
     });
   };
 
@@ -284,8 +357,15 @@ export function CircleProfileScreen({ route, navigation }) {
             label="Posts"
             onPress={() => setActiveTab('posts')}
           />
+          {isTwoPersonCircle ? (
+            <Stat
+              value={plans.length}
+              label="Plans"
+              onPress={openPlans}
+            />
+          ) : null}
           <Stat
-            value={Number(conversation.timeline_count || timeline.length)}
+            value={Number(conversation.timeline_count || timeline.length) + completedPlans.length}
             label="Timeline"
             onPress={() => setActiveTab('timeline')}
           />
@@ -359,17 +439,26 @@ export function CircleProfileScreen({ route, navigation }) {
             <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
           </Pressable>
         ) : (
-          <View style={styles.plansRow}>
+          <Pressable
+            onPress={openPlans}
+            style={({ pressed }) => [
+              styles.plansRow,
+              pressed && styles.pressed,
+            ]}
+          >
             <View style={styles.plansIcon}>
               <Ionicons name="sparkles-outline" size={20} color={COLORS.text} />
             </View>
             <View style={styles.plansCopy}>
-              <Text style={styles.plansTitle}>Shared plans coming next</Text>
+              <Text style={styles.plansTitle}>Shared Plans</Text>
               <Text style={styles.plansBody}>
-                Your Circle is active. A two-person planning flow is the next bounded build step.
+                {plans.length
+                  ? `${plans.filter((plan) => plan.status !== 'completed').length} active · ${completedPlans.length} memories`
+                  : 'Keep an idea, schedule it together, and turn it into a shared memory.'}
               </Text>
             </View>
-          </View>
+            <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
+          </Pressable>
         )}
 
         <Pressable
@@ -524,7 +613,7 @@ export function CircleProfileScreen({ route, navigation }) {
     );
   }
 
-  const gridData = activeTab === 'timeline' ? timeline : posts;
+  const gridData = activeTab === 'timeline' ? timelineItems : posts;
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
@@ -536,15 +625,27 @@ export function CircleProfileScreen({ route, navigation }) {
           ListHeaderComponent={header}
           renderItem={({ item, index }) => (
             activeTab === 'timeline' ? (
-              <TimelineTile
-                item={item}
-                size={tileSize}
-                onPress={() => navigation.navigate('CircleTimelineFeed', {
-                  conversationId,
-                  initialMediaId: item.id,
-                  circleName: conversation?.title || 'Circle',
-                })}
-              />
+              item.kind === 'plan_memory' ? (
+                <PlanMemoryTile
+                  item={item}
+                  size={tileSize}
+                  onPress={() => navigation.navigate('TwoPersonPlanDetail', {
+                    planId: item.planId,
+                    conversationId,
+                    circleName: conversation?.title || 'Our Circle',
+                  })}
+                />
+              ) : (
+                <TimelineTile
+                  item={item}
+                  size={tileSize}
+                  onPress={() => navigation.navigate('CircleTimelineFeed', {
+                    conversationId,
+                    initialMediaId: item.id,
+                    circleName: conversation?.title || 'Circle',
+                  })}
+                />
+              )
             ) : (
               <PostTile
                 post={item}
@@ -648,6 +749,42 @@ const styles = StyleSheet.create({
     color: COLORS.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,
+  },
+  planMemoryTile: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    backgroundColor: '#f5f3f8',
+  },
+  planMemoryIcon: {
+    width: 31,
+    height: 31,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e9e4ef',
+  },
+  planMemoryLabel: {
+    marginTop: 7,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 8.5,
+    letterSpacing: 0.6,
+  },
+  planMemoryTitle: {
+    flex: 1,
+    marginTop: 4,
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  planMemoryDate: {
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 9.5,
   },
   silentMessageCard: {
     width: '100%',
