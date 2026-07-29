@@ -50,6 +50,9 @@ import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScre
 import { RomanticSettingsScreen } from './src/screens/profile/RomanticSettingsScreen';
 import { BlockedAccountsScreen } from './src/screens/profile/BlockedAccountsScreen';
 import { ReportUserScreen } from './src/screens/profile/ReportUserScreen';
+import { MySafetyReportsScreen } from './src/screens/profile/MySafetyReportsScreen';
+import { ModerationQueueScreen } from './src/screens/profile/ModerationQueueScreen';
+import { ModerationReportDetailScreen } from './src/screens/profile/ModerationReportDetailScreen';
 import { InvitePeopleScreen } from './src/screens/profile/InvitePeopleScreen';
 import { InvitationLandingScreen } from './src/screens/invitations/InvitationLandingScreen';
 import { EventGuestInvitationScreen } from './src/screens/invitations/EventGuestInvitationScreen';
@@ -169,6 +172,9 @@ export default function App() {
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
           <RootStack.Screen name="BlockedAccounts" component={BlockedAccountsScreen} />
           <RootStack.Screen name="ReportUser" component={ReportUserScreen} />
+          <RootStack.Screen name="MySafetyReports" component={MySafetyReportsScreen} />
+          <RootStack.Screen name="ModerationQueue" component={ModerationQueueScreen} />
+          <RootStack.Screen name="ModerationReportDetail" component={ModerationReportDetailScreen} />
           <RootStack.Screen
             name="RomanticSettings"
             component={RomanticSettingsScreen}

@@ -14,6 +14,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS } from '../../theme/colors';
 import { IS_DEVELOPMENT } from '../../config/env';
 import { getAccountSession, signOut } from '../../services/profileService';
+import { getModerationAccess } from '../../services/safetyModerationService';
 
 function SettingRow({ icon, title, subtitle, onPress, destructive = false }) {
   const content = (
@@ -55,13 +56,19 @@ export function AccountSettingsScreen({ navigation }) {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
+  const [moderationAccess, setModerationAccess] = useState({ hasAccess: false, role: null });
 
   useEffect(() => {
     let mounted = true;
 
-    getAccountSession()
-      .then((result) => {
-        if (mounted) setSession(result);
+    Promise.all([
+      getAccountSession(),
+      getModerationAccess().catch(() => ({ hasAccess: false, role: null })),
+    ])
+      .then(([result, access]) => {
+        if (!mounted) return;
+        setSession(result);
+        setModerationAccess(access);
       })
       .catch((error) => {
         Alert.alert('Account unavailable', error?.message || 'Please sign in again.');
@@ -174,6 +181,28 @@ export function AccountSettingsScreen({ navigation }) {
               subtitle="Off by default. Manage reciprocal visibility with accepted connections."
               onPress={() => navigation.navigate('RomanticSettings')}
             />
+          </View>
+
+
+          <Text style={styles.sectionLabel}>SAFETY</Text>
+          <View style={styles.section}>
+            <SettingRow
+              icon="document-text-outline"
+              title="Reports you submitted"
+              subtitle="Private receipts and broad review outcomes"
+              onPress={() => navigation.navigate('MySafetyReports')}
+            />
+            {moderationAccess.hasAccess ? (
+              <>
+                <View style={styles.separator} />
+                <SettingRow
+                  icon="shield-half-outline"
+                  title="Moderation console"
+                  subtitle={`${moderationAccess.role || 'Reviewer'} access · Internal only`}
+                  onPress={() => navigation.navigate('ModerationQueue')}
+                />
+              </>
+            ) : null}
           </View>
 
           <Text style={styles.sectionLabel}>ACCOUNT</Text>
