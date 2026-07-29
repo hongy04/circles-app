@@ -20,6 +20,7 @@ import {
   getTwoPersonAlbum,
   updateTwoPersonAlbum,
 } from '../../services/twoPersonAlbumService';
+import { updateTwoPersonPlanMemoryAlbum } from '../../services/twoPersonPlanService';
 
 function normalizeDate(value) {
   const trimmed = String(value || '').trim();
@@ -35,13 +36,21 @@ function normalizeDate(value) {
 }
 
 export function TwoPersonAlbumEditorScreen({ route, navigation }) {
-  const { albumId, conversationId } = route.params || {};
+  const {
+    albumId,
+    conversationId,
+    memoryPlanId,
+    initialTitle = '',
+    initialOccurredOn = '',
+    initialNote = '',
+    circleName = 'Our Circle',
+  } = route.params || {};
   const editing = Boolean(albumId);
   const scrollRef = useRef(null);
   const fieldRefs = useRef({});
-  const [title, setTitle] = useState('');
-  const [occurredOn, setOccurredOn] = useState('');
-  const [note, setNote] = useState('');
+  const [title, setTitle] = useState(editing ? '' : initialTitle);
+  const [occurredOn, setOccurredOn] = useState(editing ? '' : initialOccurredOn);
+  const [note, setNote] = useState(editing ? '' : initialNote);
   const [loading, setLoading] = useState(editing);
   const [saving, setSaving] = useState(false);
 
@@ -94,15 +103,25 @@ export function TwoPersonAlbumEditorScreen({ route, navigation }) {
           note,
           occurredOn: dateValue,
         });
+        navigation.goBack();
       } else {
-        await createTwoPersonAlbum({
+        const createdAlbumId = await createTwoPersonAlbum({
           conversationId,
           title: cleanTitle,
           note,
           occurredOn: dateValue,
         });
+        if (memoryPlanId) {
+          await updateTwoPersonPlanMemoryAlbum(memoryPlanId, createdAlbumId);
+          navigation.replace('TwoPersonAlbumDetail', {
+            albumId: createdAlbumId,
+            conversationId,
+            circleName,
+          });
+        } else {
+          navigation.goBack();
+        }
       }
-      navigation.goBack();
     } catch (error) {
       Alert.alert('Could not save album', error?.message || 'Please try again.');
     } finally {
@@ -132,9 +151,13 @@ export function TwoPersonAlbumEditorScreen({ route, navigation }) {
           keyboardDismissMode="interactive"
           contentContainerStyle={styles.content}
         >
-          <Text style={styles.heading}>{editing ? 'Edit Album' : 'New Shared Album'}</Text>
+          <Text style={styles.heading}>
+            {editing ? 'Edit Album' : memoryPlanId ? 'Album for This Memory' : 'New Shared Album'}
+          </Text>
           <Text style={styles.helper}>
-            Create a deliberate place for photos from one trip, date, celebration, or meaningful stretch of time.
+            {memoryPlanId
+              ? 'This new album will be deliberately linked to the completed plan memory after you create it.'
+              : 'Create a deliberate place for photos from one trip, date, celebration, or meaningful stretch of time.'}
           </Text>
 
           <Text style={styles.label}>Title</Text>

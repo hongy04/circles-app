@@ -80,6 +80,7 @@ import { AvailabilityPollDetailScreen } from './src/screens/conversations/Availa
 import { TwoPersonPlansScreen } from './src/screens/conversations/TwoPersonPlansScreen';
 import { TwoPersonPlanEditorScreen } from './src/screens/conversations/TwoPersonPlanEditorScreen';
 import { TwoPersonPlanDetailScreen } from './src/screens/conversations/TwoPersonPlanDetailScreen';
+import { TwoPersonPlanMemoryScreen } from './src/screens/conversations/TwoPersonPlanMemoryScreen';
 import { TwoPersonImportantDatesScreen } from './src/screens/conversations/TwoPersonImportantDatesScreen';
 import { TwoPersonImportantDateEditorScreen } from './src/screens/conversations/TwoPersonImportantDateEditorScreen';
 import { TwoPersonThoughtsScreen } from './src/screens/conversations/TwoPersonThoughtsScreen';
@@ -442,6 +443,11 @@ function CirclesStack() {
         name="TwoPersonPlanDetail"
         component={TwoPersonPlanDetailScreen}
         options={{ title: 'Plan' }}
+      />
+      <CirclesStackNav.Screen
+        name="TwoPersonPlanMemory"
+        component={TwoPersonPlanMemoryScreen}
+        options={{ title: 'Build Memory' }}
       />
       <CirclesStackNav.Screen
         name="TwoPersonImportantDates"

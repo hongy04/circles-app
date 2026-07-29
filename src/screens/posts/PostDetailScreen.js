@@ -406,34 +406,39 @@ export function PostDetailScreen({ route, navigation }) {
         ) : null}
       </View>
 
-      <View style={styles.actions}>
+      <View style={styles.engagementRow}>
         <Pressable
           onPress={onToggleLike}
           disabled={liking}
           hitSlop={10}
-          style={styles.actionButton}
+          style={({ pressed }) => [
+            styles.engagementButton,
+            (pressed || liking) && styles.pressed,
+          ]}
         >
           <Ionicons
             name={liked ? 'heart' : 'heart-outline'}
-            size={28}
-            color={liked ? '#e11d48' : COLORS.text}
+            size={23}
+            color={liked ? '#ff3b30' : COLORS.text}
           />
+          <Text style={styles.engagementText}>
+            {likes} {likes === 1 ? 'like' : 'likes'}
+          </Text>
         </Pressable>
 
         <Pressable
           onPress={focusCommentComposer}
           hitSlop={10}
-          style={styles.actionButton}
+          style={styles.engagementButton}
         >
-          <Ionicons name="chatbubble-outline" size={26} color={COLORS.text} />
+          <Ionicons name="chatbubble-outline" size={22} color={COLORS.text} />
+          <Text style={styles.engagementText}>
+            {commentCount} {commentCount === 1 ? 'comment' : 'comments'}
+          </Text>
         </Pressable>
       </View>
 
       <View style={styles.details}>
-        <Text style={styles.likes}>
-          {likes} {likes === 1 ? 'like' : 'likes'}
-        </Text>
-
         {post.caption ? (
           <Text style={styles.caption}>
             <Text style={styles.captionName}>
@@ -442,10 +447,6 @@ export function PostDetailScreen({ route, navigation }) {
             <Text style={styles.captionBody}>{post.caption}</Text>
           </Text>
         ) : null}
-
-        <Text style={styles.commentCount}>
-          {commentCount} {commentCount === 1 ? 'comment' : 'comments'}
-        </Text>
       </View>
 
       <View style={styles.commentsDivider} />
@@ -683,23 +684,28 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
   },
-  actions: {
+  engagementRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 10,
+    gap: 18,
+    paddingHorizontal: 13,
+    paddingTop: 12,
   },
-  actionButton: {
-    marginRight: 17,
+  engagementButton: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  engagementText: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
   },
   details: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 13,
     paddingTop: 8,
     paddingBottom: 13,
-  },
-  likes: {
-    fontFamily: 'Manrope_700Bold',
-    color: COLORS.text,
   },
   caption: {
     marginTop: 6,
@@ -711,11 +717,8 @@ const styles = StyleSheet.create({
   captionBody: {
     fontFamily: 'Manrope_400Regular',
   },
-  commentCount: {
-    marginTop: 8,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 12,
+  pressed: {
+    opacity: 0.7,
   },
   commentsDivider: {
     height: StyleSheet.hairlineWidth,

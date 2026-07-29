@@ -25,6 +25,8 @@ function mapPlan(row = {}) {
     completedByName: row.completed_by_name || null,
     completedAt: row.completed_at || null,
     memoryNote: row.memory_note || '',
+    memoryAlbumId: row.memory_album_id || null,
+    memoryPostId: row.memory_post_id || null,
     createdBy: row.created_by || null,
     createdByName: row.created_by_name || null,
     createdAt: row.created_at || null,
@@ -41,6 +43,14 @@ async function requirePlansFeature() {
   await requireFeature(
     FEATURE_FLAGS.TWO_PERSON_CIRCLE_PLANS,
     'Shared plans are temporarily unavailable.'
+  );
+}
+
+async function requireMemoryLinksFeature() {
+  await requirePlansFeature();
+  await requireFeature(
+    FEATURE_FLAGS.TWO_PERSON_PLAN_MEMORY_LINKS,
+    'Memory links are temporarily unavailable.'
   );
 }
 
@@ -148,6 +158,37 @@ export async function completeTwoPersonPlan(planId, memoryNote = '') {
     p_plan_id: planId,
     p_memory_note: String(memoryNote || '').trim(),
   });
+  if (error) throw error;
+  return mapPlan(data);
+}
+
+
+export async function updateTwoPersonPlanMemoryAlbum(planId, albumId = null) {
+  await requireMemoryLinksFeature();
+  if (!planId) throw new Error('Memory is missing.');
+
+  const { data, error } = await supabase.rpc(
+    'update_two_person_plan_memory_album',
+    {
+      p_plan_id: planId,
+      p_album_id: albumId || null,
+    }
+  );
+  if (error) throw error;
+  return mapPlan(data);
+}
+
+export async function updateTwoPersonPlanMemoryPost(planId, postId = null) {
+  await requireMemoryLinksFeature();
+  if (!planId) throw new Error('Memory is missing.');
+
+  const { data, error } = await supabase.rpc(
+    'update_two_person_plan_memory_post',
+    {
+      p_plan_id: planId,
+      p_post_id: postId || null,
+    }
+  );
   if (error) throw error;
   return mapPlan(data);
 }

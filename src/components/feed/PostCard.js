@@ -12,10 +12,6 @@ import { PostMediaCarousel } from './PostMediaCarousel';
 
 const COLLAPSED_CAPTION_LENGTH = 120;
 
-function likeLabel(count) {
-  return `${count} ${count === 1 ? 'like' : 'likes'}`;
-}
-
 function commentsLabel(count) {
   if (!count) return 'Add a comment';
   return `View all ${count} ${count === 1 ? 'comment' : 'comments'}`;
@@ -94,7 +90,7 @@ export function PostCard({
         onDoubleLike={onDoubleLike}
       />
 
-      <View style={styles.actions}>
+      <View style={styles.actionRow}>
         <Pressable
           onPress={onToggleLike}
           hitSlop={10}
@@ -102,27 +98,35 @@ export function PostCard({
         >
           <Ionicons
             name={post.liked ? 'heart' : 'heart-outline'}
-            size={27}
-            color={post.liked ? '#e11d48' : COLORS.text}
+            size={26}
+            color={post.liked ? '#ff3b30' : COLORS.text}
           />
         </Pressable>
+        <Text style={styles.engagementCount}>
+          {post.likes} {post.likes === 1 ? 'like' : 'likes'}
+        </Text>
 
         <Pressable
           onPress={onOpenComments}
           hitSlop={10}
-          style={styles.actionButton}
+          style={styles.commentActionButton}
         >
           <Ionicons
             name="chatbubble-outline"
-            size={25}
+            size={24}
             color={COLORS.text}
           />
         </Pressable>
+        <Text style={styles.engagementCount}>
+          {post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}
+        </Text>
+
+        {post.media.length > 1 ? (
+          <Text style={styles.mediaCount}>{post.media.length} items</Text>
+        ) : null}
       </View>
 
       <View style={styles.details}>
-        <Text style={styles.likes}>{likeLabel(post.likes)}</Text>
-
         {post.caption ? (
           <Text style={styles.caption}>
             <Text
@@ -195,26 +199,35 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 12,
   },
-  actions: {
+  actionRow: {
+    height: 46,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingTop: 9,
-    paddingBottom: 7,
   },
   actionButton: {
-    marginRight: 17,
+    marginRight: 6,
+  },
+  commentActionButton: {
+    marginLeft: 15,
+    marginRight: 6,
+  },
+  engagementCount: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+  },
+  mediaCount: {
+    marginLeft: 'auto',
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 11,
   },
   details: {
     paddingHorizontal: 12,
     paddingBottom: 13,
   },
-  likes: {
-    fontFamily: 'Manrope_700Bold',
-    color: COLORS.text,
-  },
   caption: {
-    marginTop: 5,
     color: COLORS.text,
   },
   captionName: {

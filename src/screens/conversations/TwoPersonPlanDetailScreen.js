@@ -413,6 +413,39 @@ export function TwoPersonPlanDetailScreen({ route, navigation }) {
             <Text style={styles.memoryBody}>
               This memory stays with the shared Circle and returns if the Circle is ever reopened after a locked period.
             </Text>
+            <View style={styles.memoryLinkSummary}>
+              <View style={styles.memoryLinkChip}>
+                <Ionicons
+                  name={plan.memoryAlbumId ? 'checkmark-circle' : 'images-outline'}
+                  size={14}
+                  color={COLORS.text}
+                />
+                <Text style={styles.memoryLinkChipText}>
+                  {plan.memoryAlbumId ? 'Album linked' : 'No album linked'}
+                </Text>
+              </View>
+              <View style={styles.memoryLinkChip}>
+                <Ionicons
+                  name={plan.memoryPostId ? 'checkmark-circle' : 'grid-outline'}
+                  size={14}
+                  color={COLORS.text}
+                />
+                <Text style={styles.memoryLinkChipText}>
+                  {plan.memoryPostId ? 'Post linked' : 'No post linked'}
+                </Text>
+              </View>
+            </View>
+            <Pressable
+              onPress={() => navigation.navigate('TwoPersonPlanMemory', {
+                planId,
+                conversationId,
+                circleName,
+              })}
+              style={({ pressed }) => [styles.buildMemoryButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="albums-outline" size={17} color="#fff" />
+              <Text style={styles.buildMemoryButtonText}>Build This Memory</Text>
+            </Pressable>
           </View>
         ) : null}
 
@@ -462,6 +495,11 @@ const styles = StyleSheet.create({
   memoryCard: { marginTop: 16, padding: 17, borderRadius: 16, backgroundColor: '#f5f3f8', alignItems: 'center' },
   memoryTitle: { marginTop: 8, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
   memoryBody: { marginTop: 5, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17, textAlign: 'center' },
+  memoryLinkSummary: { width: '100%', marginTop: 13, flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 7 },
+  memoryLinkChip: { minHeight: 29, paddingHorizontal: 9, borderRadius: 10, backgroundColor: '#ebe8ef', flexDirection: 'row', alignItems: 'center', gap: 5 },
+  memoryLinkChipText: { color: COLORS.text, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
+  buildMemoryButton: { width: '100%', minHeight: 44, marginTop: 13, borderRadius: 12, backgroundColor: COLORS.text, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  buildMemoryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
   removeButton: { minHeight: 42, marginTop: 20, alignItems: 'center', justifyContent: 'center' },
   removeButtonText: { color: '#b42318', fontFamily: 'Manrope_700Bold', fontSize: 12.5 },
   errorText: { marginTop: 13, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12, lineHeight: 17 },

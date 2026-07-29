@@ -21,6 +21,7 @@ import {
   uploadConversationAsset,
 } from '../../services/conversationMediaService';
 import { createCirclePost } from '../../services/circlePostService';
+import { updateTwoPersonPlanMemoryPost } from '../../services/twoPersonPlanService';
 
 const MAX_ATTACHMENTS = 10;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -65,10 +66,15 @@ function validateAssets(assets) {
 }
 
 export function CreateCirclePostScreen({ route, navigation }) {
-  const { conversationId, circleName = 'Circle' } = route.params || {};
+  const {
+    conversationId,
+    circleName = 'Circle',
+    memoryPlanId,
+    initialCaption = '',
+  } = route.params || {};
   const { width } = useWindowDimensions();
   const [assets, setAssets] = useState([]);
-  const [caption, setCaption] = useState('');
+  const [caption, setCaption] = useState(String(initialCaption || '').slice(0, MAX_CAPTION_LENGTH));
   const [posting, setPosting] = useState(false);
   const [stage, setStage] = useState('');
 
@@ -171,6 +177,17 @@ export function CreateCirclePostScreen({ route, navigation }) {
         mediaItems: uploaded,
       });
 
+      if (memoryPlanId) {
+        try {
+          await updateTwoPersonPlanMemoryPost(memoryPlanId, postId);
+        } catch (linkError) {
+          Alert.alert(
+            'Post published',
+            linkError?.message || 'The post was published, but Circles could not link it to the plan memory. You can link it manually from the memory screen.'
+          );
+        }
+      }
+
       navigation.replace('CirclePostDetail', {
         conversationId,
         postId,
@@ -200,7 +217,9 @@ export function CreateCirclePostScreen({ route, navigation }) {
           <View style={{ flex: 1 }}>
             <Text style={styles.heading}>Share with {circleName}</Text>
             <Text style={styles.subheading}>
-              This is an intentional private post—not an automatic Timeline item.
+              {memoryPlanId
+                ? 'This new post will be deliberately linked to the completed plan memory after publishing.'
+                : 'This is an intentional private post—not an automatic Timeline item.'}
             </Text>
           </View>
           <View style={styles.lockBadge}>

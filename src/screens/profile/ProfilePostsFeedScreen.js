@@ -126,22 +126,31 @@ function PersonalPostFeedCard({
         <Pressable onPress={onToggleLike} hitSlop={10} style={styles.actionButton}>
           <Ionicons
             name={post.liked ? 'heart' : 'heart-outline'}
-            size={27}
-            color={post.liked ? '#e11d48' : COLORS.text}
+            size={26}
+            color={post.liked ? '#ff3b30' : COLORS.text}
           />
         </Pressable>
-        <Pressable onPress={onOpenComments} hitSlop={10} style={styles.actionButton}>
-          <Ionicons name="chatbubble-outline" size={25} color={COLORS.text} />
+        <Text style={styles.engagementCount}>
+          {post.likes} {post.likes === 1 ? 'like' : 'likes'}
+        </Text>
+
+        <Pressable
+          onPress={onOpenComments}
+          hitSlop={10}
+          style={styles.commentActionButton}
+        >
+          <Ionicons name="chatbubble-outline" size={24} color={COLORS.text} />
         </Pressable>
+        <Text style={styles.engagementCount}>
+          {post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}
+        </Text>
+
         {post.media.length > 1 ? (
           <Text style={styles.mediaCount}>{post.media.length} items</Text>
         ) : null}
       </View>
 
       <View style={styles.details}>
-        <Text style={styles.likes}>
-          {post.likes} {post.likes === 1 ? 'like' : 'likes'}
-        </Text>
         {post.caption ? (
           <Text numberOfLines={2} style={styles.caption}>
             <Text style={styles.captionAuthor}>{post.authorName} </Text>
@@ -164,7 +173,7 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
   const { userId, profileName, initialPostId } = route.params || {};
   const { width } = useWindowDimensions();
   const stageWidth = Math.min(width, 720);
-  const cardHeight = stageWidth + 212;
+  const cardHeight = stageWidth + 210;
   const [posts, setPosts] = useState([]);
   const [resolvedName, setResolvedName] = useState(profileName || 'Posts');
   const [loading, setLoading] = useState(true);
@@ -415,11 +424,12 @@ const styles = StyleSheet.create({
   media: { width: '100%', height: '100%' },
   videoPage: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1c1c1e' },
   actionRow: { height: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
-  actionButton: { marginRight: 17 },
+  actionButton: { marginRight: 6 },
+  commentActionButton: { marginLeft: 15, marginRight: 6 },
+  engagementCount: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },
   mediaCount: { marginLeft: 'auto', color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
   details: { paddingHorizontal: 12, paddingBottom: 16 },
-  likes: { fontFamily: 'Manrope_700Bold', color: COLORS.text, fontSize: 13 },
-  caption: { marginTop: 5, color: COLORS.text, fontFamily: 'Manrope_400Regular', lineHeight: 19 },
+  caption: { color: COLORS.text, fontFamily: 'Manrope_400Regular', lineHeight: 19 },
   captionAuthor: { fontFamily: 'Manrope_700Bold' },
   commentsButton: { alignSelf: 'flex-start', paddingTop: 6, paddingBottom: 8, paddingRight: 18 },
   commentsLink: { color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13 },
