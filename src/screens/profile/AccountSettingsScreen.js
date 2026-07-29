@@ -176,6 +176,13 @@ export function AccountSettingsScreen({ navigation }) {
           <Text style={styles.sectionLabel}>RELATIONSHIPS</Text>
           <View style={styles.section}>
             <SettingRow
+              icon="calendar-outline"
+              title="Age eligibility"
+              subtitle="Private birth date used only for adult romantic access"
+              onPress={() => navigation.navigate('AgeEligibility')}
+            />
+            <View style={styles.separator} />
+            <SettingRow
               icon="heart-outline"
               title="Romantic connections"
               subtitle="Off by default. Manage reciprocal visibility with accepted connections."

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
@@ -75,7 +76,19 @@ function ConnectionVisibilityRow({ person, disabled, busy, onChange }) {
   );
 }
 
-export function RomanticSettingsScreen() {
+function formatEligibleDate(value) {
+  if (!value) return 'your 18th birthday';
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return 'your 18th birthday';
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
+export function RomanticSettingsScreen({ navigation }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -95,9 +108,11 @@ export function RomanticSettingsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const saveGlobal = async ({ enabled, audienceMode }) => {
     if (!settings || saving) return;
@@ -106,7 +121,6 @@ export function RomanticSettingsScreen() {
     try {
       const next = await saveMyRomanticSettings({
         enabled,
-        ageConfirmed: enabled ? true : settings.ageConfirmed,
         audienceMode: audienceMode || settings.audienceMode,
       });
       setSettings(next);
@@ -121,23 +135,36 @@ export function RomanticSettingsScreen() {
   };
 
   const enableRomance = () => {
-    const message =
-      'Romantic features are for adults 18 or older. Your choices remain private, and a romantic channel appears only when both accepted connections independently include each other.';
+    if (!settings?.dateOfBirthSet) {
+      const openAgeSettings = () => navigation.navigate('AgeEligibility');
+      const message =
+        'Save your private birth date before enabling adult romantic features. It is not shown on your profile or to other people.';
 
-    if (Platform.OS === 'web') {
-      if (globalThis.confirm?.(`${message}\n\nConfirm that you are 18 or older?`)) {
-        saveGlobal({ enabled: true });
+      if (Platform.OS === 'web') {
+        if (globalThis.confirm?.(`${message}
+
+Open age eligibility?`)) {
+          openAgeSettings();
+        }
+        return;
       }
+
+      Alert.alert('Add your birth date', message, [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Continue', onPress: openAgeSettings },
+      ]);
       return;
     }
 
-    Alert.alert('Confirm age eligibility', message, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'I am 18 or older',
-        onPress: () => saveGlobal({ enabled: true }),
-      },
-    ]);
+    if (!settings.ageEligible) {
+      Alert.alert(
+        'Romantic features unavailable',
+        `Adult romantic features remain unavailable until ${formatEligibleDate(settings.eligibleOn)}.`
+      );
+      return;
+    }
+
+    saveGlobal({ enabled: true });
   };
 
   const toggleEnabled = (nextEnabled) => {
@@ -282,6 +309,30 @@ export function RomanticSettingsScreen() {
                 </Text>
               </View>
             </View>
+
+            <Pressable
+              onPress={() => navigation.navigate('AgeEligibility')}
+              style={({ pressed }) => [styles.ageCard, pressed && styles.pressed]}
+            >
+              <View style={styles.ageIcon}>
+                <Ionicons
+                  name={settings.ageEligible ? 'shield-checkmark-outline' : 'calendar-outline'}
+                  size={21}
+                  color={COLORS.text}
+                />
+              </View>
+              <View style={styles.ageCopy}>
+                <Text style={styles.ageTitle}>Age eligibility</Text>
+                <Text style={styles.ageBody}>
+                  {!settings.dateOfBirthSet
+                    ? 'Birth date not set · required before adult romantic features can be enabled'
+                    : settings.ageEligible
+                      ? 'Adult eligibility confirmed privately'
+                      : `Available on ${formatEligibleDate(settings.eligibleOn)}`}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#999" />
+            </Pressable>
 
             <View style={styles.sectionCard}>
               <View style={styles.settingRow}>
@@ -510,6 +561,38 @@ const styles = StyleSheet.create({
     color: COLORS.bg,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
+  },
+  ageCard: {
+    minHeight: 72,
+    marginBottom: 12,
+    borderRadius: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+  },
+  ageIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#efefef',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ageCopy: { flex: 1, marginHorizontal: 12 },
+  ageTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+  },
+  ageBody: {
+    marginTop: 3,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11.5,
+    lineHeight: 17,
   },
   sectionLabel: {
     color: COLORS.subtext,

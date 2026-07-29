@@ -48,6 +48,7 @@ import { GuestClaimProfileSetupScreen } from './src/screens/profile/GuestClaimPr
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
 import { RomanticSettingsScreen } from './src/screens/profile/RomanticSettingsScreen';
+import { AgeEligibilityScreen } from './src/screens/profile/AgeEligibilityScreen';
 import { BlockedAccountsScreen } from './src/screens/profile/BlockedAccountsScreen';
 import { ReportUserScreen } from './src/screens/profile/ReportUserScreen';
 import { MySafetyReportsScreen } from './src/screens/profile/MySafetyReportsScreen';
@@ -175,6 +176,18 @@ export default function App() {
           <RootStack.Screen name="MySafetyReports" component={MySafetyReportsScreen} />
           <RootStack.Screen name="ModerationQueue" component={ModerationQueueScreen} />
           <RootStack.Screen name="ModerationReportDetail" component={ModerationReportDetailScreen} />
+          <RootStack.Screen
+            name="AgeEligibility"
+            component={AgeEligibilityScreen}
+            options={{
+              headerShown: true,
+              title: 'Age Eligibility',
+              headerShadowVisible: false,
+              headerBackTitleVisible: false,
+              headerTintColor: COLORS.text,
+              headerTitleStyle: { fontFamily: 'Manrope_700Bold' },
+            }}
+          />
           <RootStack.Screen
             name="RomanticSettings"
             component={RomanticSettingsScreen}

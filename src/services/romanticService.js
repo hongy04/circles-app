@@ -16,6 +16,9 @@ function normalizeSettings(data = {}) {
   return {
     enabled: Boolean(data.enabled),
     ageConfirmed: Boolean(data.age_confirmed),
+    dateOfBirthSet: Boolean(data.date_of_birth_set),
+    ageEligible: Boolean(data.eligible_for_romance),
+    eligibleOn: data.eligible_on || null,
     audienceMode:
       data.audience_mode === 'selected_connections'
         ? 'selected_connections'
@@ -77,7 +80,6 @@ export async function fetchMyRomanticSettings() {
 
 export async function saveMyRomanticSettings({
   enabled,
-  ageConfirmed,
   audienceMode,
 }) {
   await ensureAuthed();
@@ -88,7 +90,9 @@ export async function saveMyRomanticSettings({
 
   const { data, error } = await supabase.rpc('update_my_romantic_settings', {
     p_enabled: Boolean(enabled),
-    p_age_confirmed: Boolean(ageConfirmed),
+    // Kept for RPC signature compatibility. The database now derives age
+    // eligibility from the account owner's private saved birth date.
+    p_age_confirmed: false,
     p_audience_mode:
       audienceMode === 'selected_connections'
         ? 'selected_connections'
