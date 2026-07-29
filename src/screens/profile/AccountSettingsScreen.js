@@ -157,6 +157,13 @@ export function AccountSettingsScreen({ navigation }) {
               subtitle="Share a private invitation or text someone from your contacts"
               onPress={() => navigation.navigate('InvitePeople')}
             />
+            <View style={styles.separator} />
+            <SettingRow
+              icon="ban-outline"
+              title="Blocked accounts"
+              subtitle="Review accounts you blocked and unblock them without restoring a connection"
+              onPress={() => navigation.navigate('BlockedAccounts')}
+            />
           </View>
 
           <Text style={styles.sectionLabel}>RELATIONSHIPS</Text>

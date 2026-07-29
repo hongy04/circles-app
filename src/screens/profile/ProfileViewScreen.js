@@ -19,6 +19,7 @@ import { PreConnectionProfileShell } from '../../components/profile/PreConnectio
 import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import { deleteOwnPost } from '../../services/postService';
+import { blockUser } from '../../services/safetyService';
 import {
   fetchRomanticInterestStatus,
   fetchTwoPersonCircleProposalStatus,
@@ -36,7 +37,7 @@ import {
   sendProfileConnectionRequest,
 } from '../../services/profileService';
 
-function TopBar({ isSelf, profile, navigation, onManageConnection }) {
+function TopBar({ isSelf, profile, navigation, onManageProfile }) {
   const title = isSelf
     ? profile?.username
       ? `@${profile.username}`
@@ -72,9 +73,9 @@ function TopBar({ isSelf, profile, navigation, onManageConnection }) {
           >
             <Ionicons name="settings-outline" size={22} color={COLORS.text} />
           </Pressable>
-        ) : profile?.relationship_status === 'connected' ? (
+        ) : profile?.id ? (
           <Pressable
-            onPress={onManageConnection}
+            onPress={onManageProfile}
             hitSlop={10}
             style={styles.iconButton}
           >
@@ -790,6 +791,83 @@ export function ProfileViewScreen({
     );
   };
 
+  const handleBlockAccount = () => {
+    if (!profile?.id || actionBusy) return;
+
+    const firstName = (profile.display_name || 'this account')
+      .trim()
+      .split(/\s+/)[0];
+    const sharedCircleCopy = circleProposalStatus.existingCircle
+      ? ' Any Our Circle will be locked and preserved.'
+      : '';
+
+    Alert.alert(
+      `Block ${firstName}?`,
+      `They will not be notified. Direct profile, connection, messaging, and romantic access will end.${sharedCircleCopy} Shared group Circles and factual event history are not erased.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            setActionBusy(true);
+            try {
+              await blockUser(profile.id, 'profile');
+              navigation.goBack();
+            } catch (blockError) {
+              Alert.alert(
+                'Account not blocked',
+                blockError?.message || 'Please try again.'
+              );
+            } finally {
+              setActionBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openReportAccount = () => {
+    if (!profile?.id) return;
+    navigation.navigate('ReportUser', {
+      userId: profile.id,
+      displayName: profile.display_name || 'This account',
+      sourceContext: 'profile',
+    });
+  };
+
+  const handleManageProfile = () => {
+    if (!profile?.id || resolvedIsSelf) return;
+
+    const connected = profile.relationship_status === 'connected';
+    const title = profile.display_name || 'Manage account';
+
+    if (connected) {
+      Alert.alert(title, 'Choose an account or relationship action.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Report account', onPress: openReportAccount },
+        {
+          text: 'Connection options',
+          onPress: () => {
+            Alert.alert(title, 'Removing and blocking are different actions.', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Remove connection', onPress: handleRemoveConnection },
+              { text: 'Block account', style: 'destructive', onPress: handleBlockAccount },
+            ]);
+          },
+        },
+      ]);
+      return;
+    }
+
+    Alert.alert(title, 'Choose a safety action.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Report account', onPress: openReportAccount },
+      { text: 'Block account', style: 'destructive', onPress: handleBlockAccount },
+    ]);
+  };
+
   const openTwoPersonCircle = () => {
     if (!circleProposalStatus.conversationId) return;
 
@@ -839,7 +917,7 @@ export function ProfileViewScreen({
         isSelf={resolvedIsSelf}
         profile={profile}
         navigation={navigation}
-        onManageConnection={handleRemoveConnection}
+        onManageProfile={handleManageProfile}
       />
 
       <ProfileHeader

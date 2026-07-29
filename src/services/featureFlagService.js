@@ -25,6 +25,7 @@ export const FEATURE_FLAGS = Object.freeze({
   TWO_PERSON_CIRCLE_THOUGHTS: 'two_person_circle_thoughts',
   TWO_PERSON_CIRCLE_ALBUMS: 'two_person_circle_albums',
   TWO_PERSON_PLAN_MEMORY_LINKS: 'two_person_plan_memory_links',
+  SAFETY_BLOCKING_REPORTING: 'safety_blocking_reporting',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -52,6 +53,7 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.TWO_PERSON_CIRCLE_THOUGHTS]: true,
   [FEATURE_FLAGS.TWO_PERSON_CIRCLE_ALBUMS]: true,
   [FEATURE_FLAGS.TWO_PERSON_PLAN_MEMORY_LINKS]: true,
+  [FEATURE_FLAGS.SAFETY_BLOCKING_REPORTING]: true,
 });
 
 const CACHE_TTL_MS = 60_000;

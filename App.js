@@ -48,6 +48,8 @@ import { GuestClaimProfileSetupScreen } from './src/screens/profile/GuestClaimPr
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
 import { RomanticSettingsScreen } from './src/screens/profile/RomanticSettingsScreen';
+import { BlockedAccountsScreen } from './src/screens/profile/BlockedAccountsScreen';
+import { ReportUserScreen } from './src/screens/profile/ReportUserScreen';
 import { InvitePeopleScreen } from './src/screens/profile/InvitePeopleScreen';
 import { InvitationLandingScreen } from './src/screens/invitations/InvitationLandingScreen';
 import { EventGuestInvitationScreen } from './src/screens/invitations/EventGuestInvitationScreen';
@@ -165,6 +167,8 @@ export default function App() {
           />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
+          <RootStack.Screen name="BlockedAccounts" component={BlockedAccountsScreen} />
+          <RootStack.Screen name="ReportUser" component={ReportUserScreen} />
           <RootStack.Screen
             name="RomanticSettings"
             component={RomanticSettingsScreen}
