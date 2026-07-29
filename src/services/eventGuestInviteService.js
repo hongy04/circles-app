@@ -8,7 +8,6 @@ import {
 import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
 import { FEATURE_FLAGS, requireFeature } from './featureFlagService';
-import { publicEventPhotoUrl } from './eventPhotoService';
 
 function cleanBaseUrl(value = '') {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -100,10 +99,10 @@ function mapPhotoGallery(data) {
     valid: Boolean(data?.valid),
     reason: data?.reason || null,
     photoCount: Number(data?.photo_count || 0),
+    expiresIn: Number(data?.expires_in || 0) || null,
     photos: (data?.photos || []).map((photo, index) => ({
-      id: photo.storage_path || `event-photo-${index}`,
-      storagePath: photo.storage_path || '',
-      url: publicEventPhotoUrl(photo.storage_path),
+      id: photo.id || `event-photo-${index}`,
+      url: photo.signed_url || photo.signedUrl || photo.url || null,
       width: Number(photo.width || 0) || null,
       height: Number(photo.height || 0) || null,
       createdAt: photo.created_at || null,
@@ -299,11 +298,15 @@ export async function shareEventGuestInvite({ guestId, guestName, eventTitle }) 
 }
 
 export async function getEventGuestPhotoGallery(token) {
-  const { data, error } = await supabase.rpc('list_event_guest_photos', {
-    p_token: String(token || '').trim(),
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) return mapPhotoGallery({ valid: false, reason: 'not_found' });
+
+  const { data, error } = await supabase.functions.invoke('event-photo-access', {
+    body: { token: cleanToken },
   });
 
   if (error) throw error;
+  if (data?.error) throw new Error(data.error);
   return mapPhotoGallery(data);
 }
 

@@ -9,21 +9,43 @@ import { compressIfImage } from './uploadService';
 export const EVENT_PHOTO_BUCKET = 'event-media';
 export const EVENT_PHOTO_SELECTION_LIMIT = 10;
 export const EVENT_PHOTO_SOURCE_LIMIT_BYTES = 48 * 1024 * 1024;
+export const EVENT_PHOTO_SIGNED_URL_TTL_SECONDS = 10 * 60;
 
-export function publicEventPhotoUrl(storagePath) {
-  if (!storagePath) return null;
-  const { data } = supabase.storage
-    .from(EVENT_PHOTO_BUCKET)
-    .getPublicUrl(storagePath);
-  return data?.publicUrl || null;
+function signedUrlFromRow(row = {}) {
+  return row.signedUrl || row.signedURL || null;
 }
 
-function mapPhoto(photo = {}) {
+async function createSignedUrlMap(storagePaths = []) {
+  const uniquePaths = [...new Set(
+    storagePaths
+      .map((path) => String(path || '').trim())
+      .filter(Boolean)
+  )];
+
+  if (uniquePaths.length === 0) return new Map();
+
+  const { data, error } = await supabase.storage
+    .from(EVENT_PHOTO_BUCKET)
+    .createSignedUrls(uniquePaths, EVENT_PHOTO_SIGNED_URL_TTL_SECONDS);
+
+  if (error) throw error;
+
+  const signedByPath = new Map();
+  for (const row of data || []) {
+    const path = String(row?.path || '').trim();
+    const signedUrl = signedUrlFromRow(row);
+    if (path && signedUrl) signedByPath.set(path, signedUrl);
+  }
+
+  return signedByPath;
+}
+
+function mapPhoto(photo = {}, signedByPath = new Map()) {
   const storagePath = photo.storage_path || '';
   return {
     id: photo.photo_id || storagePath,
     storagePath,
-    url: publicEventPhotoUrl(storagePath),
+    url: signedByPath.get(storagePath) || photo.signed_url || null,
     width: Number(photo.width || 0) || null,
     height: Number(photo.height || 0) || null,
     createdAt: photo.created_at || null,
@@ -48,10 +70,17 @@ export async function listEventPhotos(eventId) {
 
   if (error) throw error;
 
+  const rawPhotos = Array.isArray(data?.photos) ? data.photos : [];
+  const signedByPath = await createSignedUrlMap(
+    rawPhotos.map((photo) => photo?.storage_path)
+  );
+
   return {
     canUpload: Boolean(data?.can_upload),
     photoCount: Number(data?.photo_count || 0),
-    photos: (data?.photos || []).map(mapPhoto),
+    photos: rawPhotos
+      .map((photo) => mapPhoto(photo, signedByPath))
+      .filter((photo) => Boolean(photo.url)),
   };
 }
 
@@ -92,6 +121,7 @@ async function uploadOneEventPhoto({ eventId, asset }) {
 
   const slot = await prepareUpload(eventId);
   let objectUploaded = false;
+  let uploadFinalized = false;
 
   try {
     const prepared = await compressIfImage(
@@ -123,6 +153,15 @@ async function uploadOneEventPhoto({ eventId, asset }) {
     );
 
     if (finalizeError) throw finalizeError;
+    uploadFinalized = true;
+
+    let signedByPath = new Map();
+    try {
+      signedByPath = await createSignedUrlMap([slot.storagePath]);
+    } catch {
+      // The upload is already safely finalized. A gallery refresh can mint a
+      // fresh signed URL if this one short-lived signing request fails.
+    }
 
     return mapPhoto({
       photo_id: data?.photo_id || slot.photoId,
@@ -132,9 +171,9 @@ async function uploadOneEventPhoto({ eventId, asset }) {
       uploader_name: 'You',
       can_delete: true,
       created_at: new Date().toISOString(),
-    });
+    }, signedByPath);
   } catch (error) {
-    if (objectUploaded) {
+    if (!uploadFinalized && objectUploaded) {
       try {
         await supabase.storage
           .from(EVENT_PHOTO_BUCKET)
@@ -145,10 +184,12 @@ async function uploadOneEventPhoto({ eventId, asset }) {
       }
     }
 
-    try {
-      await cancelUpload(slot.photoId);
-    } catch {
-      // Preserve the original upload error.
+    if (!uploadFinalized) {
+      try {
+        await cancelUpload(slot.photoId);
+      } catch {
+        // Preserve the original upload error.
+      }
     }
 
     throw error;
