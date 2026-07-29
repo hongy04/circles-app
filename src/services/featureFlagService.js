@@ -27,6 +27,7 @@ export const FEATURE_FLAGS = Object.freeze({
   TWO_PERSON_PLAN_MEMORY_LINKS: 'two_person_plan_memory_links',
   SAFETY_BLOCKING_REPORTING: 'safety_blocking_reporting',
   SAFETY_MODERATION_CONSOLE: 'safety_moderation_console',
+  SAFETY_ACCOUNT_ENFORCEMENT: 'safety_account_enforcement',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -56,6 +57,7 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.TWO_PERSON_PLAN_MEMORY_LINKS]: true,
   [FEATURE_FLAGS.SAFETY_BLOCKING_REPORTING]: true,
   [FEATURE_FLAGS.SAFETY_MODERATION_CONSOLE]: true,
+  [FEATURE_FLAGS.SAFETY_ACCOUNT_ENFORCEMENT]: true,
 });
 
 const CACHE_TTL_MS = 60_000;

@@ -15,6 +15,7 @@ import { COLORS } from '../../theme/colors';
 import { IS_DEVELOPMENT } from '../../config/env';
 import { getAccountSession, signOut } from '../../services/profileService';
 import { getModerationAccess } from '../../services/safetyModerationService';
+import { getMyAccountEnforcementState } from '../../services/accountEnforcementService';
 
 function SettingRow({ icon, title, subtitle, onPress, destructive = false }) {
   const content = (
@@ -57,6 +58,7 @@ export function AccountSettingsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
   const [moderationAccess, setModerationAccess] = useState({ hasAccess: false, role: null });
+  const [enforcement, setEnforcement] = useState({ active: false, state: 'active' });
 
   useEffect(() => {
     let mounted = true;
@@ -64,11 +66,13 @@ export function AccountSettingsScreen({ navigation }) {
     Promise.all([
       getAccountSession(),
       getModerationAccess().catch(() => ({ hasAccess: false, role: null })),
+      getMyAccountEnforcementState().catch(() => ({ active: false, state: 'active' })),
     ])
-      .then(([result, access]) => {
+      .then(([result, access, enforcementState]) => {
         if (!mounted) return;
         setSession(result);
         setModerationAccess(access);
+        setEnforcement(enforcementState);
       })
       .catch((error) => {
         Alert.alert('Account unavailable', error?.message || 'Please sign in again.');
@@ -198,6 +202,15 @@ export function AccountSettingsScreen({ navigation }) {
               title="Reports you submitted"
               subtitle="Private receipts and broad review outcomes"
               onPress={() => navigation.navigate('MySafetyReports')}
+            />
+            <View style={styles.separator} />
+            <SettingRow
+              icon={enforcement.active ? 'alert-circle-outline' : 'shield-checkmark-outline'}
+              title="Account status"
+              subtitle={enforcement.active
+                ? `${enforcement.state === 'suspended' ? 'Suspended' : 'Restricted'} · View details`
+                : 'No active account restrictions'}
+              onPress={() => navigation.navigate('AccountStatus')}
             />
             {moderationAccess.hasAccess ? (
               <>

@@ -13,6 +13,10 @@ export function replaceWithMainTabs(navigation) {
   replaceRootRoute(navigation, 'MainTabs');
 }
 
+export function replaceWithAccountStatus(navigation) {
+  replaceRootRoute(navigation, 'AccountStatus', { gate: true });
+}
+
 export function replaceWithGuestClaimProfileSetup(navigation, eventGuestToken) {
   replaceRootRoute(navigation, 'GuestClaimProfileSetup', {
     eventGuestToken,

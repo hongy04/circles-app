@@ -18,9 +18,12 @@ import {
   isProfileIdentityComplete,
 } from '../../services/profileService';
 import {
+  replaceWithAccountStatus,
   replaceWithClaimedEvent,
   replaceWithGuestClaimProfileSetup,
+  replaceWithMainTabs,
 } from '../../navigation/navigationActions';
+import { getMyAccountEnforcementState } from '../../services/accountEnforcementService';
 import { authStyles } from './authStyles';
 
 export function AuthOtpScreen({ route, navigation }) {
@@ -31,6 +34,16 @@ export function AuthOtpScreen({ route, navigation }) {
 
 
   const finishAfterAuthentication = async () => {
+    const enforcement = await getMyAccountEnforcementState();
+    if (enforcement.active && enforcement.state === 'suspended') {
+      replaceWithAccountStatus(navigation);
+      return;
+    }
+    if (enforcement.active && enforcement.state === 'restricted') {
+      replaceWithMainTabs(navigation);
+      return;
+    }
+
     let inviteResult = null;
     let inviteError = '';
 

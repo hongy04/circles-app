@@ -54,6 +54,7 @@ import { ReportUserScreen } from './src/screens/profile/ReportUserScreen';
 import { MySafetyReportsScreen } from './src/screens/profile/MySafetyReportsScreen';
 import { ModerationQueueScreen } from './src/screens/profile/ModerationQueueScreen';
 import { ModerationReportDetailScreen } from './src/screens/profile/ModerationReportDetailScreen';
+import { AccountEnforcementScreen } from './src/screens/profile/AccountEnforcementScreen';
 import { InvitePeopleScreen } from './src/screens/profile/InvitePeopleScreen';
 import { InvitationLandingScreen } from './src/screens/invitations/InvitationLandingScreen';
 import { EventGuestInvitationScreen } from './src/screens/invitations/EventGuestInvitationScreen';
@@ -98,6 +99,10 @@ import { TwoPersonAlbumDetailScreen } from './src/screens/conversations/TwoPerso
 import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
 import { getInviteLinkingPrefixes } from './src/services/inviteService';
 import { timeAgo } from './src/utils/timeAgo';
+import {
+  getMyAccountEnforcementState,
+  subscribeToMyAccountEnforcement,
+} from './src/services/accountEnforcementService';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W, height: H } = Dimensions.get('window');
@@ -176,6 +181,7 @@ export default function App() {
           <RootStack.Screen name="MySafetyReports" component={MySafetyReportsScreen} />
           <RootStack.Screen name="ModerationQueue" component={ModerationQueueScreen} />
           <RootStack.Screen name="ModerationReportDetail" component={ModerationReportDetailScreen} />
+          <RootStack.Screen name="AccountStatus" component={AccountEnforcementScreen} />
           <RootStack.Screen
             name="AgeEligibility"
             component={AgeEligibilityScreen}
@@ -258,11 +264,42 @@ function nextRelationshipTabBadgeChannelName() {
   return `relationship_tab_badges_${Date.now()}_${relationshipTabBadgeChannelCounter}`;
 }
 
-function AppTabs() {
+function AppTabs({ navigation }) {
   const insets = useSafeAreaInsets();
   const [reqCount, setReqCount] = useState(0);
   const [circleBadgeCount, setCircleBadgeCount] = useState(0);
   const [authed, setAuthed] = useState(false);
+  const [enforcement, setEnforcement] = useState(null);
+  const [enforcementLoading, setEnforcementLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    let unsubscribe = () => {};
+
+    const loadEnforcement = async () => {
+      try {
+        const next = await getMyAccountEnforcementState();
+        if (mounted) setEnforcement(next);
+      } catch {
+        if (mounted) setEnforcement({ active: false, state: 'active' });
+      } finally {
+        if (mounted) setEnforcementLoading(false);
+      }
+    };
+
+    loadEnforcement();
+    subscribeToMyAccountEnforcement(loadEnforcement)
+      .then((cleanup) => {
+        if (!mounted) cleanup?.();
+        else unsubscribe = cleanup || (() => {});
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -309,9 +346,39 @@ function AppTabs() {
     };
   }, []);
 
+  if (enforcementLoading) {
+    return (
+      <SafeAreaView style={styles.enforcementLoading} edges={['top']}>
+        <ActivityIndicator />
+      </SafeAreaView>
+    );
+  }
+
+  if (enforcement?.active && enforcement.state === 'suspended') {
+    return (
+      <AccountEnforcementScreen
+        navigation={navigation}
+        gate
+        initialEnforcement={enforcement}
+      />
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
       {IS_DEVELOPMENT && !authed ? <DevBanner /> : null}
+      {enforcement?.active && enforcement.state === 'restricted' ? (
+        <Pressable
+          onPress={() => navigation.navigate('AccountStatus')}
+          style={styles.enforcementBanner}
+        >
+          <Ionicons name="hand-left-outline" size={17} color="#7a4308" />
+          <Text style={styles.enforcementBannerText} numberOfLines={1}>
+            Account restricted · View status
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color="#7a4308" />
+        </Pressable>
+      ) : null}
       <Tabs.Navigator
         screenOptions={({ route }) => ({
           headerShown: false,
@@ -788,6 +855,8 @@ function MutualsScreen({ navigation, route }) {
     route?.params?.initialTab === 'requests' ? 'requests' : 'mutuals'
   );
   const [authed, setAuthed] = useState(false);
+  const [enforcement, setEnforcement] = useState(null);
+  const [enforcementLoading, setEnforcementLoading] = useState(true);
   const [trustedRankingActive, setTrustedRankingActive] = useState(true);
   const hasTrackedOpen = useRef(false);
 
@@ -1122,5 +1191,28 @@ const styles = StyleSheet.create({
   tabBadgeText: { color: '#fff', fontSize: 10, fontFamily: 'Manrope_700Bold' },
 
 
+
+  enforcementLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.bg,
+  },
+  enforcementBanner: {
+    minHeight: 42,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff3dd',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e7c68f',
+  },
+  enforcementBannerText: {
+    flex: 1,
+    color: '#7a4308',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+  },
 
 });

@@ -24,8 +24,26 @@ import {
   REPORT_STATUS_LABELS,
   updateModerationReport,
 } from '../../services/safetyModerationService';
+import {
+  applyModerationAccountEnforcement,
+  formatEnforcementEnd,
+  getModerationAccountEnforcement,
+} from '../../services/accountEnforcementService';
 
 const STATUSES = ['submitted', 'reviewing', 'resolved', 'dismissed'];
+
+const ENFORCEMENT_ACTIONS = [
+  { value: 'restrict', label: 'Restrict' },
+  { value: 'suspend', label: 'Suspend' },
+  { value: 'lift', label: 'Lift action' },
+];
+
+const ENFORCEMENT_DURATIONS = [
+  { value: '24', label: '24 hours' },
+  { value: '168', label: '7 days' },
+  { value: '720', label: '30 days' },
+  { value: 'permanent', label: 'Until lifted' },
+];
 
 function formatDate(value) {
   const date = new Date(value);
@@ -73,6 +91,12 @@ export function ModerationReportDetailScreen({ navigation, route }) {
   const [internalNote, setInternalNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [enforcement, setEnforcement] = useState({ active: false, state: 'active' });
+  const [enforcementAction, setEnforcementAction] = useState('restrict');
+  const [enforcementDuration, setEnforcementDuration] = useState('168');
+  const [enforcementPublicMessage, setEnforcementPublicMessage] = useState('');
+  const [enforcementNote, setEnforcementNote] = useState('');
+  const [applyingEnforcement, setApplyingEnforcement] = useState(false);
 
   const reasonLabel = useMemo(
     () => REPORT_REASONS.find((item) => item.value === report?.reason)?.label || report?.reason,
@@ -86,8 +110,13 @@ export function ModerationReportDetailScreen({ navigation, route }) {
         fetchModerationReport(reportId),
         getModerationAccess(),
       ]);
+      let enforcementState = { active: false, state: 'active' };
+      if (access.role === 'senior' || access.role === 'admin') {
+        enforcementState = await getModerationAccountEnforcement(reportId);
+      }
       setReport(detail);
       setRole(access.role);
+      setEnforcement(enforcementState);
       setStatus(detail.status || 'submitted');
       setSeverity(detail.severity || null);
       setResolutionCode(detail.resolutionCode || null);
@@ -139,6 +168,44 @@ export function ModerationReportDetailScreen({ navigation, route }) {
       Alert.alert('Review not saved', error?.message || 'Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const canEnforce = role === 'senior' || role === 'admin';
+
+  const applyEnforcement = async () => {
+    if (!canEnforce || applyingEnforcement) return;
+
+    if (enforcementAction === 'lift' && !enforcement.active) {
+      Alert.alert('No active account action', 'There is no restriction or suspension to lift.');
+      return;
+    }
+
+    setApplyingEnforcement(true);
+    try {
+      const durationHours = enforcementAction === 'lift' || enforcementDuration === 'permanent'
+        ? null
+        : Number(enforcementDuration);
+      await applyModerationAccountEnforcement({
+        reportId,
+        action: enforcementAction,
+        durationHours,
+        publicMessage: enforcementPublicMessage,
+        internalNote: enforcementNote,
+      });
+      setEnforcementPublicMessage('');
+      setEnforcementNote('');
+      await load();
+      Alert.alert(
+        enforcementAction === 'lift' ? 'Account action lifted' : 'Account action applied',
+        enforcementAction === 'lift'
+          ? 'The previous relationship or romantic state was not restored.'
+          : 'The account status and moderation audit trail were updated.'
+      );
+    } catch (error) {
+      Alert.alert('Account action failed', error?.message || 'Please try again.');
+    } finally {
+      setApplyingEnforcement(false);
     }
   };
 
@@ -209,6 +276,96 @@ export function ModerationReportDetailScreen({ navigation, route }) {
               </Text>
             </View>
           </View>
+
+          {canEnforce ? (
+            <View style={styles.enforcementCard}>
+              <View style={styles.enforcementHeader}>
+                <View>
+                  <Text style={styles.cardLabel}>ACCOUNT ENFORCEMENT</Text>
+                  <Text style={styles.enforcementState}>
+                    {enforcement.active
+                      ? enforcement.state === 'suspended' ? 'Suspended' : 'Restricted'
+                      : 'No active action'}
+                  </Text>
+                </View>
+                {enforcement.active ? (
+                  <Text style={styles.enforcementEnd}>{formatEnforcementEnd(enforcement.endsAt)}</Text>
+                ) : null}
+              </View>
+
+              {enforcement.active && enforcement.publicMessage ? (
+                <Text style={styles.enforcementMessage}>{enforcement.publicMessage}</Text>
+              ) : null}
+
+              <Text style={styles.sectionTitle}>Account action</Text>
+              <ChoiceRow
+                options={ENFORCEMENT_ACTIONS}
+                value={enforcementAction}
+                onChange={setEnforcementAction}
+              />
+
+              {enforcementAction !== 'lift' ? (
+                <>
+                  <Text style={styles.sectionTitle}>Duration</Text>
+                  <ChoiceRow
+                    options={ENFORCEMENT_DURATIONS}
+                    value={enforcementDuration}
+                    onChange={setEnforcementDuration}
+                  />
+
+                  <Text style={styles.sectionTitle}>Message visible to account owner</Text>
+                  <TextInput
+                    value={enforcementPublicMessage}
+                    onChangeText={setEnforcementPublicMessage}
+                    multiline
+                    maxLength={500}
+                    placeholder="Optional. A neutral explanation of the account action…"
+                    placeholderTextColor="#999"
+                    textAlignVertical="top"
+                    style={styles.publicInput}
+                  />
+                  <Text style={styles.characterCount}>{enforcementPublicMessage.length}/500</Text>
+                </>
+              ) : null}
+
+              <Text style={styles.sectionTitle}>Private enforcement note</Text>
+              <TextInput
+                value={enforcementNote}
+                onChangeText={setEnforcementNote}
+                multiline
+                maxLength={2000}
+                placeholder="Rationale, reviewed evidence, or lifting context…"
+                placeholderTextColor="#999"
+                textAlignVertical="top"
+                style={styles.enforcementNoteInput}
+              />
+              <Text style={styles.characterCount}>{enforcementNote.length}/2000</Text>
+
+              <Pressable
+                onPress={applyEnforcement}
+                disabled={applyingEnforcement}
+                style={({ pressed }) => [
+                  styles.enforcementButton,
+                  enforcementAction === 'suspend' && styles.suspendButton,
+                  enforcementAction === 'lift' && styles.liftButton,
+                  applyingEnforcement && styles.disabled,
+                  pressed && styles.pressed,
+                ]}
+              >
+                {applyingEnforcement ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.enforcementButtonText}>
+                    {enforcementAction === 'restrict'
+                      ? 'Apply Restriction'
+                      : enforcementAction === 'suspend'
+                        ? 'Suspend Account'
+                        : 'Lift Account Action'}
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          ) : null}
 
           <Text style={styles.sectionTitle}>Status</Text>
           <ChoiceRow options={STATUSES} value={status} onChange={setStatus} />
@@ -308,6 +465,16 @@ const styles = StyleSheet.create({
   characterCount: { marginTop: 5, textAlign: 'right', fontFamily: 'Manrope_500Medium', fontSize: 10, color: COLORS.subtext },
   saveButton: { marginTop: 24, minHeight: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 25, backgroundColor: COLORS.text },
   saveText: { fontFamily: 'Manrope_700Bold', fontSize: 15, color: '#fff' },
+  enforcementCard: { marginTop: 12, padding: 15, borderRadius: 16, backgroundColor: '#fffaf0', borderWidth: 1, borderColor: '#ecd3a4' },
+  enforcementHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  enforcementState: { marginTop: 4, fontFamily: 'Manrope_700Bold', fontSize: 17, color: COLORS.text },
+  enforcementEnd: { maxWidth: 150, textAlign: 'right', fontFamily: 'Manrope_600SemiBold', fontSize: 10, color: '#8a4b08' },
+  enforcementMessage: { marginTop: 10, fontFamily: 'Manrope_500Medium', fontSize: 12, lineHeight: 18, color: COLORS.subtext },
+  enforcementNoteInput: { minHeight: 96, padding: 13, borderRadius: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.border, fontFamily: 'Manrope_500Medium', fontSize: 13, lineHeight: 19, color: COLORS.text },
+  enforcementButton: { marginTop: 18, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: '#9a5b08' },
+  suspendButton: { backgroundColor: '#b42318' },
+  liftButton: { backgroundColor: '#3f4b5b' },
+  enforcementButtonText: { fontFamily: 'Manrope_700Bold', fontSize: 14, color: '#fff' },
   disabled: { opacity: 0.5 },
   pressed: { opacity: 0.67 },
 });
