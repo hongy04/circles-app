@@ -54,6 +54,21 @@ function notificationCopy(notification) {
         icon: 'person-add-outline',
         text: `${notification.actorName} invited you to ${notification.conversationTitle || 'a private Circle'}.`,
       };
+    case 'safety_report_resolved':
+      return {
+        icon: 'shield-checkmark-outline',
+        text: 'Circles completed an update on a safety report you submitted.',
+      };
+    case 'safety_appeal_resolved':
+      return {
+        icon: 'document-text-outline',
+        text: 'Circles completed the review of your account-action appeal.',
+      };
+    case 'safety_age_correction_resolved':
+      return {
+        icon: 'calendar-outline',
+        text: 'Circles completed the review of your birth-date correction request.',
+      };
     default:
       return {
         icon: 'notifications-outline',
@@ -62,8 +77,15 @@ function notificationCopy(notification) {
   }
 }
 
+function isSafetyNotification(type) {
+  return type === 'safety_report_resolved'
+    || type === 'safety_appeal_resolved'
+    || type === 'safety_age_correction_resolved';
+}
+
 function NotificationRow({ notification, onOpen }) {
   const copy = notificationCopy(notification);
+  const isSafety = isSafetyNotification(notification.type);
 
   return (
     <Pressable
@@ -75,12 +97,18 @@ function NotificationRow({ notification, onOpen }) {
       ]}
     >
       <View style={styles.avatarWrap}>
-        <Avatar
-          size={48}
-          name={notification.actorName}
-          uri={notification.actorAvatar}
-        />
-        <View style={styles.typeBadge}>
+        {isSafety ? (
+          <View style={styles.systemAvatar}>
+            <Ionicons name="shield-checkmark" size={23} color={COLORS.text} />
+          </View>
+        ) : (
+          <Avatar
+            size={48}
+            name={notification.actorName}
+            uri={notification.actorAvatar}
+          />
+        )}
+        <View style={[styles.typeBadge, isSafety && styles.safetyTypeBadge]}>
           <Ionicons name={copy.icon} size={13} color="#fff" />
         </View>
       </View>
@@ -169,6 +197,18 @@ export function NotificationsScreen({ navigation }) {
   const openNotification = (notification) => {
     markReadLocally(notification);
 
+    if (isSafetyNotification(notification.type)) {
+      const rootNavigation = navigation.getParent()?.getParent() || navigation;
+      if (notification.type === 'safety_report_resolved') {
+        rootNavigation.navigate('MySafetyReports');
+      } else if (notification.type === 'safety_appeal_resolved') {
+        rootNavigation.navigate('AccountAppeal');
+      } else {
+        rootNavigation.navigate('AgeCorrectionRequest');
+      }
+      return;
+    }
+
     if (notification.type === 'conversation_invitation') {
       navigation.navigate('Inbox');
       return;
@@ -246,8 +286,8 @@ export function NotificationsScreen({ navigation }) {
             />
             <Text style={styles.emptyTitle}>No notifications yet</Text>
             <Text style={styles.emptyBody}>
-              Likes and comments on personal posts, private Circle activity,
-              and Circle invitations will all appear here.
+              Likes, comments, private Circle activity, invitations, and private
+              safety outcomes will all appear here.
             </Text>
           </View>
         )}
@@ -273,6 +313,16 @@ const styles = StyleSheet.create({
   },
   unreadRow: { backgroundColor: '#f7f7f7' },
   avatarWrap: { width: 54, height: 54, justifyContent: 'center' },
+  systemAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0f0f0',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+  },
   typeBadge: {
     position: 'absolute',
     right: 0,
@@ -286,6 +336,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.bg,
   },
+  safetyTypeBadge: { backgroundColor: '#303030' },
   rowBody: { flex: 1, marginHorizontal: 11 },
   message: {
     color: COLORS.text,

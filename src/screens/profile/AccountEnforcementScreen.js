@@ -18,6 +18,10 @@ import {
   getMyAccountEnforcementState,
 } from '../../services/accountEnforcementService';
 import { signOut } from '../../services/profileService';
+import {
+  APPEAL_RESOLUTION_LABELS,
+  getMyAccountEnforcementAppeal,
+} from '../../services/accountAppealService';
 
 function StatusCard({ enforcement }) {
   const suspended = enforcement?.state === 'suspended';
@@ -57,24 +61,35 @@ export function AccountEnforcementScreen({
 }) {
   const isGate = gate || Boolean(route?.params?.gate);
   const [enforcement, setEnforcement] = useState(initialEnforcement);
+  const [appeal, setAppeal] = useState(null);
   const [loading, setLoading] = useState(!initialEnforcement);
   const [signingOut, setSigningOut] = useState(false);
+
+  const loadAppeal = useCallback(async () => {
+    try {
+      setAppeal(await getMyAccountEnforcementAppeal());
+    } catch {
+      setAppeal(null);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const next = await getMyAccountEnforcementState();
       setEnforcement(next);
+      await loadAppeal();
     } catch (error) {
       Alert.alert('Account status unavailable', error?.message || 'Please try again.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadAppeal]);
 
   useEffect(() => {
     if (!initialEnforcement) load();
-  }, [initialEnforcement, load]);
+    else loadAppeal();
+  }, [initialEnforcement, load, loadAppeal]);
 
   const performSignOut = async () => {
     setSigningOut(true);
@@ -130,6 +145,24 @@ export function AccountEnforcementScreen({
           </Pressable>
         ) : null}
 
+        {appeal?.status === 'resolved' ? (
+          <Pressable
+            onPress={() => navigation.navigate('AccountAppeal')}
+            style={({ pressed }) => [styles.outcomeCard, pressed && styles.pressed]}
+          >
+            <View style={styles.outcomeIcon}>
+              <Ionicons name="document-text-outline" size={20} color="#2855a6" />
+            </View>
+            <View style={styles.outcomeCopy}>
+              <Text style={styles.outcomeTitle}>Appeal review completed</Text>
+              <Text style={styles.outcomeText}>
+                {APPEAL_RESOLUTION_LABELS[appeal.resolutionCode] || 'Open your appeal to review the outcome.'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={17} color="#6d7890" />
+          </Pressable>
+        ) : null}
+
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>What remains available</Text>
           <Text style={styles.infoText}>
@@ -137,13 +170,19 @@ export function AccountEnforcementScreen({
           </Text>
         </View>
 
-        {enforcement?.active ? (
+        {enforcement?.active || appeal?.hasAppeal ? (
           <Pressable
             onPress={() => navigation.navigate('AccountAppeal')}
             style={({ pressed }) => [styles.appealButton, pressed && styles.pressed]}
           >
             <Ionicons name="chatbox-ellipses-outline" size={19} color="#fff" />
-            <Text style={styles.appealButtonText}>Appeal Account Action</Text>
+            <Text style={styles.appealButtonText}>
+              {appeal?.status === 'resolved'
+                ? 'Review Appeal Outcome'
+                : appeal?.hasAppeal
+                  ? 'View Account Appeal'
+                  : 'Appeal Account Action'}
+            </Text>
           </Pressable>
         ) : null}
 
@@ -284,6 +323,29 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   returnText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
+  outcomeCard: {
+    minHeight: 74,
+    marginTop: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#c9d7f5',
+    backgroundColor: '#eef3ff',
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  outcomeIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dce7ff',
+  },
+  outcomeCopy: { flex: 1 },
+  outcomeTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+  outcomeText: { marginTop: 3, color: '#4e5f83', fontFamily: 'Manrope_600SemiBold', fontSize: 11.5, lineHeight: 17 },
   infoCard: {
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,

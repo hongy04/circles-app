@@ -30,6 +30,7 @@ export const FEATURE_FLAGS = Object.freeze({
   SAFETY_ACCOUNT_ENFORCEMENT: 'safety_account_enforcement',
   SAFETY_ACCOUNT_APPEALS: 'safety_account_appeals',
   SAFETY_AGE_CORRECTIONS: 'safety_age_correction_requests',
+  SAFETY_OUTCOME_NOTIFICATIONS: 'safety_outcome_notifications',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -62,6 +63,7 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.SAFETY_ACCOUNT_ENFORCEMENT]: true,
   [FEATURE_FLAGS.SAFETY_ACCOUNT_APPEALS]: true,
   [FEATURE_FLAGS.SAFETY_AGE_CORRECTIONS]: true,
+  [FEATURE_FLAGS.SAFETY_OUTCOME_NOTIFICATIONS]: true,
 });
 
 const CACHE_TTL_MS = 60_000;
