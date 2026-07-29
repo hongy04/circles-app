@@ -49,6 +49,9 @@ import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
 import { RomanticSettingsScreen } from './src/screens/profile/RomanticSettingsScreen';
 import { AgeEligibilityScreen } from './src/screens/profile/AgeEligibilityScreen';
+import { AgeCorrectionRequestScreen } from './src/screens/profile/AgeCorrectionRequestScreen';
+import { ModerationAgeCorrectionsQueueScreen } from './src/screens/profile/ModerationAgeCorrectionsQueueScreen';
+import { ModerationAgeCorrectionDetailScreen } from './src/screens/profile/ModerationAgeCorrectionDetailScreen';
 import { BlockedAccountsScreen } from './src/screens/profile/BlockedAccountsScreen';
 import { ReportUserScreen } from './src/screens/profile/ReportUserScreen';
 import { MySafetyReportsScreen } from './src/screens/profile/MySafetyReportsScreen';
@@ -188,6 +191,20 @@ export default function App() {
           <RootStack.Screen name="AccountAppeal" component={AccountAppealScreen} />
           <RootStack.Screen name="ModerationAppealsQueue" component={ModerationAppealsQueueScreen} />
           <RootStack.Screen name="ModerationAppealDetail" component={ModerationAppealDetailScreen} />
+          <RootStack.Screen name="ModerationAgeCorrectionsQueue" component={ModerationAgeCorrectionsQueueScreen} />
+          <RootStack.Screen name="ModerationAgeCorrectionDetail" component={ModerationAgeCorrectionDetailScreen} />
+          <RootStack.Screen
+            name="AgeCorrectionRequest"
+            component={AgeCorrectionRequestScreen}
+            options={{
+              headerShown: true,
+              title: 'Birth Date Correction',
+              headerShadowVisible: false,
+              headerBackTitleVisible: false,
+              headerTintColor: COLORS.text,
+              headerTitleStyle: { fontFamily: 'Manrope_700Bold' },
+            }}
+          />
           <RootStack.Screen
             name="AgeEligibility"
             component={AgeEligibilityScreen}

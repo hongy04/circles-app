@@ -232,6 +232,17 @@ export function AccountSettingsScreen({ navigation }) {
                     />
                   </>
                 ) : null}
+                {moderationAccess.role === 'admin' ? (
+                  <>
+                    <View style={styles.separator} />
+                    <SettingRow
+                      icon="calendar-number-outline"
+                      title="Age correction requests"
+                      subtitle="Admin-only review of private birth-date corrections"
+                      onPress={() => navigation.navigate('ModerationAgeCorrectionsQueue')}
+                    />
+                  </>
+                ) : null}
               </>
             ) : null}
           </View>

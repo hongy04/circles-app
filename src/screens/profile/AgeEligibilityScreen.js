@@ -198,9 +198,17 @@ export function AgeEligibilityScreen({ navigation }) {
               <View style={styles.lockedNote}>
                 <Ionicons name="information-circle-outline" size={18} color={COLORS.subtext} />
                 <Text style={styles.lockedNoteText}>
-                  Birth dates cannot be edited in the app after confirmation. This prevents repeatedly changing age eligibility.
+                  Birth dates cannot be edited directly after confirmation. A private correction request is available for mistakes.
                 </Text>
               </View>
+
+              <Pressable
+                onPress={() => navigation.navigate('AgeCorrectionRequest')}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+              >
+                <Ionicons name="create-outline" size={18} color={COLORS.text} />
+                <Text style={styles.secondaryButtonText}>Request a correction</Text>
+              </Pressable>
 
               {eligibility.eligibleForRomance ? (
                 <Pressable
@@ -395,6 +403,20 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     lineHeight: 17,
   },
+  secondaryButton: {
+    minHeight: 46,
+    marginTop: 14,
+    borderRadius: 13,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    backgroundColor: '#f7f7f7',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+  },
+  secondaryButtonText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12.5 },
   primaryButton: {
     minHeight: 48,
     marginTop: 18,
