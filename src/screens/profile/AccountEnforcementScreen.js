@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { IS_DEVELOPMENT } from '../../config/env';
 import { COLORS } from '../../theme/colors';
 import {
   formatEnforcementEnd,
@@ -136,6 +137,16 @@ export function AccountEnforcementScreen({
           </Text>
         </View>
 
+        {enforcement?.active ? (
+          <Pressable
+            onPress={() => navigation.navigate('AccountAppeal')}
+            style={({ pressed }) => [styles.appealButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="chatbox-ellipses-outline" size={19} color="#fff" />
+            <Text style={styles.appealButtonText}>Appeal Account Action</Text>
+          </Pressable>
+        ) : null}
+
         <Pressable
           onPress={() => navigation.navigate('MySafetyReports')}
           style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
@@ -151,6 +162,16 @@ export function AccountEnforcementScreen({
           <Ionicons name="refresh-outline" size={19} color={COLORS.text} />
           <Text style={styles.secondaryText}>Refresh status</Text>
         </Pressable>
+
+        {IS_DEVELOPMENT ? (
+          <Pressable
+            onPress={() => navigation.navigate('DevAccounts')}
+            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="flask-outline" size={19} color={COLORS.text} />
+            <Text style={styles.secondaryText}>Switch test account</Text>
+          </Pressable>
+        ) : null}
 
         <Pressable
           disabled={signingOut}
@@ -279,6 +300,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
+  appealButton: { minHeight: 50, marginTop: 2, borderRadius: 14, backgroundColor: COLORS.text, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  appealButtonText: { fontFamily: 'Manrope_700Bold', fontSize: 13, color: '#fff' },
   secondaryButton: {
     minHeight: 52,
     borderRadius: 14,

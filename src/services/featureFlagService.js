@@ -28,6 +28,7 @@ export const FEATURE_FLAGS = Object.freeze({
   SAFETY_BLOCKING_REPORTING: 'safety_blocking_reporting',
   SAFETY_MODERATION_CONSOLE: 'safety_moderation_console',
   SAFETY_ACCOUNT_ENFORCEMENT: 'safety_account_enforcement',
+  SAFETY_ACCOUNT_APPEALS: 'safety_account_appeals',
 });
 
 const DEFAULT_FLAGS = Object.freeze({
@@ -58,6 +59,7 @@ const DEFAULT_FLAGS = Object.freeze({
   [FEATURE_FLAGS.SAFETY_BLOCKING_REPORTING]: true,
   [FEATURE_FLAGS.SAFETY_MODERATION_CONSOLE]: true,
   [FEATURE_FLAGS.SAFETY_ACCOUNT_ENFORCEMENT]: true,
+  [FEATURE_FLAGS.SAFETY_ACCOUNT_APPEALS]: true,
 });
 
 const CACHE_TTL_MS = 60_000;

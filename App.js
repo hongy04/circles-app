@@ -55,6 +55,9 @@ import { MySafetyReportsScreen } from './src/screens/profile/MySafetyReportsScre
 import { ModerationQueueScreen } from './src/screens/profile/ModerationQueueScreen';
 import { ModerationReportDetailScreen } from './src/screens/profile/ModerationReportDetailScreen';
 import { AccountEnforcementScreen } from './src/screens/profile/AccountEnforcementScreen';
+import { AccountAppealScreen } from './src/screens/profile/AccountAppealScreen';
+import { ModerationAppealsQueueScreen } from './src/screens/profile/ModerationAppealsQueueScreen';
+import { ModerationAppealDetailScreen } from './src/screens/profile/ModerationAppealDetailScreen';
 import { InvitePeopleScreen } from './src/screens/profile/InvitePeopleScreen';
 import { InvitationLandingScreen } from './src/screens/invitations/InvitationLandingScreen';
 import { EventGuestInvitationScreen } from './src/screens/invitations/EventGuestInvitationScreen';
@@ -182,6 +185,9 @@ export default function App() {
           <RootStack.Screen name="ModerationQueue" component={ModerationQueueScreen} />
           <RootStack.Screen name="ModerationReportDetail" component={ModerationReportDetailScreen} />
           <RootStack.Screen name="AccountStatus" component={AccountEnforcementScreen} />
+          <RootStack.Screen name="AccountAppeal" component={AccountAppealScreen} />
+          <RootStack.Screen name="ModerationAppealsQueue" component={ModerationAppealsQueueScreen} />
+          <RootStack.Screen name="ModerationAppealDetail" component={ModerationAppealDetailScreen} />
           <RootStack.Screen
             name="AgeEligibility"
             component={AgeEligibilityScreen}

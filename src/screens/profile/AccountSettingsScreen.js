@@ -221,6 +221,17 @@ export function AccountSettingsScreen({ navigation }) {
                   subtitle={`${moderationAccess.role || 'Reviewer'} access · Internal only`}
                   onPress={() => navigation.navigate('ModerationQueue')}
                 />
+                {(moderationAccess.role === 'senior' || moderationAccess.role === 'admin') ? (
+                  <>
+                    <View style={styles.separator} />
+                    <SettingRow
+                      icon="git-compare-outline"
+                      title="Enforcement appeals"
+                      subtitle="Review private appeals of active account actions"
+                      onPress={() => navigation.navigate('ModerationAppealsQueue')}
+                    />
+                  </>
+                ) : null}
               </>
             ) : null}
           </View>

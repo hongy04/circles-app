@@ -27,6 +27,27 @@ export async function getCurrentDevSession() {
   return session;
 }
 
+
+async function getCurrentAccountEnforcement() {
+  const { data, error } = await supabase.rpc('get_my_account_enforcement_state');
+
+  if (error) {
+    // Keep development switching compatible before enforcement migrations exist.
+    if (
+      error.code === 'PGRST202'
+      || /get_my_account_enforcement_state|account_enforcements/i.test(error.message || '')
+    ) {
+      return { active: false, state: 'active' };
+    }
+    throw error;
+  }
+
+  return {
+    active: Boolean(data?.active),
+    state: data?.active ? data?.state || 'restricted' : 'active',
+  };
+}
+
 async function signInConfiguredAccount(account) {
   const {
     data: { session },
@@ -87,10 +108,18 @@ export async function switchDevAccount(account) {
 
   try {
     const session = await signInConfiguredAccount(account);
+    const enforcement = await getCurrentAccountEnforcement();
+
+    // Restricted and suspended accounts must still be switchable for testing,
+    // but their enforcement boundary intentionally blocks setup mutations.
+    if (enforcement.active) {
+      return { session, network: [], enforcement };
+    }
+
     await ensureCurrentDevProfile(account.displayName);
     const network = await prepareDevTestNetwork();
 
-    return { session, network };
+    return { session, network, enforcement };
   } catch (error) {
     // Avoid leaving the tester unexpectedly signed out when the target account
     // has a typo or has not yet been created in Supabase Authentication.

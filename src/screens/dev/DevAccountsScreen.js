@@ -95,11 +95,19 @@ export function DevAccountsScreen({ navigation }) {
 
     setSwitchingEmail(normalizedEmail);
     try {
-      await switchDevAccount(account);
+      const result = await switchDevAccount(account);
       setCurrentEmail(normalizedEmail);
+
+      const suspended = result?.enforcement?.active
+        && result.enforcement.state === 'suspended';
+
       navigation.reset({
         index: 0,
-        routes: [{ name: 'MainTabs' }],
+        routes: [
+          suspended
+            ? { name: 'AccountStatus', params: { gate: true } }
+            : { name: 'MainTabs' },
+        ],
       });
     } catch (error) {
       Alert.alert(
