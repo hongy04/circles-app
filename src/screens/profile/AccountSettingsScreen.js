@@ -260,6 +260,14 @@ export function AccountSettingsScreen({ navigation }) {
               title="Private by design"
               subtitle="Profiles and posts remain private until a connection is accepted."
             />
+            <View style={styles.separator} />
+            <SettingRow
+              icon="trash-outline"
+              title="Delete account"
+              subtitle="Permanently remove your login, profile, private data, and personal uploads"
+              destructive
+              onPress={() => navigation.navigate('DeleteAccount')}
+            />
           </View>
 
           <Text style={styles.sectionLabel}>APP</Text>

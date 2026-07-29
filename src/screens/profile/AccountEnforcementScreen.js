@@ -213,6 +213,14 @@ export function AccountEnforcementScreen({
         ) : null}
 
         <Pressable
+          onPress={() => navigation.navigate('DeleteAccount')}
+          style={({ pressed }) => [styles.deleteAccountButton, pressed && styles.pressed]}
+        >
+          <Ionicons name="trash-outline" size={19} color="#b42318" />
+          <Text style={styles.deleteAccountText}>Delete account</Text>
+        </Pressable>
+
+        <Pressable
           disabled={signingOut}
           onPress={performSignOut}
           style={({ pressed }) => [styles.signOutButton, pressed && styles.pressed]}
@@ -390,5 +398,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   signOutText: { color: '#b42318', fontFamily: 'Manrope_700Bold' },
+  deleteAccountButton: {
+    minHeight: 50,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#f0aaa5',
+    backgroundColor: '#fff3f2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  deleteAccountText: { color: '#b42318', fontFamily: 'Manrope_700Bold' },
   pressed: { opacity: 0.72 },
 });

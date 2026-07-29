@@ -47,6 +47,7 @@ import { ProfileConnectionsScreen } from './src/screens/profile/ProfileConnectio
 import { GuestClaimProfileSetupScreen } from './src/screens/profile/GuestClaimProfileSetupScreen';
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
+import { DeleteAccountScreen } from './src/screens/profile/DeleteAccountScreen';
 import { RomanticSettingsScreen } from './src/screens/profile/RomanticSettingsScreen';
 import { AgeEligibilityScreen } from './src/screens/profile/AgeEligibilityScreen';
 import { AgeCorrectionRequestScreen } from './src/screens/profile/AgeCorrectionRequestScreen';
@@ -182,6 +183,7 @@ export default function App() {
           />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
+          <RootStack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
           <RootStack.Screen name="BlockedAccounts" component={BlockedAccountsScreen} />
           <RootStack.Screen name="ReportUser" component={ReportUserScreen} />
           <RootStack.Screen name="MySafetyReports" component={MySafetyReportsScreen} />
