@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
@@ -239,23 +238,11 @@ function EventAttendanceReviewContent({ route, navigation }) {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <LinearGradient
-          colors={theme.circle.headerGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.heroCard}
-        >
-          <View style={styles.heroIcon}>
-            <Ionicons name="checkmark-done-outline" size={27} color={theme.colors.text} />
-          </View>
-          <Text style={styles.heroTitle}>{review?.event?.title || 'Event'}</Text>
-          <Text style={styles.heroDate}>
+        <View style={styles.reviewContext}>
+          <Text style={styles.eventName}>{review?.event?.title || 'Event'}</Text>
+          <Text style={styles.eventDate}>
             {formatEventDate(review?.event?.startsAt, review?.event?.endsAt)}
           </Text>
-          <Text style={styles.heroBody}>
-            Going responses are selected by default until you save. Adjust the list to reflect who actually made it.
-          </Text>
-
           <View style={styles.summaryRow}>
             <View>
               <Text style={styles.summaryValue}>{attendedCount}</Text>
@@ -267,7 +254,6 @@ function EventAttendanceReviewContent({ route, navigation }) {
               <Text style={styles.summaryLabel}>Invited people</Text>
             </View>
           </View>
-
           <View style={styles.quickActions}>
             <Pressable onPress={selectAll} style={styles.quickButton}>
               <Text style={styles.quickButtonText}>Select all</Text>
@@ -276,7 +262,7 @@ function EventAttendanceReviewContent({ route, navigation }) {
               <Text style={styles.quickButtonText}>Clear</Text>
             </Pressable>
           </View>
-        </LinearGradient>
+        </View>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Circle members</Text>
@@ -387,40 +373,9 @@ function createStyles(theme) {
     backgroundColor: theme.welcome.brandInk,
   },
   retryText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 12 },
-  heroCard: {
-    padding: 20,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
-  },
-  heroIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.circle.accentSoft,
-  },
-  heroTitle: {
-    marginTop: 14,
-    color: theme.colors.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 22,
-  },
-  heroDate: {
-    marginTop: 5,
-    color: theme.colors.text,
-    fontFamily: 'Manrope_600SemiBold',
-    fontSize: 12,
-  },
-  heroBody: {
-    marginTop: 9,
-    color: theme.colors.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 13,
-    lineHeight: 19,
-  },
+  reviewContext: { paddingHorizontal: 2, paddingTop: 4, paddingBottom: 4 },
+  eventName: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 18 },
+  eventDate: { marginTop: 3, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12 },
   summaryRow: {
     marginTop: 18,
     paddingTop: 16,

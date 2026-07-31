@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -8,13 +8,15 @@ import {
   View,
 } from 'react-native';
 import { Avatar } from '../Avatar';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 
 export function InstagramCommentRow({
   comment,
   onOpenProfile,
   onLongPress,
 }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const metadata = [
     comment.timeLabel,
     comment.edited ? 'Edited' : null,
@@ -45,18 +47,13 @@ export function InstagramCommentRow({
 
       <View style={styles.commentContent}>
         <Text style={styles.commentText}>
-          <Text
-            onPress={onOpenProfile}
-            style={styles.commentName}
-          >
+          <Text onPress={onOpenProfile} style={styles.commentName}>
             {comment.name || 'Someone'}{' '}
           </Text>
           {comment.body}
         </Text>
 
-        {metadata ? (
-          <Text style={styles.commentMeta}>{metadata}</Text>
-        ) : null}
+        {metadata ? <Text style={styles.commentMeta}>{metadata}</Text> : null}
       </View>
     </Pressable>
   );
@@ -66,8 +63,13 @@ export function InstagramCommentsEmpty({
   title = 'No comments yet.',
   body = 'Start the conversation.',
 }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.emptyState}>
+      <View style={styles.emptyIcon}>
+        <Text style={styles.emptyIconText}>○</Text>
+      </View>
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptyBody}>{body}</Text>
     </View>
@@ -75,15 +77,19 @@ export function InstagramCommentsEmpty({
 }
 
 export function InstagramCommentsLoading({ label = 'Loading comments…' }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.loadingState}>
-      <ActivityIndicator />
+      <ActivityIndicator color={theme.circle.accent} />
       <Text style={styles.loadingText}>{label}</Text>
     </View>
   );
 }
 
 export function InstagramCommentsError({ message, onRetry }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.errorState}>
       <Text style={styles.errorText}>{message}</Text>
@@ -111,6 +117,8 @@ export function InstagramCommentComposer({
   bottomInset = 8,
   inputRef,
 }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const canSubmit = Boolean(value.trim()) && !sending;
 
   return (
@@ -124,7 +132,7 @@ export function InstagramCommentComposer({
         onChangeText={onChangeText}
         editable={!sending}
         placeholder={placeholder}
-        placeholderTextColor={COLORS.subtext}
+        placeholderTextColor={theme.colors.subtext}
         multiline
         maxLength={1000}
         textAlignVertical="center"
@@ -141,7 +149,7 @@ export function InstagramCommentComposer({
         ]}
       >
         {sending ? (
-          <ActivityIndicator size="small" color={COLORS.primary} />
+          <ActivityIndicator size="small" color={theme.circle.accent} />
         ) : (
           <Text style={styles.postButtonText}>Post</Text>
         )}
@@ -150,131 +158,139 @@ export function InstagramCommentComposer({
   );
 }
 
-const styles = StyleSheet.create({
-  commentRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    backgroundColor: COLORS.bg,
-  },
-  avatarButton: {
-    marginRight: 10,
-  },
-  commentContent: {
-    flex: 1,
-    paddingTop: 1,
-  },
-  commentText: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  commentName: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-  },
-  commentMeta: {
-    marginTop: 4,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 10,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingHorizontal: 28,
-    paddingVertical: 34,
-  },
-  emptyTitle: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 14,
-  },
-  emptyBody: {
-    marginTop: 4,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: 'center',
-  },
-  loadingState: {
-    minHeight: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  loadingText: {
-    marginTop: 8,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 12,
-  },
-  errorState: {
-    alignItems: 'center',
-    paddingHorizontal: 28,
-    paddingVertical: 28,
-  },
-  errorText: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  retryButton: {
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 9,
-    backgroundColor: COLORS.primary,
-  },
-  retryText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 12,
-  },
-  composer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingTop: 9,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.border,
-    backgroundColor: COLORS.bg,
-  },
-  input: {
-    flex: 1,
-    minHeight: 38,
-    maxHeight: 104,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingTop: 9,
-    paddingBottom: 9,
-    color: COLORS.text,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 14,
-    backgroundColor: '#f7f7f7',
-  },
-  postButton: {
-    minWidth: 48,
-    minHeight: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  postButtonDisabled: {
-    opacity: 0.42,
-  },
-  postButtonText: {
-    color: COLORS.primary,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 13,
-  },
-  pressed: {
-    opacity: 0.65,
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    commentRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      backgroundColor: theme.colors.surface,
+    },
+    avatarButton: { marginRight: 10 },
+    commentContent: { flex: 1, paddingTop: 1 },
+    commentText: {
+      color: theme.colors.text,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    commentName: {
+      color: theme.colors.text,
+      fontFamily: 'Manrope_700Bold',
+    },
+    commentMeta: {
+      marginTop: 4,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 10,
+    },
+    emptyState: {
+      alignItems: 'center',
+      paddingHorizontal: 28,
+      paddingVertical: 34,
+    },
+    emptyIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 10,
+      backgroundColor: theme.circle.accentSoft,
+    },
+    emptyIconText: {
+      color: theme.circle.accent,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 24,
+      lineHeight: 26,
+    },
+    emptyTitle: {
+      color: theme.colors.text,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 14,
+    },
+    emptyBody: {
+      marginTop: 4,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 12,
+      lineHeight: 17,
+      textAlign: 'center',
+    },
+    loadingState: {
+      minHeight: 120,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+    },
+    loadingText: {
+      marginTop: 8,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 12,
+    },
+    errorState: {
+      alignItems: 'center',
+      paddingHorizontal: 28,
+      paddingVertical: 28,
+    },
+    errorText: {
+      color: theme.colors.text,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 12,
+      textAlign: 'center',
+    },
+    retryButton: {
+      marginTop: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 9,
+      backgroundColor: theme.welcome.brandInk,
+    },
+    retryText: {
+      color: '#fff',
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 12,
+    },
+    composer: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 8,
+      paddingHorizontal: 10,
+      paddingTop: 9,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.circle.accentSoft,
+      backgroundColor: theme.colors.surface,
+    },
+    input: {
+      flex: 1,
+      minHeight: 38,
+      maxHeight: 104,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      borderRadius: 20,
+      paddingHorizontal: 14,
+      paddingTop: 9,
+      paddingBottom: 9,
+      color: theme.colors.text,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 14,
+      backgroundColor: theme.colors.surfaceSoft,
+    },
+    postButton: {
+      minWidth: 48,
+      minHeight: 38,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 4,
+    },
+    postButtonDisabled: { opacity: 0.42 },
+    postButtonText: {
+      color: theme.circle.accent,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 13,
+    },
+    pressed: { opacity: 0.65 },
+  });
+}

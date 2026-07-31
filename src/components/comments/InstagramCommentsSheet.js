@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   InstagramCommentComposer,
   InstagramCommentRow,
@@ -40,6 +40,8 @@ export function InstagramCommentsSheet({
   emptyBody = 'Start the conversation.',
   placeholder = 'Add a comment…',
 }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
@@ -98,13 +100,11 @@ export function InstagramCommentsSheet({
     return undefined;
   }, [backdropOpacity, height, translateY, visible]);
 
-
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
     const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
-
     return () => {
       showSubscription.remove();
       hideSubscription.remove();
@@ -115,16 +115,12 @@ export function InstagramCommentsSheet({
     insets.bottom || 0,
     initialWindowMetrics?.insets?.bottom || 0
   );
-  const composerBottomInset = keyboardVisible
-    ? 8
-    : Math.max(14, safeBottomInset + 6);
-
+  const composerBottomInset = keyboardVisible ? 8 : Math.max(14, safeBottomInset + 6);
   const normalizedComments = useMemo(() => comments.filter(Boolean), [comments]);
 
   const submit = async () => {
     const body = text.trim();
     if (!body || sending || !onSubmit) return;
-
     setSending(true);
     try {
       await onSubmit(body);
@@ -133,10 +129,7 @@ export function InstagramCommentsSheet({
         listRef.current?.scrollToEnd?.({ animated: true });
       });
     } catch (submitError) {
-      Alert.alert(
-        'Comment not posted',
-        submitError?.message || 'Please try again.'
-      );
+      Alert.alert('Comment not posted', submitError?.message || 'Please try again.');
     } finally {
       setSending(false);
     }
@@ -164,10 +157,7 @@ export function InstagramCommentsSheet({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.backdrop, { opacity: backdropOpacity }]}
-        />
+        <Animated.View pointerEvents="none" style={[styles.backdrop, { opacity: backdropOpacity }]} />
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
 
         <Animated.View
@@ -185,27 +175,20 @@ export function InstagramCommentsSheet({
               <View style={styles.headerSide} />
               <View style={styles.headerTitleWrap}>
                 <Text style={styles.headerTitle}>{title}</Text>
-                {subtitle ? (
-                  <Text style={styles.headerSubtitle} numberOfLines={1}>
-                    {subtitle}
-                  </Text>
-                ) : null}
+                {subtitle ? <Text style={styles.headerSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
               </View>
               <Pressable
                 onPress={onClose}
                 hitSlop={10}
-                style={({ pressed }) => [
-                  styles.closeButton,
-                  pressed && styles.pressed,
-                ]}
+                style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
               >
-                <Ionicons name="close" size={22} color={COLORS.text} />
+                <Ionicons name="close" size={22} color={theme.colors.text} />
               </Pressable>
             </View>
 
             {loading ? (
               <View style={styles.centerState}>
-                <ActivityIndicator />
+                <ActivityIndicator color={theme.circle.accent} />
                 <Text style={styles.stateText}>Loading comments…</Text>
               </View>
             ) : error ? (
@@ -218,24 +201,11 @@ export function InstagramCommentsSheet({
                 renderItem={({ item }) => (
                   <InstagramCommentRow
                     comment={item}
-                    onOpenProfile={
-                      item.userId && onOpenProfile
-                        ? () => onOpenProfile(item.userId)
-                        : undefined
-                    }
-                    onLongPress={
-                      item.canDelete && onDeleteComment
-                        ? () => deleteComment(item)
-                        : undefined
-                    }
+                    onOpenProfile={item.userId && onOpenProfile ? () => onOpenProfile(item.userId) : undefined}
+                    onLongPress={item.canDelete && onDeleteComment ? () => deleteComment(item) : undefined}
                   />
                 )}
-                ListEmptyComponent={(
-                  <InstagramCommentsEmpty
-                    title={emptyTitle}
-                    body={emptyBody}
-                  />
-                )}
+                ListEmptyComponent={<InstagramCommentsEmpty title={emptyTitle} body={emptyBody} />}
                 style={styles.commentsList}
                 contentContainerStyle={styles.commentsContent}
                 keyboardShouldPersistTaps="handled"
@@ -259,94 +229,53 @@ export function InstagramCommentsSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  modalRoot: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.36)',
-  },
-  sheet: {
-    width: '100%',
-    minHeight: 430,
-    backgroundColor: COLORS.bg,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: -5 },
-    elevation: 18,
-  },
-  safeSheet: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 38,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#c7c7cc',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  header: {
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
-    paddingHorizontal: 8,
-  },
-  headerSide: {
-    width: 42,
-    height: 42,
-  },
-  headerTitleWrap: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  headerTitle: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
-  },
-  headerSubtitle: {
-    marginTop: 1,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 10,
-  },
-  closeButton: {
-    width: 42,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  commentsList: {
-    flex: 1,
-  },
-  commentsContent: {
-    flexGrow: 1,
-    paddingVertical: 4,
-  },
-  centerState: {
-    flex: 1,
-    minHeight: 180,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stateText: {
-    marginTop: 8,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 12,
-  },
-  pressed: {
-    opacity: 0.55,
-  },
-});
+function createStyles(theme) {
+  return StyleSheet.create({
+    modalRoot: { flex: 1, justifyContent: 'flex-end' },
+    backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(10,18,34,0.34)' },
+    sheet: {
+      width: '100%',
+      minHeight: 430,
+      backgroundColor: theme.colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      overflow: 'hidden',
+      shadowColor: theme.welcome.brandInk,
+      shadowOpacity: 0.18,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: -5 },
+      elevation: 18,
+    },
+    safeSheet: { flex: 1, backgroundColor: theme.colors.surface },
+    handle: {
+      alignSelf: 'center',
+      width: 38,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: theme.circle.accentSoft,
+      marginTop: 8,
+      marginBottom: 4,
+    },
+    header: {
+      minHeight: 50,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.circle.accentSoft,
+      paddingHorizontal: 8,
+      backgroundColor: theme.colors.surface,
+    },
+    headerSide: { width: 42, height: 42 },
+    headerTitleWrap: { flex: 1, alignItems: 'center' },
+    headerTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
+    headerSubtitle: { marginTop: 1, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10 },
+    closeButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+    commentsList: { flex: 1 },
+    commentsContent: { flexGrow: 1, paddingVertical: 4, backgroundColor: theme.colors.surface },
+    centerState: { flex: 1, minHeight: 180, alignItems: 'center', justifyContent: 'center' },
+    stateText: { marginTop: 8, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12 },
+    pressed: { opacity: 0.55 },
+  });
+}

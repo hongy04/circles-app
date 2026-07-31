@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
@@ -169,20 +168,7 @@ function TwoPersonPlansContent({ route, navigation }) {
         data={flatData}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={(
-          <LinearGradient
-            colors={theme.circle.headerGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.header}
-          >
-            <View style={styles.lockRow}>
-              <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
-              <Text style={styles.lockText}>{circleName} · private to the two of you</Text>
-            </View>
-            <Text style={styles.headerTitle}>Plans</Text>
-            <Text style={styles.headerBody}>
-              Keep an idea, suggest a date or place, schedule it together, and preserve what happened as a shared memory.
-            </Text>
+          <View style={styles.topActions}>
             <Pressable
               onPress={() => navigation.navigate('TwoPersonPlanEditor', {
                 conversationId,
@@ -194,7 +180,7 @@ function TwoPersonPlansContent({ route, navigation }) {
               <Text style={styles.newButtonText}>New Idea</Text>
             </Pressable>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          </LinearGradient>
+          </View>
         )}
         renderItem={({ item }) => {
           if (item.type === 'header') {
@@ -260,12 +246,8 @@ function createStyles(theme) {
   return StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   listContent: { flexGrow: 1, paddingBottom: 36 },
-  header: { margin: 14, marginBottom: 4, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 18, borderRadius: 22, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft },
-  lockRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  lockText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
-  headerTitle: { marginTop: 9, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 25 },
-  headerBody: { marginTop: 6, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19 },
-  newButton: { marginTop: 15, minHeight: 43, borderRadius: 11, backgroundColor: theme.welcome.brandInk, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  topActions: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 2 },
+  newButton: { minHeight: 43, borderRadius: 11, backgroundColor: theme.welcome.brandInk, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   newButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
   errorText: { marginTop: 10, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
   sectionHeader: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 8 },

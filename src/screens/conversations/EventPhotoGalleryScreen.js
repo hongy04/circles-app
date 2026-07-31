@@ -13,7 +13,6 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -106,7 +105,7 @@ function PhotoViewer({ photo, visible, deleting, onClose, onDelete }) {
 }
 
 function EventPhotoGalleryContent({ route }) {
-  const { eventId, eventTitle = 'Event', conversationId } = route.params || {};
+  const { eventId, conversationId } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
@@ -247,55 +246,41 @@ function EventPhotoGalleryContent({ route }) {
   }
 
   const header = (
-    <LinearGradient
-      colors={theme.circle.headerGradient}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.headerCard}
-    >
-      <View style={styles.headerIcon}>
-        <Ionicons name="images-outline" size={26} color={theme.colors.text} />
-      </View>
-      <View style={styles.headerCopy}>
-        <Text style={styles.eyebrow}>SHARED EVENT PHOTOS</Text>
-        <Text style={styles.title}>{eventTitle}</Text>
-        <Text style={styles.body}>
-          Invited Circle members can view this gallery. People with a valid guest invitation can view the photos without opening private profiles or Circle content.
+    <View style={styles.galleryTools}>
+      <View style={styles.galleryActionRow}>
+        <Text style={styles.countText}>
+          {gallery.photoCount === 1 ? '1 photo' : `${gallery.photoCount} photos`}
         </Text>
+        {gallery.canUpload ? (
+          <Pressable
+            onPress={pickPhotos}
+            disabled={uploading}
+            style={({ pressed }) => [
+              styles.uploadButton,
+              (pressed || uploading) && styles.pressed,
+            ]}
+          >
+            {uploading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Ionicons name="add" size={20} color="#fff" />
+            )}
+            <Text style={styles.uploadButtonText}>
+              {uploading ? uploadStage || 'Uploading…' : 'Add photos'}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
-
-      {gallery.canUpload ? (
-        <Pressable
-          onPress={pickPhotos}
-          disabled={uploading}
-          style={({ pressed }) => [
-            styles.uploadButton,
-            (pressed || uploading) && styles.pressed,
-          ]}
-        >
-          {uploading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Ionicons name="add" size={20} color="#fff" />
-          )}
-          <Text style={styles.uploadButtonText}>
-            {uploading ? uploadStage || 'Uploading…' : 'Add photos'}
-          </Text>
-        </Pressable>
-      ) : (
+      {!gallery.canUpload ? (
         <View style={styles.uploadNotice}>
           <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.subtext} />
           <Text style={styles.uploadNoticeText}>
             The host, people marked Going, and confirmed attendees can add photos. You can still view everything shared here.
           </Text>
         </View>
-      )}
-
-      <Text style={styles.countText}>
-        {gallery.photoCount === 1 ? '1 photo' : `${gallery.photoCount} photos`}
-      </Text>
+      ) : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
-    </LinearGradient>
+    </View>
   );
 
   return (
@@ -373,46 +358,10 @@ function createStyles(theme) {
     paddingBottom: 44,
   },
   row: { justifyContent: 'flex-start' },
-  headerCard: {
-    marginVertical: 12,
-    padding: 18,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
-  },
-  headerIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.circle.accentSoft,
-  },
-  headerCopy: { marginTop: 14 },
-  eyebrow: {
-    color: theme.colors.subtext,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 10,
-    letterSpacing: 1,
-  },
-  title: {
-    marginTop: 5,
-    color: theme.colors.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 22,
-    lineHeight: 28,
-  },
-  body: {
-    marginTop: 7,
-    color: theme.colors.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 12,
-    lineHeight: 18,
-  },
+  galleryTools: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 8 },
+  galleryActionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   uploadButton: {
     minHeight: 48,
-    marginTop: 16,
     borderRadius: 12,
     backgroundColor: theme.welcome.brandInk,
     alignItems: 'center',
@@ -443,7 +392,6 @@ function createStyles(theme) {
     lineHeight: 16,
   },
   countText: {
-    marginTop: 13,
     color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,

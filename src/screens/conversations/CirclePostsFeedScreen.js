@@ -16,7 +16,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { InstagramCommentsSheet } from '../../components/comments/InstagramCommentsSheet';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
 import {
   addCirclePostComment,
@@ -48,6 +49,8 @@ function CirclePostFeedCard({
   onOpenComments,
   onToggleLike,
   likeBusy,
+  styles,
+  theme,
 }) {
   const viewerItems = useMemo(() => (
     (post.media || []).map((item) => ({
@@ -65,23 +68,23 @@ function CirclePostFeedCard({
   });
 
   return (
-    <View style={[styles.card, { height }]}> 
+    <View style={[styles.card, { height }]}>
       <View style={styles.authorRow}>
         <Pressable
           onPress={() => navigation.navigate('Profile', { userId: post.authorId })}
-          style={styles.authorIdentity}
+          style={({ pressed }) => [styles.authorIdentity, pressed && styles.pressed]}
         >
           <Avatar size={40} name={post.authorName} uri={post.authorAvatar} />
           <View style={styles.authorText}>
             <Text style={styles.authorName} numberOfLines={1}>{post.authorName}</Text>
             <View style={styles.privateTimeRow}>
-              <Ionicons name="lock-closed" size={10} color={COLORS.subtext} />
+              <Ionicons name="lock-closed" size={10} color={theme.colors.subtext} />
               <Text style={styles.time}>{timeAgo(post.createdAt)}</Text>
             </View>
           </View>
         </Pressable>
         <Pressable onPress={openDetail} hitSlop={10} style={styles.optionsButton}>
-          <Ionicons name="ellipsis-horizontal" size={21} color={COLORS.text} />
+          <Ionicons name="ellipsis-horizontal" size={21} color={theme.colors.text} />
         </Pressable>
       </View>
 
@@ -116,33 +119,26 @@ function CirclePostFeedCard({
           onPress={onToggleLike}
           disabled={likeBusy}
           hitSlop={10}
-          style={({ pressed }) => [
-            styles.actionButton,
-            (pressed || likeBusy) && styles.pressed,
-          ]}
+          style={({ pressed }) => [styles.actionButton, (pressed || likeBusy) && styles.pressed]}
         >
           <Ionicons
             name={post.likedByMe ? 'heart' : 'heart-outline'}
-            size={26}
-            color={post.likedByMe ? '#ff3b30' : COLORS.text}
+            size={25}
+            color={post.likedByMe ? '#ff5c67' : theme.colors.text}
           />
         </Pressable>
-        <Text style={styles.engagementCount}>
-          {post.likeCount} {post.likeCount === 1 ? 'like' : 'likes'}
-        </Text>
+        <Text style={styles.engagementCount}>{post.likeCount} {post.likeCount === 1 ? 'like' : 'likes'}</Text>
 
-        <Pressable
-          onPress={onOpenComments}
-          hitSlop={10}
-          style={styles.commentActionButton}
-        >
-          <Ionicons name="chatbubble-outline" size={24} color={COLORS.text} />
+        <Pressable onPress={onOpenComments} hitSlop={10} style={styles.commentActionButton}>
+          <Ionicons name="chatbubble-outline" size={23} color={theme.colors.text} />
         </Pressable>
-        <Text style={styles.engagementCount}>
-          {post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}
-        </Text>
+        <Text style={styles.engagementCount}>{post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}</Text>
+
         {post.media.length > 1 ? (
-          <Text style={styles.mediaCount}>{post.media.length} items</Text>
+          <View style={styles.mediaCountPill}>
+            <Ionicons name="copy-outline" size={11} color={theme.colors.text} />
+            <Text style={styles.mediaCount}>{post.media.length}</Text>
+          </View>
         ) : null}
       </View>
 
@@ -165,16 +161,17 @@ function CirclePostFeedCard({
   );
 }
 
-export function CirclePostsFeedScreen({ route, navigation }) {
+function CirclePostsFeedContent({ route, navigation }) {
   const { conversationId, initialPostId, circleName } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
-  const stageWidth = Math.min(width, 720);
-  const cardHeight = stageWidth + 210;
+  const stageWidth = Math.min(width - 24, 696);
+  const cardHeight = stageWidth + 232;
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-
   const [commentsVisible, setCommentsVisible] = useState(false);
   const [commentsPost, setCommentsPost] = useState(null);
   const [comments, setComments] = useState([]);
@@ -230,9 +227,7 @@ export function CirclePostsFeedScreen({ route, navigation }) {
         conversationId,
         onChange: () => {
           load({ quiet: true });
-          if (commentsPost?.id) {
-            loadComments(commentsPost.id, { quiet: true });
-          }
+          if (commentsPost?.id) loadComments(commentsPost.id, { quiet: true });
         },
       });
     }, [commentsPost?.id, conversationId, load, loadComments])
@@ -245,7 +240,6 @@ export function CirclePostsFeedScreen({ route, navigation }) {
 
   const toggleLike = async (post) => {
     if (!post?.id || togglingLikes[post.id]) return;
-
     const previousLiked = Boolean(post.likedByMe);
     const previousCount = Number(post.likeCount || 0);
     const optimistic = {
@@ -255,33 +249,22 @@ export function CirclePostsFeedScreen({ route, navigation }) {
     };
 
     setTogglingLikes((current) => ({ ...current, [post.id]: true }));
-    setPosts((current) => current.map((item) => (
-      item.id === post.id ? optimistic : item
-    )));
-    setCommentsPost((current) => (
-      current?.id === post.id ? { ...current, ...optimistic } : current
-    ));
+    setPosts((current) => current.map((item) => item.id === post.id ? optimistic : item));
+    setCommentsPost((current) => current?.id === post.id ? { ...current, ...optimistic } : current);
 
     try {
       const result = await toggleCirclePostLike(post.id);
       setPosts((current) => current.map((item) => (
-        item.id === post.id
-          ? { ...item, likedByMe: result.liked, likeCount: result.likeCount }
-          : item
+        item.id === post.id ? { ...item, likedByMe: result.liked, likeCount: result.likeCount } : item
       )));
       setCommentsPost((current) => current?.id === post.id
         ? { ...current, likedByMe: result.liked, likeCount: result.likeCount }
         : current);
     } catch (likeError) {
       setPosts((current) => current.map((item) => (
-        item.id === post.id
-          ? { ...item, likedByMe: previousLiked, likeCount: previousCount }
-          : item
+        item.id === post.id ? { ...item, likedByMe: previousLiked, likeCount: previousCount } : item
       )));
-      Alert.alert(
-        'Like not updated',
-        likeError?.message || 'Please try again.'
-      );
+      Alert.alert('Like not updated', likeError?.message || 'Please try again.');
     } finally {
       setTogglingLikes((current) => ({ ...current, [post.id]: false }));
     }
@@ -311,7 +294,6 @@ export function CirclePostsFeedScreen({ route, navigation }) {
 
   const deleteComment = (comment) => {
     if (!comment?.canDelete) return;
-
     Alert.alert(
       'Delete comment?',
       'This removes your comment from the private Circle post.',
@@ -333,10 +315,7 @@ export function CirclePostsFeedScreen({ route, navigation }) {
                 ? { ...current, commentCount: Math.max(0, Number(current.commentCount || 0) - 1) }
                 : current);
             } catch (deleteError) {
-              Alert.alert(
-                'Comment not deleted',
-                deleteError?.message || 'Please try again.'
-              );
+              Alert.alert('Comment not deleted', deleteError?.message || 'Please try again.');
             }
           },
         },
@@ -346,15 +325,13 @@ export function CirclePostsFeedScreen({ route, navigation }) {
 
   const openCommentAuthor = (commentUserId) => {
     setCommentsVisible(false);
-    setTimeout(() => {
-      navigation.navigate('Profile', { userId: commentUserId });
-    }, 180);
+    setTimeout(() => navigation.navigate('Profile', { userId: commentUserId }), 180);
   };
 
   if (loading) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.circle.accent} />
         <Text style={styles.stateText}>Opening Circle posts…</Text>
       </SafeAreaView>
     );
@@ -362,18 +339,12 @@ export function CirclePostsFeedScreen({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
-      {circleName ? (
-        <View style={styles.contextBar}>
-          <Ionicons name="lock-closed" size={11} color={COLORS.subtext} />
-          <Text style={styles.contextText} numberOfLines={1}>
-            {circleName} · private Circle posts
-          </Text>
-        </View>
-      ) : null}
 
       {error && !posts.length ? (
         <View style={styles.centerState}>
-          <Ionicons name="alert-circle-outline" size={36} color={COLORS.subtext} />
+          <View style={styles.stateIcon}>
+            <Ionicons name="alert-circle-outline" size={28} color={theme.colors.text} />
+          </View>
           <Text style={styles.errorText}>{error}</Text>
           <Pressable onPress={() => load()} style={styles.retryButton}>
             <Text style={styles.retryText}>Try again</Text>
@@ -386,8 +357,8 @@ export function CirclePostsFeedScreen({ route, navigation }) {
           keyExtractor={(item) => item.id}
           initialScrollIndex={posts.length ? initialIndex : undefined}
           getItemLayout={(_, index) => ({
-            length: cardHeight,
-            offset: cardHeight * index,
+            length: cardHeight + 12,
+            offset: (cardHeight + 12) * index,
             index,
           })}
           renderItem={({ item }) => (
@@ -400,19 +371,24 @@ export function CirclePostsFeedScreen({ route, navigation }) {
               onOpenComments={() => openComments(item)}
               onToggleLike={() => toggleLike(item)}
               likeBusy={Boolean(togglingLikes[item.id])}
+              styles={styles}
+              theme={theme}
             />
           )}
           refreshControl={(
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => load({ refresh: true })}
-              tintColor={COLORS.text}
+              tintColor={theme.circle.accent}
             />
           )}
           ListEmptyComponent={(
             <View style={styles.centerState}>
-              <Ionicons name="albums-outline" size={38} color={COLORS.subtext} />
+              <View style={styles.stateIcon}>
+                <Ionicons name="albums-outline" size={28} color={theme.colors.text} />
+              </View>
               <Text style={styles.errorText}>No Circle posts yet.</Text>
+              <Text style={styles.emptyBody}>The first intentional memory shared here will begin this private collection.</Text>
             </View>
           )}
           showsVerticalScrollIndicator={false}
@@ -439,52 +415,63 @@ export function CirclePostsFeedScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  contextBar: {
-    minHeight: 34,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
-  },
-  contextText: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
-  listContent: { paddingBottom: 34 },
-  card: {
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
-    backgroundColor: COLORS.bg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
-  },
-  authorRow: { height: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
-  authorIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  authorText: { flex: 1, marginLeft: 10 },
-  authorName: { fontFamily: 'Manrope_700Bold', color: COLORS.text },
-  privateTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  time: { fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 11 },
-  optionsButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  mediaPage: { backgroundColor: '#111', alignItems: 'center', justifyContent: 'center' },
-  media: { width: '100%', height: '100%' },
-  videoPage: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1c1c1e' },
-  actionRow: { height: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
-  actionButton: { marginRight: 6 },
-  commentActionButton: { marginLeft: 15, marginRight: 6 },
-  engagementCount: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },
-  mediaCount: { marginLeft: 'auto', color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
-  details: { paddingHorizontal: 12, paddingBottom: 16 },
-  caption: { color: COLORS.text, fontFamily: 'Manrope_400Regular', lineHeight: 19 },
-  captionAuthor: { fontFamily: 'Manrope_700Bold' },
-  commentsButton: { alignSelf: 'flex-start', paddingTop: 6, paddingBottom: 8, paddingRight: 18 },
-  commentsLink: { color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13 },
-  centerState: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: COLORS.bg },
-  stateText: { marginTop: 10, color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
-  errorText: { marginTop: 12, color: COLORS.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
-  retryButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: COLORS.primary },
-  retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
-  pressed: { opacity: 0.7 },
-});
+export function CirclePostsFeedScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <CirclePostsFeedContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+    listContent: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 34, flexGrow: 1 },
+    card: {
+      width: '100%',
+      maxWidth: 696,
+      alignSelf: 'center',
+      marginBottom: 12,
+      backgroundColor: theme.colors.surface,
+      borderRadius: 18,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      overflow: 'hidden',
+      shadowColor: theme.circle.accent,
+      shadowOpacity: 0.08,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 7 },
+      elevation: 2,
+    },
+    authorRow: { height: 60, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13 },
+    authorIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+    authorText: { flex: 1, marginLeft: 10 },
+    authorName: { fontFamily: 'Manrope_700Bold', color: theme.colors.text },
+    privateTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+    time: { fontFamily: 'Manrope_400Regular', color: theme.colors.subtext, fontSize: 11 },
+    optionsButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    mediaPage: { backgroundColor: '#111', alignItems: 'center', justifyContent: 'center' },
+    media: { width: '100%', height: '100%' },
+    videoPage: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1c1c1e' },
+    actionRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13 },
+    actionButton: { marginRight: 6 },
+    commentActionButton: { marginLeft: 15, marginRight: 6 },
+    engagementCount: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },
+    mediaCountPill: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: theme.circle.accentSoft },
+    mediaCount: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 10 },
+    details: { paddingHorizontal: 13, paddingBottom: 16 },
+    caption: { color: theme.colors.text, fontFamily: 'Manrope_400Regular', lineHeight: 19 },
+    captionAuthor: { fontFamily: 'Manrope_700Bold' },
+    commentsButton: { alignSelf: 'flex-start', paddingTop: 7, paddingBottom: 5, paddingRight: 18 },
+    commentsLink: { color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13 },
+    centerState: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: theme.circle.profileBackground },
+    stateIcon: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: theme.circle.accentSoft },
+    stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
+    errorText: { marginTop: 12, color: theme.colors.text, fontFamily: 'Manrope_700Bold', textAlign: 'center' },
+    emptyBody: { maxWidth: 320, marginTop: 6, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, lineHeight: 18, textAlign: 'center' },
+    retryButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: theme.welcome.brandInk },
+    retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
+    pressed: { opacity: 0.7 },
+  });
+}

@@ -17,7 +17,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
 import {
   InstagramCommentComposer,
@@ -46,7 +47,7 @@ function formatTimestamp(timestamp) {
   });
 }
 
-function PostMedia({ item, size, onPress }) {
+function PostMedia({ item, size, onPress, styles }) {
   return (
     <Pressable
       onPress={onPress}
@@ -57,11 +58,7 @@ function PostMedia({ item, size, onPress }) {
       ]}
     >
       {item.mediaType === 'image' ? (
-        <Image
-          source={{ uri: item.url }}
-          style={styles.media}
-          resizeMode="contain"
-        />
+        <Image source={{ uri: item.url }} style={styles.media} resizeMode="contain" />
       ) : (
         <View style={styles.videoPage}>
           <Ionicons name="play-circle" size={62} color="#fff" />
@@ -72,8 +69,10 @@ function PostMedia({ item, size, onPress }) {
   );
 }
 
-export function CirclePostDetailScreen({ route, navigation }) {
+function CirclePostDetailContent({ route, navigation }) {
   const { postId, conversationId } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [post, setPost] = useState(null);
@@ -91,7 +90,6 @@ export function CirclePostDetailScreen({ route, navigation }) {
     if (!postId) return;
     if (!quiet) setLoading(true);
     setError('');
-
     try {
       const [postRow, commentRows] = await Promise.all([
         getCirclePost(postId),
@@ -107,11 +105,7 @@ export function CirclePostDetailScreen({ route, navigation }) {
     }
   }, [postId]);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   useFocusEffect(
     useCallback(() => {
@@ -136,7 +130,6 @@ export function CirclePostDetailScreen({ route, navigation }) {
 
   const toggleLike = async () => {
     if (!post?.id || togglingLike) return;
-
     const previousLiked = Boolean(post.likedByMe);
     const previousCount = Number(post.likeCount || 0);
     setTogglingLike(true);
@@ -148,21 +141,10 @@ export function CirclePostDetailScreen({ route, navigation }) {
 
     try {
       const result = await toggleCirclePostLike(post.id);
-      setPost((current) => ({
-        ...current,
-        likedByMe: result.liked,
-        likeCount: result.likeCount,
-      }));
+      setPost((current) => ({ ...current, likedByMe: result.liked, likeCount: result.likeCount }));
     } catch (likeError) {
-      setPost((current) => ({
-        ...current,
-        likedByMe: previousLiked,
-        likeCount: previousCount,
-      }));
-      Alert.alert(
-        'Like not updated',
-        likeError?.message || 'Please try again.'
-      );
+      setPost((current) => ({ ...current, likedByMe: previousLiked, likeCount: previousCount }));
+      Alert.alert('Like not updated', likeError?.message || 'Please try again.');
     } finally {
       setTogglingLike(false);
     }
@@ -171,29 +153,21 @@ export function CirclePostDetailScreen({ route, navigation }) {
   const addComment = async () => {
     const body = commentText.trim();
     if (!body || commenting) return;
-
     setCommenting(true);
     try {
       const comment = await addCirclePostComment(postId, body);
       setComments((current) => [...current, comment]);
-      setPost((current) => ({
-        ...current,
-        commentCount: Number(current.commentCount || 0) + 1,
-      }));
+      setPost((current) => ({ ...current, commentCount: Number(current.commentCount || 0) + 1 }));
       setCommentText('');
     } catch (commentError) {
-      Alert.alert(
-        'Comment not added',
-        commentError?.message || 'Please try again.'
-      );
+      Alert.alert('Comment not added', commentError?.message || 'Please try again.');
     } finally {
       setCommenting(false);
     }
   };
 
-  const removeComment = async (comment) => {
+  const removeComment = (comment) => {
     if (!comment.canDelete) return;
-
     Alert.alert(
       'Delete comment?',
       'This removes your comment from the private Circle post.',
@@ -205,18 +179,13 @@ export function CirclePostDetailScreen({ route, navigation }) {
           onPress: async () => {
             try {
               await deleteOwnCirclePostComment(comment.id);
-              setComments((current) =>
-                current.filter((item) => item.id !== comment.id)
-              );
+              setComments((current) => current.filter((item) => item.id !== comment.id));
               setPost((current) => ({
                 ...current,
                 commentCount: Math.max(0, Number(current.commentCount || 0) - 1),
               }));
             } catch (deleteError) {
-              Alert.alert(
-                'Comment not deleted',
-                deleteError?.message || 'Please try again.'
-              );
+              Alert.alert('Comment not deleted', deleteError?.message || 'Please try again.');
             }
           },
         },
@@ -226,7 +195,6 @@ export function CirclePostDetailScreen({ route, navigation }) {
 
   const deletePost = () => {
     if (!post?.canEdit || deleting) return;
-
     Alert.alert(
       'Delete this Circle post?',
       'The post, comments, likes, and its separately uploaded media will be removed from the Circle. Chat and Timeline messages are not affected.',
@@ -241,10 +209,7 @@ export function CirclePostDetailScreen({ route, navigation }) {
               await deleteOwnCirclePost(post.id);
               navigation.goBack();
             } catch (deleteError) {
-              Alert.alert(
-                'Circle post not deleted',
-                deleteError?.message || 'Please try again.'
-              );
+              Alert.alert('Circle post not deleted', deleteError?.message || 'Please try again.');
               setDeleting(false);
             }
           },
@@ -255,7 +220,6 @@ export function CirclePostDetailScreen({ route, navigation }) {
 
   const showPostActions = () => {
     if (!post?.canEdit) return;
-
     const edit = () => navigation.navigate('EditCirclePost', {
       postId: post.id,
       conversationId: post.conversationId,
@@ -285,21 +249,17 @@ export function CirclePostDetailScreen({ route, navigation }) {
   };
 
   const header = post ? (
-    <View>
+    <View style={styles.postCard}>
       <View style={styles.authorRow}>
         <Pressable
           onPress={() => navigation.navigate('Profile', { userId: post.authorId })}
           style={({ pressed }) => [styles.authorIdentity, pressed && styles.pressed]}
         >
-          <Avatar
-            size={42}
-            name={post.authorName}
-            uri={post.authorAvatar}
-          />
+          <Avatar size={42} name={post.authorName} uri={post.authorAvatar} />
           <View style={styles.authorTextWrap}>
             <Text style={styles.authorName}>{post.authorName}</Text>
             <View style={styles.metaRow}>
-              <Ionicons name="lock-closed" size={10} color={COLORS.subtext} />
+              <Ionicons name="lock-closed" size={10} color={theme.colors.subtext} />
               <Text style={styles.timestamp}>{formatTimestamp(post.createdAt)}</Text>
               {post.editedAt ? <Text style={styles.timestamp}>· Edited</Text> : null}
             </View>
@@ -312,10 +272,8 @@ export function CirclePostDetailScreen({ route, navigation }) {
             hitSlop={10}
             style={({ pressed }) => [styles.optionsButton, pressed && styles.pressed]}
           >
-            {deleting ? (
-              <ActivityIndicator size="small" />
-            ) : (
-              <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.text} />
+            {deleting ? <ActivityIndicator size="small" color={theme.circle.accent} /> : (
+              <Ionicons name="ellipsis-horizontal" size={22} color={theme.colors.text} />
             )}
           </Pressable>
         ) : null}
@@ -331,6 +289,7 @@ export function CirclePostDetailScreen({ route, navigation }) {
           <PostMedia
             item={item}
             size={stageWidth}
+            styles={styles}
             onPress={() => navigation.navigate('ConversationMedia', {
               items: viewerItems,
               startIndex: index,
@@ -340,33 +299,29 @@ export function CirclePostDetailScreen({ route, navigation }) {
       />
 
       {post.media.length > 1 ? (
-        <Text style={styles.mediaCount}>{post.media.length} items</Text>
+        <View style={styles.mediaCountPill}>
+          <Ionicons name="copy-outline" size={11} color={theme.colors.text} />
+          <Text style={styles.mediaCount}>{post.media.length} items</Text>
+        </View>
       ) : null}
 
       <View style={styles.engagementRow}>
         <Pressable
           onPress={toggleLike}
           disabled={togglingLike}
-          style={({ pressed }) => [
-            styles.engagementButton,
-            (pressed || togglingLike) && styles.pressed,
-          ]}
+          style={({ pressed }) => [styles.engagementButton, (pressed || togglingLike) && styles.pressed]}
         >
           <Ionicons
             name={post.likedByMe ? 'heart' : 'heart-outline'}
             size={23}
-            color={post.likedByMe ? '#ff3b30' : COLORS.text}
+            color={post.likedByMe ? '#ff5c67' : theme.colors.text}
           />
-          <Text style={styles.engagementText}>
-            {post.likeCount} {post.likeCount === 1 ? 'like' : 'likes'}
-          </Text>
+          <Text style={styles.engagementText}>{post.likeCount} {post.likeCount === 1 ? 'like' : 'likes'}</Text>
         </Pressable>
 
         <View style={styles.engagementButton}>
-          <Ionicons name="chatbubble-outline" size={22} color={COLORS.text} />
-          <Text style={styles.engagementText}>
-            {post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}
-          </Text>
+          <Ionicons name="chatbubble-outline" size={22} color={theme.colors.text} />
+          <Text style={styles.engagementText}>{post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}</Text>
         </View>
       </View>
 
@@ -377,14 +332,19 @@ export function CirclePostDetailScreen({ route, navigation }) {
         </Text>
       ) : null}
 
-      <View style={styles.commentsDivider} />
+      <View style={styles.commentsHeading}>
+        <View style={styles.commentsIcon}>
+          <Ionicons name="chatbubble-ellipses-outline" size={15} color={theme.colors.text} />
+        </View>
+        <Text style={styles.commentsHeadingText}>Private comments</Text>
+      </View>
     </View>
   ) : null;
 
   if (loading && !post) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.circle.accent} />
         <Text style={styles.stateText}>Opening private Circle post…</Text>
       </SafeAreaView>
     );
@@ -393,7 +353,9 @@ export function CirclePostDetailScreen({ route, navigation }) {
   if (error && !post) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="lock-closed-outline" size={36} color={COLORS.text} />
+        <View style={styles.stateIcon}>
+          <Ionicons name="lock-closed-outline" size={28} color={theme.colors.text} />
+        </View>
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -422,11 +384,7 @@ export function CirclePostDetailScreen({ route, navigation }) {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
             contentContainerStyle={styles.listContent}
-            ListEmptyComponent={(
-              <InstagramCommentsEmpty
-                body="Keep the conversation inside this Circle."
-              />
-            )}
+            ListEmptyComponent={<InstagramCommentsEmpty body="Keep the conversation inside this Circle." />}
             renderItem={({ item }) => (
               <InstagramCommentRow
                 comment={{
@@ -437,12 +395,8 @@ export function CirclePostDetailScreen({ route, navigation }) {
                   timeLabel: item.createdAt ? timeAgo(item.createdAt) : '',
                   edited: Boolean(item.editedAt),
                 }}
-                onOpenProfile={() => navigation.navigate('Profile', {
-                  userId: item.userId,
-                })}
-                onLongPress={item.canDelete
-                  ? () => removeComment(item)
-                  : undefined}
+                onOpenProfile={() => navigation.navigate('Profile', { userId: item.userId })}
+                onLongPress={item.canDelete ? () => removeComment(item) : undefined}
               />
             )}
           />
@@ -461,154 +415,49 @@ export function CirclePostDetailScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  contentWidth: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
-  },
-  listContent: {
-    flexGrow: 1,
-    paddingBottom: 18,
-  },
-  authorRow: {
-    minHeight: 66,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-  },
-  authorIdentity: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  authorTextWrap: {
-    flex: 1,
-    marginLeft: 10,
-  },
-  authorName: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 14,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  timestamp: {
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 10,
-  },
-  optionsButton: {
-    width: 42,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mediaPage: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#111',
-  },
-  media: {
-    width: '100%',
-    height: '100%',
-  },
-  videoPage: {
-    flex: 1,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1c1c1e',
-  },
-  videoHint: {
-    marginTop: 8,
-    color: 'rgba(255,255,255,0.78)',
-    fontFamily: 'Manrope_600SemiBold',
-    fontSize: 12,
-  },
-  mediaCount: {
-    alignSelf: 'center',
-    marginTop: 7,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_600SemiBold',
-    fontSize: 10,
-  },
-  engagementRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
-    paddingHorizontal: 13,
-    paddingTop: 12,
-  },
-  engagementButton: {
-    minHeight: 34,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  engagementText: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 13,
-  },
-  caption: {
-    paddingHorizontal: 13,
-    paddingTop: 8,
-    color: COLORS.text,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  captionAuthor: {
-    fontFamily: 'Manrope_700Bold',
-  },
-  commentsDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginTop: 14,
-    backgroundColor: COLORS.border,
-  },
-  centerState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-    backgroundColor: COLORS.bg,
-  },
-  stateText: {
-    marginTop: 10,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-  },
-  errorText: {
-    marginTop: 12,
-    color: COLORS.text,
-    fontFamily: 'Manrope_600SemiBold',
-    textAlign: 'center',
-  },
-  retryButton: {
-    marginTop: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 10,
-    backgroundColor: COLORS.primary,
-  },
-  retryText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-});
+export function CirclePostDetailScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <CirclePostDetailContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+    keyboardView: { flex: 1 },
+    contentWidth: { flex: 1, width: '100%', maxWidth: 720, alignSelf: 'center' },
+    listContent: { flexGrow: 1, paddingBottom: 18, backgroundColor: theme.colors.surface },
+    postCard: { backgroundColor: theme.colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.circle.accentSoft },
+    authorRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.divider, backgroundColor: theme.colors.surface },
+    authorIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+    authorTextWrap: { flex: 1, marginLeft: 10 },
+    authorName: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
+    metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+    timestamp: { color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10 },
+    optionsButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+    mediaPage: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#111' },
+    media: { width: '100%', height: '100%' },
+    videoPage: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1c1c1e' },
+    videoHint: { marginTop: 8, color: 'rgba(255,255,255,0.78)', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
+    mediaCountPill: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999, backgroundColor: theme.circle.accentSoft },
+    mediaCount: { color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 10 },
+    engagementRow: { flexDirection: 'row', alignItems: 'center', gap: 18, paddingHorizontal: 13, paddingTop: 12 },
+    engagementButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 5 },
+    engagementText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    caption: { paddingHorizontal: 13, paddingTop: 8, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 14, lineHeight: 20 },
+    captionAuthor: { fontFamily: 'Manrope_700Bold' },
+    commentsHeading: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 15, paddingHorizontal: 13, paddingVertical: 11, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.circle.accentSoft },
+    commentsIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: theme.circle.accentSoft },
+    commentsHeadingText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: theme.circle.profileBackground },
+    stateIcon: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: theme.circle.accentSoft },
+    stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
+    errorText: { marginTop: 12, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
+    retryButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: theme.welcome.brandInk },
+    retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
+    pressed: { opacity: 0.7 },
+  });
+}

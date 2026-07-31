@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
@@ -270,21 +269,7 @@ function CircleEventsContent({ route, navigation }) {
 
   const header = (
     <View>
-      <LinearGradient
-          colors={theme.circle.headerGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.heroCard}
-        >
-        <View style={styles.heroIcon}>
-          <Ionicons name="calendar-clear-outline" size={28} color={theme.colors.text} />
-        </View>
-        <Text style={styles.heroTitle}>Plans for {circleName}</Text>
-        <Text style={styles.heroBody}>
-          Poll the Circle when the date is uncertain, or create a private event
-          when the plan is already decided.
-        </Text>
-
+      <View style={styles.topActions}>
         <View style={styles.actionRow}>
           {pollsEnabled ? (
             <Pressable
@@ -298,7 +283,7 @@ function CircleEventsContent({ route, navigation }) {
               <Text style={styles.pollButtonText}>Poll Dates</Text>
             </Pressable>
           ) : null}
-
+  
           <Pressable
             onPress={() => navigation.navigate('CreateEvent', {
               conversationId,
@@ -310,7 +295,7 @@ function CircleEventsContent({ route, navigation }) {
             <Text style={styles.createButtonText}>Create Event</Text>
           </Pressable>
         </View>
-      </LinearGradient>
+      </View>
 
       {pollsEnabled ? (
         <>
@@ -424,42 +409,8 @@ function createStyles(theme) {
     paddingBottom: 46,
     flexGrow: 1,
   },
-  heroCard: {
-    position: 'relative',
-    overflow: 'hidden',
-    padding: 20,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
-    shadowColor: theme.circle.accent,
-    shadowOpacity: 0.10,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
-  },
-  heroIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.circle.accentSoft,
-  },
-  heroTitle: {
-    marginTop: 15,
-    color: theme.colors.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 21,
-  },
-  heroBody: {
-    marginTop: 7,
-    color: theme.colors.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  actionRow: { marginTop: 18, flexDirection: 'row', gap: 9 },
+  topActions: { paddingHorizontal: 14, paddingTop: 14 },
+  actionRow: { flexDirection: 'row', gap: 9 },
   pollButton: {
     minHeight: 44,
     flex: 1,

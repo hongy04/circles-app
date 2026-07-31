@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
@@ -552,12 +551,7 @@ function EventDetailContent({ route, navigation }) {
 
   const header = event ? (
     <View>
-      <LinearGradient
-        colors={theme.circle.headerGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.heroCard}
-      >
+      <View style={styles.heroCard}>
         <View style={styles.privacyRow}>
           <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
           <Text style={styles.privacyText}>{formatCircleContext(event)}</Text>
@@ -607,7 +601,7 @@ function EventDetailContent({ route, navigation }) {
         </View>
 
         {event.description ? <Text style={styles.description}>{event.description}</Text> : null}
-      </LinearGradient>
+      </View>
 
       <View style={styles.rsvpCard}>
         <Text style={styles.rsvpTitle}>

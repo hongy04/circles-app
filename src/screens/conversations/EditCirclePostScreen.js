@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   getCirclePost,
   updateOwnCirclePostCaption,
@@ -21,8 +22,10 @@ import {
 
 const MAX_CAPTION_LENGTH = 2200;
 
-export function EditCirclePostScreen({ route, navigation }) {
+function EditCirclePostContent({ route, navigation }) {
   const { postId } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [post, setPost] = useState(null);
   const [caption, setCaption] = useState('');
   const [loading, setLoading] = useState(true);
@@ -33,12 +36,9 @@ export function EditCirclePostScreen({ route, navigation }) {
     if (!postId) return;
     setLoading(true);
     setError('');
-
     try {
       const row = await getCirclePost(postId);
-      if (!row.canEdit) {
-        throw new Error('Only the person who created this post can edit it.');
-      }
+      if (!row.canEdit) throw new Error('Only the person who created this post can edit it.');
       setPost(row);
       setCaption(row.caption || '');
     } catch (loadError) {
@@ -48,31 +48,20 @@ export function EditCirclePostScreen({ route, navigation }) {
     }
   }, [postId]);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const save = async () => {
     if (!post || saving) return;
     if (caption.length > MAX_CAPTION_LENGTH) {
-      Alert.alert(
-        'Caption too long',
-        `Circle post captions can be up to ${MAX_CAPTION_LENGTH} characters.`
-      );
+      Alert.alert('Caption too long', `Circle post captions can be up to ${MAX_CAPTION_LENGTH} characters.`);
       return;
     }
-
     setSaving(true);
     try {
       await updateOwnCirclePostCaption(post.id, caption);
       navigation.goBack();
     } catch (saveError) {
-      Alert.alert(
-        'Caption not saved',
-        saveError?.message || 'Please try again.'
-      );
+      Alert.alert('Caption not saved', saveError?.message || 'Please try again.');
     } finally {
       setSaving(false);
     }
@@ -81,7 +70,7 @@ export function EditCirclePostScreen({ route, navigation }) {
   if (loading) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.circle.accent} />
         <Text style={styles.stateText}>Opening post editor…</Text>
       </SafeAreaView>
     );
@@ -90,7 +79,9 @@ export function EditCirclePostScreen({ route, navigation }) {
   if (error || !post) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="alert-circle-outline" size={36} color={COLORS.text} />
+        <View style={styles.stateIcon}>
+          <Ionicons name="alert-circle-outline" size={28} color={theme.colors.text} />
+        </View>
         <Text style={styles.errorText}>{error || 'Post unavailable.'}</Text>
       </SafeAreaView>
     );
@@ -100,25 +91,17 @@ export function EditCirclePostScreen({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.content}
-      >
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+
         <View style={styles.notice}>
-          <Ionicons name="information-circle-outline" size={18} color={COLORS.text} />
-          <Text style={styles.noticeText}>
-            You can update the caption. Media stays fixed so the post keeps its original context.
-          </Text>
+          <Ionicons name="information-circle-outline" size={18} color={theme.colors.text} />
+          <Text style={styles.noticeText}>Media stays fixed so the post keeps its original private context.</Text>
         </View>
 
         {firstMedia ? (
           <View style={styles.preview}>
             {firstMedia.mediaType === 'image' ? (
-              <Image
-                source={{ uri: firstMedia.url }}
-                style={styles.previewMedia}
-                resizeMode="cover"
-              />
+              <Image source={{ uri: firstMedia.url }} style={styles.previewMedia} resizeMode="cover" />
             ) : (
               <View style={[styles.previewMedia, styles.videoPreview]}>
                 <Ionicons name="play-circle" size={48} color="#fff" />
@@ -133,156 +116,64 @@ export function EditCirclePostScreen({ route, navigation }) {
           </View>
         ) : null}
 
-        <TextInput
-          value={caption}
-          onChangeText={setCaption}
-          editable={!saving}
-          multiline
-          maxLength={MAX_CAPTION_LENGTH}
-          placeholder="Write a caption…"
-          placeholderTextColor="#999"
-          style={styles.input}
-        />
-        <Text style={styles.count}>{caption.length}/{MAX_CAPTION_LENGTH}</Text>
+        <View style={styles.inputCard}>
+          <Text style={styles.fieldLabel}>Caption</Text>
+          <TextInput
+            value={caption}
+            onChangeText={setCaption}
+            editable={!saving}
+            multiline
+            maxLength={MAX_CAPTION_LENGTH}
+            placeholder="Write a caption…"
+            placeholderTextColor={theme.colors.subtext}
+            style={styles.input}
+          />
+          <Text style={styles.count}>{caption.length}/{MAX_CAPTION_LENGTH}</Text>
+        </View>
 
         <Pressable
           onPress={save}
           disabled={saving}
-          style={({ pressed }) => [
-            styles.saveButton,
-            saving && styles.disabled,
-            pressed && styles.pressed,
-          ]}
+          style={({ pressed }) => [styles.saveButton, saving && styles.disabled, pressed && styles.pressed]}
         >
-          {saving ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.saveText}>Save Caption</Text>
-          )}
+          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Caption</Text>}
         </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
-  content: {
-    width: '100%',
-    maxWidth: 620,
-    alignSelf: 'center',
-    padding: 16,
-    paddingBottom: 42,
-  },
-  notice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 9,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#f4f4f4',
-  },
-  noticeText: {
-    flex: 1,
-    color: COLORS.text,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  preview: {
-    width: 150,
-    height: 150,
-    alignSelf: 'center',
-    marginTop: 18,
-    overflow: 'hidden',
-    borderRadius: 14,
-    backgroundColor: '#ececec',
-  },
-  previewMedia: {
-    width: '100%',
-    height: '100%',
-  },
-  videoPreview: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1c1c1e',
-  },
-  countBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    minWidth: 30,
-    height: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-  },
-  countText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 10,
-  },
-  input: {
-    minHeight: 150,
-    marginTop: 20,
-    padding: 13,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    color: COLORS.text,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 15,
-    textAlignVertical: 'top',
-  },
-  count: {
-    alignSelf: 'flex-end',
-    marginTop: 5,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 11,
-  },
-  saveButton: {
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 18,
-    borderRadius: 12,
-    backgroundColor: COLORS.primary,
-  },
-  saveText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
-  },
-  centerState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-    backgroundColor: COLORS.bg,
-  },
-  stateText: {
-    marginTop: 10,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-  },
-  errorText: {
-    marginTop: 12,
-    color: COLORS.text,
-    fontFamily: 'Manrope_600SemiBold',
-    textAlign: 'center',
-  },
-  disabled: {
-    opacity: 0.45,
-  },
-  pressed: {
-    opacity: 0.72,
-  },
-});
+export function EditCirclePostScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <EditCirclePostContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+    content: { width: '100%', maxWidth: 620, alignSelf: 'center', padding: 16, paddingBottom: 42 },
+    notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginTop: 14, padding: 12, borderRadius: 12, backgroundColor: theme.circle.accentSoft },
+    noticeText: { flex: 1, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 12, lineHeight: 18 },
+    preview: { width: 164, height: 164, alignSelf: 'center', marginTop: 18, overflow: 'hidden', borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.colors.surfaceSoft },
+    previewMedia: { width: '100%', height: '100%' },
+    videoPreview: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#1c1c1e' },
+    countBadge: { position: 'absolute', top: 8, right: 8, minWidth: 30, height: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, paddingHorizontal: 6, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.65)' },
+    countText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 10 },
+    inputCard: { marginTop: 20, padding: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, borderRadius: 14, backgroundColor: theme.colors.surface },
+    fieldLabel: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },
+    input: { minHeight: 146, marginTop: 6, padding: 0, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 15, textAlignVertical: 'top' },
+    count: { alignSelf: 'flex-end', marginTop: 5, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11 },
+    saveButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', marginTop: 18, borderRadius: 12, backgroundColor: theme.welcome.brandInk },
+    saveText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 15 },
+    centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: theme.circle.profileBackground },
+    stateIcon: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: theme.circle.accentSoft },
+    stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
+    errorText: { marginTop: 12, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
+    disabled: { opacity: 0.45 },
+    pressed: { opacity: 0.72 },
+  });
+}

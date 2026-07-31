@@ -1,6 +1,6 @@
 # Circles Theme System Foundation
 
-**Status:** Global preference layer implemented; Circle-specific personalization next  
+**Status:** Global and Circle-specific personalization implemented; shared feature surfaces are being migrated incrementally  
 **Default theme:** Aqua Daylight  
 **Visual direction:** Modern Frutiger Aero — futuristic but cozy, clean but personal
 
@@ -11,7 +11,7 @@ The theme system separates Circles' visual decisions from individual screen file
 The system supports two layers:
 
 1. **Global user theme** — the account-level visual atmosphere for the overall app.
-2. **Circle-specific theme** — a future shared atmosphere scoped to one Circle or Our Circle.
+2. **Circle-specific theme** — a shared atmosphere scoped to one Circle or Our Circle.
 
 ## Global preference behavior
 
@@ -90,10 +90,11 @@ A Circle with no explicit shared theme can omit `themeId` and inherit the user's
 2. Global theme persistence and Appearance
 3. Circle profile headers and Circle More
 4. Circle/Our Circle shared theme selection
-5. Invitations and event surfaces
-6. Our Circle depth features
-7. Feed and remaining core screens
-8. Theme-specific navigation stations and icon families
+5. Planning, events, polls, RSVP, and completed-memory surfaces
+6. Circle posts, Timeline, comments, and post editors
+7. Invitations and remaining Our Circle depth features
+8. Feed and remaining core screens
+9. Theme-specific navigation stations and icon families
 
 Safety, moderation, account deletion, and dense form screens should use restrained theme tokens even when expressive themes are active.
 
@@ -117,11 +118,12 @@ Circle personalization is layered beneath the user's global Appearance choice.
 - Closed two-person Circles preserve their saved theme but cannot be customized until reopened.
 - `CircleThemeBoundary` scopes profile and More surfaces without changing global tabs, welcome, or unrelated Circles.
 
-Initial theme-aware Circle surfaces:
+Theme-aware Circle surfaces now include:
 
-1. Circle and Our Circle profile headers
-2. Profile counters, action buttons, tabs, plan-memory tiles, and empty states
-3. Circle More identity and feature rows
-4. The Circle customization preview and selector
+1. Circle and Our Circle profile headers, counters, actions, tabs, and empty states
+2. Circle More identity, feature rows, and the Circle customization selector
+3. Regular Circle events, polls, RSVP, attendance review, photo galleries, and repeat-event surfaces
+4. Our Circle shared plans, editors, details, completed memories, and plan-to-memory linking
+5. Circle posts, post details, private comments, post editors, and the automatic Chat Timeline
 
-Later Circle feature screens should be wrapped in the same boundary rather than reading `conversations.theme_id` independently.
+Each feature route is wrapped in `CircleThemeBoundary` rather than reading `conversations.theme_id` independently. This preserves one permission-aware theme source and keeps the shared theme scoped away from global tabs, welcome, and unrelated Circles.
