@@ -12,6 +12,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { IS_DEVELOPMENT } from '../../config/env';
 import { COLORS } from '../../theme/colors';
 import { MonoRingWithRipples } from '../../components/MonoRingWithRipples';
+import { FloatingCircleField } from '../../components/FloatingCircleField';
 
 const VALUES = [
   ['people-outline', 'Your real people'],
@@ -25,6 +26,7 @@ export function WelcomeScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+      <FloatingCircleField variant="auth" />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -92,6 +94,7 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: COLORS.bg,
+    overflow: 'hidden',
   },
   content: {
     flexGrow: 1,
@@ -101,6 +104,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 8,
     paddingBottom: 20,
+    zIndex: 2,
   },
   brandRow: {
     flexDirection: 'row',

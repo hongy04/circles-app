@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { COLORS } from '../theme/colors';
 import { FluidCircle } from './FluidCircle';
+import { FloatingCircleField } from './FloatingCircleField';
 
 export function LaunchPortal({ onComplete }) {
   const { width, height } = useWindowDimensions();
@@ -162,6 +163,7 @@ export function LaunchPortal({ onComplete }) {
       style={[styles.overlay, { opacity: overlayOpacity }]}
       accessibilityViewIsModal
     >
+      <FloatingCircleField variant="portal" />
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <Animated.View style={[styles.copy, { opacity: contentOpacity }]}> 
           <Text style={styles.eyebrow}>CIRCLES</Text>
@@ -226,7 +228,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
     elevation: 1000,
-    backgroundColor: 'rgba(247,252,255,0.99)',
+    backgroundColor: '#F7FCFF',
   },
   safeArea: {
     flex: 1,
@@ -235,6 +237,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     paddingTop: 44,
     paddingBottom: 46,
+    zIndex: 2,
   },
   copy: {
     alignItems: 'center',
