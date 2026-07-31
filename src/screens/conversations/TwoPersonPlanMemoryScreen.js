@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { listCirclePosts } from '../../services/circlePostService';
 import { listTwoPersonAlbums } from '../../services/twoPersonAlbumService';
 import {
@@ -35,6 +36,8 @@ function memoryCaption(plan) {
 }
 
 function AlbumRow({ album, selected, disabled, onPress, onOpen }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={[styles.optionRow, selected && styles.selectedRow]}>
       <Pressable
@@ -46,7 +49,7 @@ function AlbumRow({ album, selected, disabled, onPress, onOpen }) {
           <Image source={{ uri: album.coverUrl }} style={styles.optionImage} />
         ) : (
           <View style={[styles.optionImage, styles.optionPlaceholder]}>
-            <Ionicons name="images-outline" size={20} color={COLORS.subtext} />
+            <Ionicons name="images-outline" size={20} color={theme.colors.subtext} />
           </View>
         )}
         <View style={styles.optionCopy}>
@@ -59,7 +62,7 @@ function AlbumRow({ album, selected, disabled, onPress, onOpen }) {
         <Ionicons
           name={selected ? 'checkmark-circle' : 'link-outline'}
           size={21}
-          color={selected ? COLORS.primary : COLORS.subtext}
+          color={selected ? theme.welcome.brandInk : theme.colors.subtext}
         />
       </Pressable>
       {selected ? (
@@ -72,6 +75,8 @@ function AlbumRow({ album, selected, disabled, onPress, onOpen }) {
 }
 
 function PostRow({ post, selected, disabled, onPress, onOpen }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const firstMedia = post.media?.[0];
   return (
     <View style={[styles.optionRow, selected && styles.selectedRow]}>
@@ -87,7 +92,7 @@ function PostRow({ post, selected, disabled, onPress, onOpen }) {
             <Ionicons
               name={firstMedia?.mediaType === 'video' ? 'videocam-outline' : 'document-text-outline'}
               size={20}
-              color={COLORS.subtext}
+              color={theme.colors.subtext}
             />
           </View>
         )}
@@ -102,7 +107,7 @@ function PostRow({ post, selected, disabled, onPress, onOpen }) {
         <Ionicons
           name={selected ? 'checkmark-circle' : 'link-outline'}
           size={21}
-          color={selected ? COLORS.primary : COLORS.subtext}
+          color={selected ? theme.welcome.brandInk : theme.colors.subtext}
         />
       </Pressable>
       {selected ? (
@@ -114,12 +119,14 @@ function PostRow({ post, selected, disabled, onPress, onOpen }) {
   );
 }
 
-export function TwoPersonPlanMemoryScreen({ route, navigation }) {
+function TwoPersonPlanMemoryContent({ route, navigation }) {
   const {
     planId,
     conversationId,
     circleName = 'Our Circle',
   } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [plan, setPlan] = useState(null);
   const [albums, setAlbums] = useState([]);
   const [posts, setPosts] = useState([]);
@@ -207,7 +214,7 @@ export function TwoPersonPlanMemoryScreen({ route, navigation }) {
   if (!plan) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="alert-circle-outline" size={38} color={COLORS.subtext} />
+        <Ionicons name="alert-circle-outline" size={38} color={theme.colors.subtext} />
         <Text style={styles.errorState}>{error || 'This memory is unavailable.'}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryButtonText}>Try again</Text>
@@ -223,7 +230,7 @@ export function TwoPersonPlanMemoryScreen({ route, navigation }) {
     <SafeAreaView edges={['bottom']} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.contextRow}>
-          <Ionicons name="lock-closed" size={11} color={COLORS.subtext} />
+          <Ionicons name="lock-closed" size={11} color={theme.colors.subtext} />
           <Text style={styles.contextText}>{circleName} · deliberate memory links</Text>
         </View>
         <Text style={styles.heading}>Build this memory</Text>
@@ -236,7 +243,7 @@ export function TwoPersonPlanMemoryScreen({ route, navigation }) {
         <View style={styles.section}>
           <View style={styles.sectionHeadingRow}>
             <View style={styles.sectionIcon}>
-              <Ionicons name="images-outline" size={19} color={COLORS.text} />
+              <Ionicons name="images-outline" size={19} color={theme.colors.text} />
             </View>
             <View style={styles.sectionHeadingCopy}>
               <Text style={styles.sectionTitle}>Shared album</Text>
@@ -290,7 +297,7 @@ export function TwoPersonPlanMemoryScreen({ route, navigation }) {
         <View style={styles.section}>
           <View style={styles.sectionHeadingRow}>
             <View style={styles.sectionIcon}>
-              <Ionicons name="grid-outline" size={19} color={COLORS.text} />
+              <Ionicons name="grid-outline" size={19} color={theme.colors.text} />
             </View>
             <View style={styles.sectionHeadingCopy}>
               <Text style={styles.sectionTitle}>Shared post</Text>
@@ -342,39 +349,50 @@ export function TwoPersonPlanMemoryScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
+export function TwoPersonPlanMemoryScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <TwoPersonPlanMemoryContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   content: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 18, paddingBottom: 70 },
   contextRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  contextText: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
-  heading: { marginTop: 10, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 27 },
-  helper: { marginTop: 7, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13.5, lineHeight: 20 },
+  contextText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
+  heading: { marginTop: 10, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 27 },
+  helper: { marginTop: 7, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13.5, lineHeight: 20 },
   errorText: { marginTop: 13, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12, lineHeight: 17 },
-  section: { marginTop: 20, padding: 14, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fff' },
+  section: { marginTop: 20, padding: 14, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: '#fff' },
   sectionHeadingRow: { flexDirection: 'row', alignItems: 'center' },
   sectionIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f2f0f5' },
   sectionHeadingCopy: { flex: 1, marginLeft: 11 },
-  sectionTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
-  sectionBody: { marginTop: 2, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
-  createButton: { minHeight: 46, marginTop: 14, borderRadius: 13, backgroundColor: COLORS.text, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 12 },
+  sectionTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
+  sectionBody: { marginTop: 2, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
+  createButton: { minHeight: 46, marginTop: 14, borderRadius: 13, backgroundColor: theme.colors.text, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 12 },
   createButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 12.5, textAlign: 'center' },
   unlinkButton: { minHeight: 38, marginTop: 7, alignItems: 'center', justifyContent: 'center' },
   unlinkText: { color: '#b42318', fontFamily: 'Manrope_700Bold', fontSize: 11.5 },
-  listLabel: { marginTop: 17, marginBottom: 7, color: COLORS.subtext, fontFamily: 'Manrope_700Bold', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.4 },
-  optionRow: { marginTop: 7, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, overflow: 'hidden', backgroundColor: '#fafafa' },
+  listLabel: { marginTop: 17, marginBottom: 7, color: theme.colors.subtext, fontFamily: 'Manrope_700Bold', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.4 },
+  optionRow: { marginTop: 7, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, overflow: 'hidden', backgroundColor: '#fafafa' },
   selectedRow: { borderColor: '#b8aaca', backgroundColor: '#f6f2fa' },
   optionMain: { minHeight: 70, flexDirection: 'row', alignItems: 'center', padding: 9 },
   optionImage: { width: 52, height: 52, borderRadius: 11, backgroundColor: '#eee' },
   optionPlaceholder: { alignItems: 'center', justifyContent: 'center' },
   optionCopy: { flex: 1, marginHorizontal: 10 },
-  optionTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12.5, lineHeight: 17 },
-  optionMeta: { marginTop: 3, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10.5 },
-  openButton: { minHeight: 35, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
-  openButtonText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 11.5 },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: COLORS.bg },
-  stateText: { marginTop: 10, color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
-  errorState: { marginTop: 12, color: COLORS.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
-  retryButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: COLORS.primary },
+  optionTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12.5, lineHeight: 17 },
+  optionMeta: { marginTop: 3, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10.5 },
+  openButton: { minHeight: 35, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' },
+  openButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 11.5 },
+  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: theme.colors.surface },
+  stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
+  errorState: { marginTop: 12, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
+  retryButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: theme.welcome.brandInk },
   retryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
   pressed: { opacity: 0.68 },
-});
+  });
+}

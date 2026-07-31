@@ -10,9 +10,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { listCircleEvents } from '../../services/eventService';
 import { listCircleAvailabilityPolls } from '../../services/availabilityPollService';
 import { trackAppEvent } from '../../services/analyticsService';
@@ -57,7 +59,7 @@ function formatEventDate(startsAt, endsAt) {
   return `${date} · ${startTime}–${endTime}`;
 }
 
-function EventCard({ event, onPress }) {
+function EventCard({ event, onPress, styles, theme }) {
   const startTime = new Date(event.startsAt).getTime();
   const isPast = event.status === 'completed' || startTime < Date.now();
   const historyLabel = event.attendanceReviewedAt ? 'Reviewed' : 'Past';
@@ -74,7 +76,7 @@ function EventCard({ event, onPress }) {
         <Ionicons
           name={isPast ? 'checkmark-circle-outline' : 'calendar-outline'}
           size={23}
-          color={COLORS.text}
+          color={theme.colors.text}
         />
       </View>
 
@@ -90,7 +92,7 @@ function EventCard({ event, onPress }) {
 
         {event.circleCount > 1 ? (
           <View style={styles.metaRow}>
-            <Ionicons name="people-outline" size={14} color={COLORS.subtext} />
+            <Ionicons name="people-outline" size={14} color={theme.colors.subtext} />
             <Text style={styles.metaText} numberOfLines={1}>
               Shared across {event.circleCount} Circles
             </Text>
@@ -99,7 +101,7 @@ function EventCard({ event, onPress }) {
 
         {event.locationName ? (
           <View style={styles.metaRow}>
-            <Ionicons name="location-outline" size={14} color={COLORS.subtext} />
+            <Ionicons name="location-outline" size={14} color={theme.colors.subtext} />
             <Text style={styles.metaText} numberOfLines={1}>{event.locationName}</Text>
           </View>
         ) : null}
@@ -134,7 +136,7 @@ function EventCard({ event, onPress }) {
   );
 }
 
-function PollCard({ poll, onPress }) {
+function PollCard({ poll, onPress, styles, theme }) {
   const finalized = poll.status === 'finalized';
   const responseLabel = `${poll.responseCount}/${poll.memberCount} responded`;
 
@@ -147,7 +149,7 @@ function PollCard({ poll, onPress }) {
         <Ionicons
           name={finalized ? 'checkmark-done-outline' : 'options-outline'}
           size={22}
-          color={COLORS.text}
+          color={theme.colors.text}
         />
       </View>
       <View style={styles.pollCopy}>
@@ -171,8 +173,10 @@ function PollCard({ poll, onPress }) {
   );
 }
 
-export function CircleEventsScreen({ route, navigation }) {
+function CircleEventsContent({ route, navigation }) {
   const { conversationId, circleName = 'Circle' } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [events, setEvents] = useState([]);
   const [polls, setPolls] = useState([]);
   const [pollsEnabled, setPollsEnabled] = useState(true);
@@ -253,7 +257,7 @@ export function CircleEventsScreen({ route, navigation }) {
       rsvp_status: event.viewerRsvpStatus,
       circle_count: event.circleCount,
     });
-    navigation.navigate('EventDetail', { eventId: event.id });
+    navigation.navigate('EventDetail', { eventId: event.id, conversationId, circleName });
   };
 
   const openPoll = (poll) => {
@@ -261,14 +265,19 @@ export function CircleEventsScreen({ route, navigation }) {
       surface: 'circle_events',
       poll_status: poll.status,
     });
-    navigation.navigate('AvailabilityPollDetail', { pollId: poll.id });
+    navigation.navigate('AvailabilityPollDetail', { pollId: poll.id, conversationId, circleName });
   };
 
   const header = (
     <View>
-      <View style={styles.heroCard}>
+      <LinearGradient
+          colors={theme.circle.headerGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.heroCard}
+        >
         <View style={styles.heroIcon}>
-          <Ionicons name="calendar-clear-outline" size={28} color={COLORS.text} />
+          <Ionicons name="calendar-clear-outline" size={28} color={theme.colors.text} />
         </View>
         <Text style={styles.heroTitle}>Plans for {circleName}</Text>
         <Text style={styles.heroBody}>
@@ -285,7 +294,7 @@ export function CircleEventsScreen({ route, navigation }) {
               })}
               style={({ pressed }) => [styles.pollButton, pressed && styles.pressed]}
             >
-              <Ionicons name="options-outline" size={18} color={COLORS.text} />
+              <Ionicons name="options-outline" size={18} color={theme.colors.text} />
               <Text style={styles.pollButtonText}>Poll Dates</Text>
             </Pressable>
           ) : null}
@@ -301,7 +310,7 @@ export function CircleEventsScreen({ route, navigation }) {
             <Text style={styles.createButtonText}>Create Event</Text>
           </Pressable>
         </View>
-      </View>
+      </LinearGradient>
 
       {pollsEnabled ? (
         <>
@@ -312,12 +321,12 @@ export function CircleEventsScreen({ route, navigation }) {
 
           {pollError ? (
             <View style={styles.inlineError}>
-              <Ionicons name="alert-circle-outline" size={18} color={COLORS.subtext} />
+              <Ionicons name="alert-circle-outline" size={18} color={theme.colors.subtext} />
               <Text style={styles.inlineErrorText}>{pollError}</Text>
             </View>
           ) : polls.length > 0 ? (
             polls.map((poll) => (
-              <PollCard key={poll.id} poll={poll} onPress={() => openPoll(poll)} />
+              <PollCard key={poll.id} poll={poll} onPress={() => openPoll(poll)} styles={styles} theme={theme} />
             ))
           ) : (
             <View style={styles.pollEmptyCard}>
@@ -344,7 +353,7 @@ export function CircleEventsScreen({ route, navigation }) {
   if (error && events.length === 0 && polls.length === 0) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="calendar-outline" size={38} color={COLORS.text} />
+        <Ionicons name="calendar-outline" size={38} color={theme.colors.text} />
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -365,11 +374,11 @@ export function CircleEventsScreen({ route, navigation }) {
             <Text style={styles.sectionCount}>{item.count}</Text>
           </View>
         ) : (
-          <EventCard event={item.event} onPress={() => openEvent(item.event)} />
+          <EventCard event={item.event} onPress={() => openEvent(item.event)} styles={styles} theme={theme} />
         )}
         ListEmptyComponent={(
           <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={42} color={COLORS.subtext} />
+            <Ionicons name="calendar-outline" size={42} color={theme.colors.subtext} />
             <Text style={styles.emptyTitle}>No events yet</Text>
             <Text style={styles.emptyBody}>
               Finalize an availability poll or create an event directly. Members
@@ -384,7 +393,7 @@ export function CircleEventsScreen({ route, navigation }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={COLORS.text}
+            tintColor={theme.colors.text}
           />
         )}
         contentContainerStyle={styles.content}
@@ -394,8 +403,18 @@ export function CircleEventsScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f7f7' },
+export function CircleEventsScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <CircleEventsContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   content: {
     width: '100%',
     maxWidth: 720,
@@ -406,11 +425,18 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   heroCard: {
+    position: 'relative',
+    overflow: 'hidden',
     padding: 20,
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
+    shadowColor: theme.circle.accent,
+    shadowOpacity: 0.10,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
   },
   heroIcon: {
     width: 50,
@@ -418,17 +444,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   heroTitle: {
     marginTop: 15,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 21,
   },
   heroBody: {
     marginTop: 7,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 14,
     lineHeight: 20,
@@ -439,15 +465,15 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 11,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
   pollButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
@@ -459,7 +485,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   createButtonText: {
     color: '#fff',
@@ -483,12 +509,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   sectionTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 17,
   },
   sectionCount: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
   },
@@ -498,8 +524,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -510,30 +536,30 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   pollCopy: { flex: 1 },
   pollTitle: {
     flex: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
   },
   pollState: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 9,
     textTransform: 'uppercase',
   },
   pollMeta: {
     marginTop: 4,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,
   },
   pollViewerState: {
     marginTop: 5,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
@@ -541,17 +567,17 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   pollEmptyTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
   pollEmptyBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -561,15 +587,15 @@ const styles = StyleSheet.create({
     padding: 13,
     borderRadius: 13,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   inlineErrorText: {
     flex: 1,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
@@ -579,8 +605,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -591,25 +617,25 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   eventCopy: { flex: 1 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   eventTitle: {
     flex: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
   },
   pastLabel: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
     textTransform: 'uppercase',
   },
   eventDate: {
     marginTop: 3,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
   },
@@ -621,7 +647,7 @@ const styles = StyleSheet.create({
   },
   metaText: {
     flex: 1,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
   },
@@ -635,15 +661,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: '#eeeeee',
+    backgroundColor: theme.circle.accentSoft,
   },
   rsvpPillText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
   },
   countText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
@@ -654,14 +680,14 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     marginTop: 13,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
   },
   emptyBody: {
     maxWidth: 430,
     marginTop: 7,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 13,
     lineHeight: 19,
@@ -672,17 +698,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 30,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   errorText: {
     maxWidth: 420,
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
@@ -691,8 +717,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
   pressed: { opacity: 0.72 },
-});
+  });
+}

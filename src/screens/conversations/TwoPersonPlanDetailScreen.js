@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,7 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   completeTwoPersonPlan,
   deleteTwoPersonPlan,
@@ -79,11 +80,13 @@ function statusDetails(plan) {
 }
 
 function DetailRow({ icon, label, value }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   if (!value) return null;
   return (
     <View style={styles.detailRow}>
       <View style={styles.detailIcon}>
-        <Ionicons name={icon} size={17} color={COLORS.text} />
+        <Ionicons name={icon} size={17} color={theme.colors.text} />
       </View>
       <View style={styles.detailCopy}>
         <Text style={styles.detailLabel}>{label}</Text>
@@ -93,12 +96,14 @@ function DetailRow({ icon, label, value }) {
   );
 }
 
-export function TwoPersonPlanDetailScreen({ route, navigation }) {
+function TwoPersonPlanDetailContent({ route, navigation }) {
   const {
     planId,
     conversationId,
     circleName = 'Our Circle',
   } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -216,7 +221,7 @@ export function TwoPersonPlanDetailScreen({ route, navigation }) {
   if (!plan) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="alert-circle-outline" size={38} color={COLORS.subtext} />
+        <Ionicons name="alert-circle-outline" size={38} color={theme.colors.subtext} />
         <Text style={styles.errorState}>{error || 'This plan is unavailable.'}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryButtonText}>Try again</Text>
@@ -245,7 +250,7 @@ export function TwoPersonPlanDetailScreen({ route, navigation }) {
           showsVerticalScrollIndicator={false}
         >
         <View style={styles.contextRow}>
-          <Ionicons name="lock-closed" size={11} color={COLORS.subtext} />
+          <Ionicons name="lock-closed" size={11} color={theme.colors.subtext} />
           <Text style={styles.contextText}>{circleName} · private to the two of you</Text>
         </View>
 
@@ -253,7 +258,7 @@ export function TwoPersonPlanDetailScreen({ route, navigation }) {
 
         <View style={styles.statusCard}>
           <View style={styles.statusIcon}>
-            <Ionicons name={status.icon} size={22} color={COLORS.text} />
+            <Ionicons name={status.icon} size={22} color={theme.colors.text} />
           </View>
           <View style={styles.statusCopy}>
             <Text style={styles.statusTitle}>{status.label}</Text>
@@ -288,7 +293,7 @@ export function TwoPersonPlanDetailScreen({ route, navigation }) {
               })}
               style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
             >
-              <Ionicons name="create-outline" size={17} color={COLORS.text} />
+              <Ionicons name="create-outline" size={17} color={theme.colors.text} />
               <Text style={styles.secondaryButtonText}>Edit Idea</Text>
             </Pressable>
             <Pressable
@@ -322,7 +327,7 @@ export function TwoPersonPlanDetailScreen({ route, navigation }) {
               disabled={working}
               style={({ pressed }) => [styles.secondaryButton, (pressed || working) && styles.pressed]}
             >
-              <Ionicons name="help-outline" size={17} color={COLORS.text} />
+              <Ionicons name="help-outline" size={17} color={theme.colors.text} />
               <Text style={styles.secondaryButtonText}>Mark Tentative</Text>
             </Pressable>
             <Pressable
@@ -356,7 +361,7 @@ export function TwoPersonPlanDetailScreen({ route, navigation }) {
               })}
               style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
             >
-              <Ionicons name="create-outline" size={17} color={COLORS.text} />
+              <Ionicons name="create-outline" size={17} color={theme.colors.text} />
               <Text style={styles.secondaryButtonText}>Edit Proposal</Text>
             </Pressable>
           </View>
@@ -408,7 +413,7 @@ export function TwoPersonPlanDetailScreen({ route, navigation }) {
 
         {plan.status === 'completed' ? (
           <View style={styles.memoryCard}>
-            <Ionicons name="sparkles" size={23} color={COLORS.text} />
+            <Ionicons name="sparkles" size={23} color={theme.colors.text} />
             <Text style={styles.memoryTitle}>Preserved in your Circle</Text>
             <Text style={styles.memoryBody}>
               This memory stays with the shared Circle and returns if the Circle is ever reopened after a locked period.
@@ -418,7 +423,7 @@ export function TwoPersonPlanDetailScreen({ route, navigation }) {
                 <Ionicons
                   name={plan.memoryAlbumId ? 'checkmark-circle' : 'images-outline'}
                   size={14}
-                  color={COLORS.text}
+                  color={theme.colors.text}
                 />
                 <Text style={styles.memoryLinkChipText}>
                   {plan.memoryAlbumId ? 'Album linked' : 'No album linked'}
@@ -428,7 +433,7 @@ export function TwoPersonPlanDetailScreen({ route, navigation }) {
                 <Ionicons
                   name={plan.memoryPostId ? 'checkmark-circle' : 'grid-outline'}
                   size={14}
-                  color={COLORS.text}
+                  color={theme.colors.text}
                 />
                 <Text style={styles.memoryLinkChipText}>
                   {plan.memoryPostId ? 'Post linked' : 'No post linked'}
@@ -464,49 +469,60 @@ export function TwoPersonPlanDetailScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
+export function TwoPersonPlanDetailScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <TwoPersonPlanDetailContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   keyboardView: { flex: 1 },
   content: { width: '100%', maxWidth: 680, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 180 },
   contextRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  contextText: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
-  title: { marginTop: 10, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 27, lineHeight: 34 },
-  statusCard: { marginTop: 16, padding: 14, borderRadius: 16, backgroundColor: '#f5f3f8', flexDirection: 'row', alignItems: 'flex-start' },
-  statusIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#ece8f1', alignItems: 'center', justifyContent: 'center' },
+  contextText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
+  title: { marginTop: 10, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 27, lineHeight: 34 },
+  statusCard: { marginTop: 16, padding: 14, borderRadius: 16, backgroundColor: theme.circle.accentSoft, flexDirection: 'row', alignItems: 'flex-start' },
+  statusIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: theme.circle.accentSoft, alignItems: 'center', justifyContent: 'center' },
   statusCopy: { flex: 1, marginLeft: 11 },
-  statusTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
-  statusBody: { marginTop: 3, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
-  detailsCard: { marginTop: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, overflow: 'hidden' },
-  detailRow: { minHeight: 66, flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 13, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
-  detailIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#f1f1f1', alignItems: 'center', justifyContent: 'center' },
+  statusTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
+  statusBody: { marginTop: 3, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
+  detailsCard: { marginTop: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, overflow: 'hidden' },
+  detailRow: { minHeight: 66, flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 13, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.circle.accentSoft },
+  detailIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: theme.circle.accentSoft, alignItems: 'center', justifyContent: 'center' },
   detailCopy: { flex: 1, marginLeft: 11 },
-  detailLabel: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
-  detailValue: { marginTop: 3, color: COLORS.text, fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19 },
-  actionsCard: { marginTop: 16, padding: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fafafa' },
-  actionsTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
-  actionsBody: { marginTop: 4, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
-  primaryButton: { minHeight: 44, marginTop: 11, borderRadius: 11, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  detailLabel: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
+  detailValue: { marginTop: 3, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19 },
+  actionsCard: { marginTop: 16, padding: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.circle.accentSoft },
+  actionsTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
+  actionsBody: { marginTop: 4, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
+  primaryButton: { minHeight: 44, marginTop: 11, borderRadius: 11, backgroundColor: theme.welcome.brandInk, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   primaryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  secondaryButton: { minHeight: 44, marginTop: 9, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#f4f4f4', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  secondaryButtonText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+  secondaryButton: { minHeight: 44, marginTop: 9, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.circle.accentSoft, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  secondaryButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
   linkButton: { minHeight: 36, marginTop: 5, alignItems: 'center', justifyContent: 'center' },
-  linkButtonText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12, textDecorationLine: 'underline' },
-  memoryInput: { minHeight: 100, marginTop: 11, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fff', color: COLORS.text, fontFamily: 'Manrope_400Regular', fontSize: 13 },
-  memoryCard: { marginTop: 16, padding: 17, borderRadius: 16, backgroundColor: '#f5f3f8', alignItems: 'center' },
-  memoryTitle: { marginTop: 8, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
-  memoryBody: { marginTop: 5, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17, textAlign: 'center' },
+  linkButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12, textDecorationLine: 'underline' },
+  memoryInput: { minHeight: 100, marginTop: 11, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.colors.surface, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 13 },
+  memoryCard: { marginTop: 16, padding: 17, borderRadius: 16, backgroundColor: theme.circle.accentSoft, alignItems: 'center' },
+  memoryTitle: { marginTop: 8, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
+  memoryBody: { marginTop: 5, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17, textAlign: 'center' },
   memoryLinkSummary: { width: '100%', marginTop: 13, flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 7 },
-  memoryLinkChip: { minHeight: 29, paddingHorizontal: 9, borderRadius: 10, backgroundColor: '#ebe8ef', flexDirection: 'row', alignItems: 'center', gap: 5 },
-  memoryLinkChipText: { color: COLORS.text, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
-  buildMemoryButton: { width: '100%', minHeight: 44, marginTop: 13, borderRadius: 12, backgroundColor: COLORS.text, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  memoryLinkChip: { minHeight: 29, paddingHorizontal: 9, borderRadius: 10, backgroundColor: theme.circle.accentSoft, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  memoryLinkChipText: { color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
+  buildMemoryButton: { width: '100%', minHeight: 44, marginTop: 13, borderRadius: 12, backgroundColor: theme.colors.text, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   buildMemoryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
   removeButton: { minHeight: 42, marginTop: 20, alignItems: 'center', justifyContent: 'center' },
   removeButtonText: { color: '#b42318', fontFamily: 'Manrope_700Bold', fontSize: 12.5 },
   errorText: { marginTop: 13, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12, lineHeight: 17 },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: COLORS.bg },
-  stateText: { marginTop: 10, color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
-  errorState: { marginTop: 12, color: COLORS.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
-  retryButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: COLORS.primary },
+  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: theme.colors.surface },
+  stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
+  errorState: { marginTop: 12, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
+  retryButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: theme.welcome.brandInk },
   retryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
   pressed: { opacity: 0.7 },
-});
+  });
+}

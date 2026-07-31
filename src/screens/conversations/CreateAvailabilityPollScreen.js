@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { createCircleAvailabilityPoll } from '../../services/availabilityPollService';
 
 function formatDateInput(date) {
@@ -79,6 +80,8 @@ function buildDefaultOption(dayOffset, id) {
 }
 
 function Field({ label, hint, children }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -88,8 +91,10 @@ function Field({ label, hint, children }) {
   );
 }
 
-export function CreateAvailabilityPollScreen({ route, navigation }) {
+function CreateAvailabilityPollContent({ route, navigation }) {
   const { conversationId, circleName = 'Circle' } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const initialOptions = useMemo(() => [
     buildDefaultOption(1, 'option-1'),
     buildDefaultOption(2, 'option-2'),
@@ -195,7 +200,7 @@ export function CreateAvailabilityPollScreen({ route, navigation }) {
         options: parsedOptions,
       });
 
-      navigation.replace('AvailabilityPollDetail', { pollId });
+      navigation.replace('AvailabilityPollDetail', { pollId, conversationId, circleName });
     } catch (error) {
       Alert.alert(
         'Could not create poll',
@@ -220,7 +225,7 @@ export function CreateAvailabilityPollScreen({ route, navigation }) {
         >
           <View style={styles.contextCard}>
             <View style={styles.contextIcon}>
-              <Ionicons name="options-outline" size={24} color={COLORS.text} />
+              <Ionicons name="options-outline" size={24} color={theme.colors.text} />
             </View>
             <View style={styles.contextCopy}>
               <Text style={styles.contextTitle}>Find a time for {circleName}</Text>
@@ -284,7 +289,7 @@ export function CreateAvailabilityPollScreen({ route, navigation }) {
                     hitSlop={8}
                     style={({ pressed }) => pressed && styles.pressed}
                   >
-                    <Ionicons name="trash-outline" size={20} color={COLORS.subtext} />
+                    <Ionicons name="trash-outline" size={20} color={theme.colors.subtext} />
                   </Pressable>
                 ) : null}
               </View>
@@ -329,7 +334,7 @@ export function CreateAvailabilityPollScreen({ route, navigation }) {
               onPress={addOption}
               style={({ pressed }) => [styles.addOptionButton, pressed && styles.pressed]}
             >
-              <Ionicons name="add-circle-outline" size={20} color={COLORS.text} />
+              <Ionicons name="add-circle-outline" size={20} color={theme.colors.text} />
               <Text style={styles.addOptionText}>Add another time</Text>
             </Pressable>
           ) : null}
@@ -355,8 +360,18 @@ export function CreateAvailabilityPollScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f7f7' },
+export function CreateAvailabilityPollScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <CreateAvailabilityPollContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   keyboardView: { flex: 1 },
   content: {
     width: '100%',
@@ -371,8 +386,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   contextIcon: {
     width: 44,
@@ -380,17 +395,17 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   contextCopy: { flex: 1 },
   contextTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
   },
   contextBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
@@ -398,13 +413,13 @@ const styles = StyleSheet.create({
   field: { marginTop: 20 },
   label: {
     marginBottom: 7,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
   hint: {
     marginTop: 6,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -415,9 +430,9 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     borderRadius: 11,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
-    color: COLORS.text,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 14,
   },
@@ -430,18 +445,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   optionsTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 17,
   },
   optionsHint: {
     marginTop: 2,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
   optionCount: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
   },
@@ -450,8 +465,8 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   optionHeader: {
     marginBottom: 12,
@@ -460,13 +475,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   optionTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   smallLabel: {
     marginBottom: 5,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,
   },
@@ -476,15 +491,15 @@ const styles = StyleSheet.create({
     minHeight: 46,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
   },
   addOptionText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
@@ -492,7 +507,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
     marginTop: 24,
     borderRadius: 12,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -504,4 +519,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   pressed: { opacity: 0.7 },
-});
+  });
+}

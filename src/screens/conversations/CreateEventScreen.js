@@ -15,7 +15,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { createCircleEvent } from '../../services/eventService';
 import { listMyConversations } from '../../services/conversationService';
 import {
@@ -74,6 +75,8 @@ function parseLocalDateTime(dateInput, timeInput) {
 }
 
 function Field({ label, hint, children }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -84,6 +87,8 @@ function Field({ label, hint, children }) {
 }
 
 function CircleSelectorRow({ title, subtitle, selected, locked = false, onPress }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <Pressable
       onPress={onPress}
@@ -95,7 +100,7 @@ function CircleSelectorRow({ title, subtitle, selected, locked = false, onPress 
       ]}
     >
       <View style={styles.circleSelectorIcon}>
-        <Ionicons name="people-outline" size={19} color={COLORS.text} />
+        <Ionicons name="people-outline" size={19} color={theme.colors.text} />
       </View>
       <View style={styles.circleSelectorCopy}>
         <Text style={styles.circleSelectorTitle} numberOfLines={1}>{title}</Text>
@@ -108,15 +113,17 @@ function CircleSelectorRow({ title, subtitle, selected, locked = false, onPress 
         <Ionicons
           name={locked ? 'lock-closed' : selected ? 'checkmark' : 'add'}
           size={14}
-          color={selected ? '#fff' : COLORS.subtext}
+          color={selected ? '#fff' : theme.colors.subtext}
         />
       </View>
     </Pressable>
   );
 }
 
-export function CreateEventScreen({ route, navigation }) {
+function CreateEventContent({ route, navigation }) {
   const { conversationId, circleName = 'Circle', repeatFrom = null } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const defaults = useMemo(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -266,7 +273,7 @@ export function CreateEventScreen({ route, navigation }) {
         allowPlusOnes: allowOutsideGuests && allowPlusOnes,
       });
 
-      navigation.replace('EventDetail', { eventId });
+      navigation.replace('EventDetail', { eventId, conversationId, circleName });
     } catch (error) {
       Alert.alert(
         'Could not create event',
@@ -292,7 +299,7 @@ export function CreateEventScreen({ route, navigation }) {
           {repeatFrom ? (
             <View style={styles.contextCard}>
               <View style={styles.contextIcon}>
-                <Ionicons name="refresh-outline" size={20} color={COLORS.text} />
+                <Ionicons name="refresh-outline" size={20} color={theme.colors.text} />
               </View>
               <View style={styles.contextCopy}>
                 <Text style={styles.contextTitle}>Planning another gathering</Text>
@@ -305,7 +312,7 @@ export function CreateEventScreen({ route, navigation }) {
 
           <View style={styles.contextCard}>
             <View style={styles.contextIcon}>
-              <Ionicons name="lock-closed-outline" size={20} color={COLORS.text} />
+              <Ionicons name="lock-closed-outline" size={20} color={theme.colors.text} />
             </View>
             <View style={styles.contextCopy}>
               <Text style={styles.contextTitle}>{circleName}</Text>
@@ -347,7 +354,7 @@ export function CreateEventScreen({ route, navigation }) {
                 </View>
               ) : circleLoadError ? (
                 <View style={styles.circleLoadState}>
-                  <Ionicons name="alert-circle-outline" size={18} color={COLORS.subtext} />
+                  <Ionicons name="alert-circle-outline" size={18} color={theme.colors.subtext} />
                   <Text style={styles.circleLoadText}>{circleLoadError}</Text>
                 </View>
               ) : availableCircles.length > 0 ? (
@@ -534,8 +541,18 @@ export function CreateEventScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f7f7' },
+export function CreateEventScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <CreateEventContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   keyboardView: { flex: 1 },
   content: {
     width: '100%',
@@ -551,8 +568,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   contextIcon: {
     width: 42,
@@ -560,17 +577,17 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   contextCopy: { flex: 1 },
   contextTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
   },
   contextBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 17,
@@ -580,8 +597,8 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   circleSectionHeader: {
     flexDirection: 'row',
@@ -591,20 +608,20 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   circleSectionTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
   },
   circleSectionBody: {
     maxWidth: 420,
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
   },
   circleSelectionCount: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
   },
@@ -615,15 +632,15 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: '#fafafa',
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
   circleSelectorRowSelected: {
-    borderColor: COLORS.text,
-    backgroundColor: '#f1f1f1',
+    borderColor: theme.circle.accent,
+    backgroundColor: theme.circle.accentSoft,
   },
   circleSelectorIcon: {
     width: 38,
@@ -631,17 +648,17 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   circleSelectorCopy: { flex: 1 },
   circleSelectorTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
   circleSelectorSubtitle: {
     marginTop: 2,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
   },
@@ -650,34 +667,34 @@ const styles = StyleSheet.create({
     height: 27,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.circle.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   circleCheckboxSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primary,
+    borderColor: theme.welcome.brandInk,
+    backgroundColor: theme.welcome.brandInk,
   },
   circleLoadState: {
     minHeight: 54,
     marginTop: 8,
     paddingHorizontal: 11,
     borderRadius: 11,
-    backgroundColor: '#f7f7f7',
+    backgroundColor: theme.circle.accentSoft,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   circleLoadText: {
     flex: 1,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
   noOtherCircles: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -685,13 +702,13 @@ const styles = StyleSheet.create({
   field: { marginBottom: 17 },
   label: {
     marginBottom: 7,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
   hint: {
     marginTop: 5,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
   },
@@ -701,9 +718,9 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     borderRadius: 11,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
-    color: COLORS.text,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 15,
   },
@@ -715,8 +732,8 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   settingRow: {
     flexDirection: 'row',
@@ -726,13 +743,13 @@ const styles = StyleSheet.create({
   settingRowSpaced: { marginTop: 18 },
   settingCopy: { flex: 1 },
   settingTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   settingBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -740,7 +757,7 @@ const styles = StyleSheet.create({
   guestDivider: {
     height: StyleSheet.hairlineWidth,
     marginVertical: 16,
-    backgroundColor: COLORS.border,
+    backgroundColor: theme.colors.border,
   },
   submitButton: {
     minHeight: 50,
@@ -750,7 +767,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   submitText: {
     color: '#fff',
@@ -758,4 +775,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   pressed: { opacity: 0.72 },
-});
+  });
+}

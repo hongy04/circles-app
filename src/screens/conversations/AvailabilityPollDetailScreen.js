@@ -11,10 +11,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   finalizeAvailabilityPoll,
   getAvailabilityPollDetails,
@@ -71,6 +73,8 @@ function PollOptionCard({
   onToggle,
   onFinalize,
 }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={[
       styles.optionCard,
@@ -93,7 +97,7 @@ function PollOptionCard({
         <View style={styles.optionCopy}>
           <Text style={styles.optionDate}>{formatOptionDate(option.startsAt, option.endsAt)}</Text>
           <View style={styles.availabilityRow}>
-            <Ionicons name="people-outline" size={14} color={COLORS.subtext} />
+            <Ionicons name="people-outline" size={14} color={theme.colors.subtext} />
             <Text style={styles.availabilityCount}>
               {option.availableCount} available
             </Text>
@@ -115,7 +119,7 @@ function PollOptionCard({
           onPress={onFinalize}
           style={({ pressed }) => [styles.finalizeButton, pressed && styles.pressed]}
         >
-          <Ionicons name="calendar-outline" size={16} color={COLORS.text} />
+          <Ionicons name="calendar-outline" size={16} color={theme.colors.text} />
           <Text style={styles.finalizeButtonText}>Choose this date</Text>
         </Pressable>
       ) : null}
@@ -124,6 +128,8 @@ function PollOptionCard({
 }
 
 function MemberRow({ member }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const responded = Boolean(member.respondedAt);
   let responseLabel = 'Waiting';
   if (responded && member.selectedCount === 0) responseLabel = 'None work';
@@ -147,8 +153,10 @@ function MemberRow({ member }) {
   );
 }
 
-export function AvailabilityPollDetailScreen({ route, navigation }) {
-  const { pollId } = route.params || {};
+function AvailabilityPollDetailContent({ route, navigation }) {
+  const { pollId, conversationId, circleName = 'Circle' } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [details, setDetails] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -241,7 +249,7 @@ export function AvailabilityPollDetailScreen({ route, navigation }) {
             setFinalizingId(option.id);
             try {
               const eventId = await finalizeAvailabilityPoll(pollId, option.id);
-              navigation.replace('EventDetail', { eventId });
+              navigation.replace('EventDetail', { eventId, conversationId, circleName });
             } catch (finalizeError) {
               Alert.alert(
                 'Could not finalize date',
@@ -273,7 +281,7 @@ export function AvailabilityPollDetailScreen({ route, navigation }) {
   if (error && !poll) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="options-outline" size={38} color={COLORS.text} />
+        <Ionicons name="options-outline" size={38} color={theme.colors.text} />
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -294,13 +302,18 @@ export function AvailabilityPollDetailScreen({ route, navigation }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={COLORS.text}
+            tintColor={theme.colors.text}
           />
         )}
       >
-        <View style={styles.heroCard}>
+        <LinearGradient
+          colors={theme.circle.headerGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.heroCard}
+        >
           <View style={styles.privacyRow}>
-            <Ionicons name="lock-closed" size={12} color={COLORS.subtext} />
+            <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
             <Text style={styles.privacyText}>{poll?.circleName}</Text>
             <View style={[styles.statusPill, !isOpen && styles.statusPillClosed]}>
               <Text style={styles.statusPillText}>{isOpen ? 'Open poll' : 'Finalized'}</Text>
@@ -311,7 +324,7 @@ export function AvailabilityPollDetailScreen({ route, navigation }) {
 
           {poll?.locationName ? (
             <View style={styles.detailRow}>
-              <Ionicons name="location-outline" size={19} color={COLORS.text} />
+              <Ionicons name="location-outline" size={19} color={theme.colors.text} />
               <Text style={styles.detailText}>{poll.locationName}</Text>
             </View>
           ) : null}
@@ -325,7 +338,7 @@ export function AvailabilityPollDetailScreen({ route, navigation }) {
           </View>
 
           {poll?.description ? <Text style={styles.description}>{poll.description}</Text> : null}
-        </View>
+        </LinearGradient>
 
         <View style={styles.responseSummary}>
           <View>
@@ -383,7 +396,7 @@ export function AvailabilityPollDetailScreen({ route, navigation }) {
           </Pressable>
         ) : poll?.finalizedEventId ? (
           <Pressable
-            onPress={() => navigation.navigate('EventDetail', { eventId: poll.finalizedEventId })}
+            onPress={() => navigation.navigate('EventDetail', { eventId: poll.finalizedEventId, conversationId, circleName })}
             style={({ pressed }) => [styles.openEventButton, pressed && styles.pressed]}
           >
             <Ionicons name="calendar" size={19} color="#fff" />
@@ -411,8 +424,18 @@ export function AvailabilityPollDetailScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f7f7' },
+export function AvailabilityPollDetailScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <AvailabilityPollDetailContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   content: {
     width: '100%',
     maxWidth: 720,
@@ -424,12 +447,12 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   privacyRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   privacyText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 11,
   },
@@ -438,17 +461,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: '#eeeeee',
+    backgroundColor: theme.circle.accentSoft,
   },
-  statusPillClosed: { backgroundColor: '#e4e4e4' },
+  statusPillClosed: { backgroundColor: theme.circle.accentSoft },
   statusPillText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
   },
   title: {
     marginTop: 10,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 25,
     lineHeight: 31,
@@ -461,7 +484,7 @@ const styles = StyleSheet.create({
   },
   detailText: {
     flex: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 14,
   },
@@ -473,13 +496,13 @@ const styles = StyleSheet.create({
   },
   hostCopy: { flex: 1 },
   hostName: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   hostBody: {
     marginTop: 1,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
@@ -487,8 +510,8 @@ const styles = StyleSheet.create({
     marginTop: 18,
     paddingTop: 17,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.border,
-    color: COLORS.text,
+    borderTopColor: theme.colors.border,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 14,
     lineHeight: 21,
@@ -498,35 +521,35 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
   },
   responseValue: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 20,
     textAlign: 'center',
   },
   responseLabel: {
     marginTop: 1,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     textAlign: 'center',
   },
-  summaryDivider: { width: StyleSheet.hairlineWidth, height: 34, backgroundColor: COLORS.border },
+  summaryDivider: { width: StyleSheet.hairlineWidth, height: 34, backgroundColor: theme.colors.border },
   sectionHeader: { marginTop: 24, marginBottom: 10, paddingHorizontal: 2 },
   sectionTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 17,
   },
   sectionBody: {
     marginTop: 2,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -535,12 +558,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     overflow: 'hidden',
   },
-  optionCardSelected: { borderWidth: 1.5, borderColor: COLORS.text },
-  optionCardFinalized: { backgroundColor: '#f1f1f1' },
+  optionCardSelected: { borderWidth: 1.5, borderColor: theme.colors.text },
+  optionCardFinalized: { backgroundColor: theme.circle.accentSoft },
   optionMain: {
     minHeight: 112,
     padding: 15,
@@ -557,13 +580,13 @@ const styles = StyleSheet.create({
     borderColor: '#a8a8a8',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
-  checkboxSelected: { borderColor: COLORS.primary, backgroundColor: COLORS.primary },
+  checkboxSelected: { borderColor: theme.welcome.brandInk, backgroundColor: theme.welcome.brandInk },
   checkboxDisabled: { opacity: 0.45 },
   optionCopy: { flex: 1 },
   optionDate: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
     lineHeight: 20,
@@ -575,13 +598,13 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   availabilityCount: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,
   },
   peopleNames: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -590,7 +613,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   finalizedPillText: {
     color: '#fff',
@@ -601,14 +624,14 @@ const styles = StyleSheet.create({
   finalizeButton: {
     minHeight: 42,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.border,
+    borderTopColor: theme.colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
   finalizeButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
   },
@@ -616,7 +639,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
     marginTop: 3,
     borderRadius: 12,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -632,7 +655,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
     marginTop: 3,
     borderRadius: 12,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -646,8 +669,8 @@ const styles = StyleSheet.create({
   membersCard: {
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     overflow: 'hidden',
   },
   memberRow: {
@@ -659,13 +682,13 @@ const styles = StyleSheet.create({
   },
   memberCopy: { flex: 1 },
   memberName: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
   hostLabel: {
     marginTop: 1,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
   },
@@ -673,35 +696,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   memberStatusResponded: { backgroundColor: '#e8e8e8' },
   memberStatusText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
   },
   memberDivider: {
     height: StyleSheet.hairlineWidth,
     marginLeft: 67,
-    backgroundColor: COLORS.border,
+    backgroundColor: theme.colors.border,
   },
   centerState: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 30,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   errorText: {
     maxWidth: 420,
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
@@ -710,8 +733,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
   pressed: { opacity: 0.7 },
-});
+  });
+}

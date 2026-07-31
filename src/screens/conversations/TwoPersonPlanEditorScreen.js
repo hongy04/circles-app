@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   createTwoPersonPlanIdea,
   getTwoPersonPlan,
@@ -71,6 +72,8 @@ function parseLocalDateTime(dateInput, timeInput) {
 }
 
 function Field({ label, hint, children }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -80,13 +83,15 @@ function Field({ label, hint, children }) {
   );
 }
 
-export function TwoPersonPlanEditorScreen({ route, navigation }) {
+function TwoPersonPlanEditorContent({ route, navigation }) {
   const {
     conversationId,
     circleName = 'Our Circle',
     planId = null,
     initialAction = 'idea',
   } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const tomorrow = useMemo(() => {
     const value = new Date();
     value.setDate(value.getDate() + 1);
@@ -256,7 +261,7 @@ export function TwoPersonPlanEditorScreen({ route, navigation }) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.contextCard}>
-            <Ionicons name="heart-outline" size={18} color={COLORS.text} />
+            <Ionicons name="heart-outline" size={18} color={theme.colors.text} />
             <View style={styles.contextCopy}>
               <Text style={styles.contextTitle}>{circleName}</Text>
               <Text style={styles.contextBody}>
@@ -304,7 +309,7 @@ export function TwoPersonPlanEditorScreen({ route, navigation }) {
 
           <View style={styles.proposalSection}>
             <View style={styles.proposalHeadingRow}>
-              <Ionicons name="calendar-outline" size={18} color={COLORS.text} />
+              <Ionicons name="calendar-outline" size={18} color={theme.colors.text} />
               <Text style={styles.proposalHeading}>
                 {showProposalFields ? 'Proposed time' : 'Ready to pick a time?'}
               </Text>
@@ -377,33 +382,44 @@ export function TwoPersonPlanEditorScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
+export function TwoPersonPlanEditorScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <TwoPersonPlanEditorContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   keyboardView: { flex: 1 },
   content: { width: '100%', maxWidth: 650, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 180 },
-  contextCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 13, borderRadius: 14, backgroundColor: '#f5f3f8' },
+  contextCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 13, borderRadius: 14, backgroundColor: theme.circle.accentSoft },
   contextCopy: { flex: 1 },
-  contextTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  contextBody: { marginTop: 3, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
+  contextTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+  contextBody: { marginTop: 3, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
   field: { marginTop: 18 },
-  label: { marginBottom: 7, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  hint: { marginTop: 5, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10.5, lineHeight: 15 },
-  input: { minHeight: 44, paddingHorizontal: 12, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#f8f8f8', color: COLORS.text, fontFamily: 'Manrope_400Regular', fontSize: 13 },
+  label: { marginBottom: 7, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+  hint: { marginTop: 5, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10.5, lineHeight: 15 },
+  input: { minHeight: 44, paddingHorizontal: 12, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.colors.surface, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 13 },
   textArea: { minHeight: 112, paddingTop: 11, paddingBottom: 11 },
-  proposalSection: { marginTop: 20, padding: 14, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fafafa' },
+  proposalSection: { marginTop: 20, padding: 14, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.colors.surface },
   proposalHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  proposalHeading: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
-  proposalBody: { marginTop: 5, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
+  proposalHeading: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
+  proposalBody: { marginTop: 5, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
   dateRow: { flexDirection: 'row', gap: 9, marginTop: 12 },
   dateField: { flex: 1.25 },
   timeField: { flex: 1 },
-  smallLabel: { marginBottom: 5, color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
+  smallLabel: { marginBottom: 5, color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
   errorText: { marginTop: 14, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12, lineHeight: 17 },
-  primaryButton: { minHeight: 46, marginTop: 10, borderRadius: 12, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  primaryButton: { minHeight: 46, marginTop: 10, borderRadius: 12, backgroundColor: theme.welcome.brandInk, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   primaryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  secondaryButton: { minHeight: 44, marginTop: 18, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#f5f5f5', alignItems: 'center', justifyContent: 'center' },
-  secondaryButtonText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: COLORS.bg },
-  stateText: { marginTop: 10, color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
+  secondaryButton: { minHeight: 44, marginTop: 18, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.circle.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  secondaryButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: theme.colors.surface },
+  stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
   pressed: { opacity: 0.7 },
-});
+  });
+}

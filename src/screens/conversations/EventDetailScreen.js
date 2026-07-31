@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,11 +11,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
 import { EventRepeatCard } from '../../components/events/EventRepeatCard';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   getEventDetails,
   getEventRepeatSummary,
@@ -92,6 +94,8 @@ function formatCircleContext(event) {
 }
 
 function CountCard({ value, label }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.countCard}>
       <Text style={styles.countValue}>{value}</Text>
@@ -101,6 +105,8 @@ function CountCard({ value, label }) {
 }
 
 function AttendeeRow({ attendee, attendanceReviewed }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.attendeeRow}>
       <Avatar
@@ -133,13 +139,15 @@ function GuestRow({
   onRemove,
   attendanceReviewed,
 }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <View style={styles.guestRow}>
       <View style={styles.guestAvatar}>
         <Ionicons
           name={guest.guestType === 'plus_one' ? 'people-outline' : 'person-outline'}
           size={20}
-          color={COLORS.text}
+          color={theme.colors.text}
         />
       </View>
       <View style={styles.guestCopy}>
@@ -172,7 +180,7 @@ function GuestRow({
             hitSlop={8}
             style={({ pressed }) => [styles.guestIconButton, pressed && styles.pressed]}
           >
-            <Ionicons name="trash-outline" size={18} color={COLORS.subtext} />
+            <Ionicons name="trash-outline" size={18} color={theme.colors.subtext} />
           </Pressable>
         </View>
       ) : (
@@ -189,6 +197,8 @@ function GuestRow({
 }
 
 function GuestInvitationRow({ invitation, busy, sharing, onShare, onRevoke }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const typeLabel = invitation.guestType === 'plus_one'
     ? 'Plus-one invitation'
     : 'Guest invitation';
@@ -196,7 +206,7 @@ function GuestInvitationRow({ invitation, busy, sharing, onShare, onRevoke }) {
   return (
     <View style={styles.guestRow}>
       <View style={styles.pendingInviteAvatar}>
-        <Ionicons name="link-outline" size={20} color={COLORS.text} />
+        <Ionicons name="link-outline" size={20} color={theme.colors.text} />
       </View>
       <View style={styles.guestCopy}>
         <Text style={styles.guestName} numberOfLines={1}>{typeLabel}</Text>
@@ -216,7 +226,7 @@ function GuestInvitationRow({ invitation, busy, sharing, onShare, onRevoke }) {
             {sharing ? (
               <ActivityIndicator size="small" />
             ) : (
-              <Ionicons name="share-outline" size={18} color={COLORS.text} />
+              <Ionicons name="share-outline" size={18} color={theme.colors.text} />
             )}
           </Pressable>
           <Pressable
@@ -228,7 +238,7 @@ function GuestInvitationRow({ invitation, busy, sharing, onShare, onRevoke }) {
             {busy ? (
               <ActivityIndicator size="small" />
             ) : (
-              <Ionicons name="trash-outline" size={18} color={COLORS.subtext} />
+              <Ionicons name="trash-outline" size={18} color={theme.colors.subtext} />
             )}
           </Pressable>
         </View>
@@ -241,8 +251,10 @@ function GuestInvitationRow({ invitation, busy, sharing, onShare, onRevoke }) {
   );
 }
 
-export function EventDetailScreen({ route, navigation }) {
-  const { eventId } = route.params || {};
+function EventDetailContent({ route, navigation }) {
+  const { eventId, conversationId, circleName = 'Circle' } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [details, setDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -529,7 +541,7 @@ export function EventDetailScreen({ route, navigation }) {
   if (error && !event) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="calendar-outline" size={38} color={COLORS.text} />
+        <Ionicons name="calendar-outline" size={38} color={theme.colors.text} />
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -540,9 +552,14 @@ export function EventDetailScreen({ route, navigation }) {
 
   const header = event ? (
     <View>
-      <View style={styles.heroCard}>
+      <LinearGradient
+        colors={theme.circle.headerGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroCard}
+      >
         <View style={styles.privacyRow}>
-          <Ionicons name="lock-closed" size={12} color={COLORS.subtext} />
+          <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
           <Text style={styles.privacyText}>{formatCircleContext(event)}</Text>
         </View>
 
@@ -552,7 +569,7 @@ export function EventDetailScreen({ route, navigation }) {
           <View style={styles.circleChips}>
             {event.circles.map((circle) => (
               <View key={circle.id} style={styles.circleChip}>
-                <Ionicons name="people-outline" size={13} color={COLORS.text} />
+                <Ionicons name="people-outline" size={13} color={theme.colors.text} />
                 <Text style={styles.circleChipText} numberOfLines={1}>{circle.name}</Text>
               </View>
             ))}
@@ -561,7 +578,7 @@ export function EventDetailScreen({ route, navigation }) {
 
         <View style={styles.detailRow}>
           <View style={styles.detailIcon}>
-            <Ionicons name="calendar-outline" size={20} color={COLORS.text} />
+            <Ionicons name="calendar-outline" size={20} color={theme.colors.text} />
           </View>
           <Text style={styles.detailText}>
             {formatEventDate(event.startsAt, event.endsAt)}
@@ -571,7 +588,7 @@ export function EventDetailScreen({ route, navigation }) {
         {event.locationName ? (
           <View style={styles.detailRow}>
             <View style={styles.detailIcon}>
-              <Ionicons name="location-outline" size={20} color={COLORS.text} />
+              <Ionicons name="location-outline" size={20} color={theme.colors.text} />
             </View>
             <Text style={styles.detailText}>{event.locationName}</Text>
           </View>
@@ -590,7 +607,7 @@ export function EventDetailScreen({ route, navigation }) {
         </View>
 
         {event.description ? <Text style={styles.description}>{event.description}</Text> : null}
-      </View>
+      </LinearGradient>
 
       <View style={styles.rsvpCard}>
         <Text style={styles.rsvpTitle}>
@@ -619,12 +636,12 @@ export function EventDetailScreen({ route, navigation }) {
                   ]}
                 >
                   {busy ? (
-                    <ActivityIndicator size="small" color={selected ? '#fff' : COLORS.text} />
+                    <ActivityIndicator size="small" color={selected ? '#fff' : theme.colors.text} />
                   ) : (
                     <Ionicons
                       name={option.icon}
                       size={19}
-                      color={selected ? '#fff' : COLORS.text}
+                      color={selected ? '#fff' : theme.colors.text}
                     />
                   )}
                   <Text style={[
@@ -652,7 +669,7 @@ export function EventDetailScreen({ route, navigation }) {
             <Ionicons
               name={event.attendanceReviewed ? 'checkmark-done-outline' : 'people-outline'}
               size={23}
-              color={COLORS.text}
+              color={theme.colors.text}
             />
           </View>
           <View style={styles.historyCopy}>
@@ -674,6 +691,8 @@ export function EventDetailScreen({ route, navigation }) {
               onPress={() => navigation.navigate('EventAttendanceReview', {
                 eventId,
                 eventTitle: event.title,
+                conversationId,
+                circleName,
               })}
               style={({ pressed }) => [styles.historyButton, pressed && styles.pressed]}
             >
@@ -700,6 +719,8 @@ export function EventDetailScreen({ route, navigation }) {
           onPress={() => navigation.navigate('EventConnections', {
             eventId,
             eventTitle: event.title,
+            conversationId,
+            circleName,
           })}
           style={({ pressed }) => [
             styles.eventConnectionsCard,
@@ -707,7 +728,7 @@ export function EventDetailScreen({ route, navigation }) {
           ]}
         >
           <View style={styles.eventConnectionsIcon}>
-            <Ionicons name="people-outline" size={23} color={COLORS.text} />
+            <Ionicons name="people-outline" size={23} color={theme.colors.text} />
           </View>
           <View style={styles.eventConnectionsCopy}>
             <Text style={styles.eventConnectionsTitle}>People from this event</Text>
@@ -715,7 +736,7 @@ export function EventDetailScreen({ route, navigation }) {
               See confirmed app attendees. Shared attendance gives limited profile context, never automatic access.
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={COLORS.subtext} />
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.subtext} />
         </Pressable>
       ) : null}
 
@@ -724,6 +745,8 @@ export function EventDetailScreen({ route, navigation }) {
           onPress={() => navigation.navigate('EventPhotoGallery', {
             eventId,
             eventTitle: event.title,
+            conversationId,
+            circleName,
           })}
           style={({ pressed }) => [
             styles.photoGalleryCard,
@@ -731,7 +754,7 @@ export function EventDetailScreen({ route, navigation }) {
           ]}
         >
           <View style={styles.photoGalleryIcon}>
-            <Ionicons name="images-outline" size={23} color={COLORS.text} />
+            <Ionicons name="images-outline" size={23} color={theme.colors.text} />
           </View>
           <View style={styles.photoGalleryCopy}>
             <Text style={styles.photoGalleryTitle}>Event photos</Text>
@@ -739,7 +762,7 @@ export function EventDetailScreen({ route, navigation }) {
               Share photos from this gathering. Invited guests can view the gallery through their private link.
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={COLORS.subtext} />
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.subtext} />
         </Pressable>
       ) : null}
 
@@ -761,7 +784,7 @@ export function EventDetailScreen({ route, navigation }) {
 
       <View style={styles.guestPolicyCard}>
         <View style={styles.guestPolicyIcon}>
-          <Ionicons name="shield-checkmark-outline" size={21} color={COLORS.text} />
+          <Ionicons name="shield-checkmark-outline" size={21} color={theme.colors.text} />
         </View>
         <View style={styles.guestPolicyCopy}>
           <Text style={styles.guestPolicyTitle}>
@@ -781,10 +804,10 @@ export function EventDetailScreen({ route, navigation }) {
         <View style={styles.guestActionRow}>
           {event.canManage ? (
             <Pressable
-              onPress={() => navigation.navigate('EventGuestSettings', { eventId })}
+              onPress={() => navigation.navigate('EventGuestSettings', { eventId, conversationId, circleName })}
               style={({ pressed }) => [styles.secondaryGuestButton, pressed && styles.pressed]}
             >
-              <Ionicons name="options-outline" size={18} color={COLORS.text} />
+              <Ionicons name="options-outline" size={18} color={theme.colors.text} />
               <Text style={styles.secondaryGuestButtonText}>Settings</Text>
             </Pressable>
           ) : null}
@@ -793,6 +816,8 @@ export function EventDetailScreen({ route, navigation }) {
               onPress={() => navigation.navigate('AddEventGuest', {
                 eventId,
                 eventTitle: event.title,
+                conversationId,
+                circleName,
                 allowPlusOnes: event.allowPlusOnes,
                 remainingGuestSlots: event.remainingGuestSlots,
                 guestInviteLinksEnabled,
@@ -858,7 +883,7 @@ export function EventDetailScreen({ route, navigation }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={COLORS.text}
+            tintColor={theme.colors.text}
           />
         )}
         contentContainerStyle={styles.content}
@@ -868,8 +893,18 @@ export function EventDetailScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f7f7' },
+export function EventDetailScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <EventDetailContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   content: {
     width: '100%',
     maxWidth: 720,
@@ -879,14 +914,15 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     padding: 20,
+    overflow: 'hidden',
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   privacyRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   privacyText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 11,
   },
@@ -901,21 +937,21 @@ const styles = StyleSheet.create({
     minHeight: 30,
     paddingHorizontal: 9,
     borderRadius: 999,
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
   circleChipText: {
     maxWidth: 210,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
   },
   title: {
     marginTop: 10,
     marginBottom: 17,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 25,
     lineHeight: 31,
@@ -932,24 +968,24 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   detailText: {
     flex: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 14,
     lineHeight: 20,
   },
   hostCopy: { flex: 1 },
   hostName: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   hostBody: {
     marginTop: 1,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
@@ -957,8 +993,8 @@ const styles = StyleSheet.create({
     marginTop: 18,
     paddingTop: 17,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.border,
-    color: COLORS.text,
+    borderTopColor: theme.circle.accentSoft,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 14,
     lineHeight: 21,
@@ -968,17 +1004,17 @@ const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   rsvpTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 17,
   },
   rsvpBody: {
     marginTop: 4,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 17,
@@ -989,18 +1025,18 @@ const styles = StyleSheet.create({
     minHeight: 47,
     borderRadius: 11,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: '#f2f2f2',
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.circle.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
   },
   rsvpButtonSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primary,
+    borderColor: theme.welcome.brandInk,
+    backgroundColor: theme.welcome.brandInk,
   },
   rsvpButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 11,
   },
@@ -1011,8 +1047,8 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -1023,17 +1059,17 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   historyCopy: { flex: 1, minWidth: 0 },
   historyTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   historyBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
     lineHeight: 15,
@@ -1044,7 +1080,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   historyButtonText: {
     color: '#fff',
@@ -1056,8 +1092,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 11,
@@ -1068,17 +1104,17 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   eventConnectionsCopy: { flex: 1 },
   eventConnectionsTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   eventConnectionsBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
     lineHeight: 15,
@@ -1088,8 +1124,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 11,
@@ -1100,17 +1136,17 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   photoGalleryCopy: { flex: 1 },
   photoGalleryTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   photoGalleryBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
     lineHeight: 15,
@@ -1120,18 +1156,18 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 13,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     alignItems: 'center',
   },
   countValue: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 19,
   },
   countLabel: {
     marginTop: 1,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
   },
@@ -1144,12 +1180,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   sectionTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 17,
   },
   sectionCount: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
   },
@@ -1160,20 +1196,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
   },
   attendeeCopy: { flex: 1, marginHorizontal: 11 },
   attendeeName: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   hostLabel: {
     marginTop: 1,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 10,
   },
@@ -1181,10 +1217,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: '#efefef',
+    backgroundColor: theme.circle.accentSoft,
   },
   statusPillText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
   },
@@ -1193,8 +1229,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     gap: 11,
   },
@@ -1204,17 +1240,17 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   guestPolicyCopy: { flex: 1 },
   guestPolicyTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
   guestPolicyBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -1225,15 +1261,15 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 11,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
   secondaryGuestButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
   },
@@ -1241,7 +1277,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     flex: 1,
     borderRadius: 11,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1260,8 +1296,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -1271,7 +1307,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   pendingInviteAvatar: {
     width: 42,
@@ -1280,18 +1316,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: '#fff',
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   guestCopy: { flex: 1, marginHorizontal: 10 },
   guestName: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
   guestMeta: {
     marginTop: 2,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 9,
   },
@@ -1301,12 +1337,12 @@ const styles = StyleSheet.create({
     minHeight: 32,
     paddingHorizontal: 8,
     borderRadius: 999,
-    backgroundColor: '#efefef',
+    backgroundColor: theme.circle.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   guestStatusText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 9,
   },
@@ -1321,17 +1357,17 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   emptyGuestTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
   emptyGuestBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -1341,17 +1377,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 30,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   errorText: {
     maxWidth: 420,
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
@@ -1360,8 +1396,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
   pressed: { opacity: 0.72 },
-});
+  });
+}

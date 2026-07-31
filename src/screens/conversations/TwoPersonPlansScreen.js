@@ -10,9 +10,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   listTwoPersonPlans,
   subscribeToTwoPersonPlanChanges,
@@ -40,7 +42,7 @@ function statusCopy(plan) {
   return 'Idea';
 }
 
-function PlanCard({ plan, onPress }) {
+function PlanCard({ plan, onPress, styles, theme }) {
   const dateLabel = formatPlanDate(plan.startsAt);
   const metadata = [dateLabel, plan.locationName].filter(Boolean).join(' · ');
 
@@ -53,7 +55,7 @@ function PlanCard({ plan, onPress }) {
         <Ionicons
           name={plan.status === 'completed' ? 'sparkles' : 'calendar-outline'}
           size={20}
-          color={COLORS.text}
+          color={theme.colors.text}
         />
       </View>
       <View style={styles.planCopy}>
@@ -86,7 +88,7 @@ function PlanCard({ plan, onPress }) {
   );
 }
 
-function SectionHeader({ title, subtitle }) {
+function SectionHeader({ title, subtitle, styles }) {
   return (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -95,8 +97,10 @@ function SectionHeader({ title, subtitle }) {
   );
 }
 
-export function TwoPersonPlansScreen({ route, navigation }) {
+function TwoPersonPlansContent({ route, navigation }) {
   const { conversationId, circleName = 'Our Circle' } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -165,9 +169,14 @@ export function TwoPersonPlansScreen({ route, navigation }) {
         data={flatData}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={(
-          <View style={styles.header}>
+          <LinearGradient
+            colors={theme.circle.headerGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.header}
+          >
             <View style={styles.lockRow}>
-              <Ionicons name="lock-closed" size={12} color={COLORS.subtext} />
+              <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
               <Text style={styles.lockText}>{circleName} · private to the two of you</Text>
             </View>
             <Text style={styles.headerTitle}>Plans</Text>
@@ -185,13 +194,14 @@ export function TwoPersonPlansScreen({ route, navigation }) {
               <Text style={styles.newButtonText}>New Idea</Text>
             </Pressable>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          </View>
+          </LinearGradient>
         )}
         renderItem={({ item }) => {
           if (item.type === 'header') {
             return (
               <SectionHeader
                 title={item.title}
+                styles={styles}
                 subtitle={item.title === 'Memories'
                   ? 'Completed plans stay here and appear in your Circle Timeline.'
                   : null}
@@ -201,6 +211,8 @@ export function TwoPersonPlansScreen({ route, navigation }) {
           return (
             <PlanCard
               plan={item.plan}
+              styles={styles}
+              theme={theme}
               onPress={() => navigation.navigate('TwoPersonPlanDetail', {
                 planId: item.plan.id,
                 conversationId,
@@ -211,7 +223,7 @@ export function TwoPersonPlansScreen({ route, navigation }) {
         }}
         ListEmptyComponent={(
           <View style={styles.emptyState}>
-            <Ionicons name="sparkles-outline" size={42} color={COLORS.subtext} />
+            <Ionicons name="sparkles-outline" size={42} color={theme.colors.subtext} />
             <Text style={styles.emptyTitle}>Start with one small idea</Text>
             <Text style={styles.emptyBody}>
               Save something you may want to do together. It does not become a commitment until one person proposes it and the other accepts.
@@ -225,7 +237,7 @@ export function TwoPersonPlansScreen({ route, navigation }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={COLORS.text}
+            tintColor={theme.colors.text}
           />
         )}
         contentContainerStyle={styles.listContent}
@@ -235,33 +247,44 @@ export function TwoPersonPlansScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
+export function TwoPersonPlansScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <TwoPersonPlansContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   listContent: { flexGrow: 1, paddingBottom: 36 },
-  header: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 10 },
+  header: { margin: 14, marginBottom: 4, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 18, borderRadius: 22, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft },
   lockRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  lockText: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
-  headerTitle: { marginTop: 9, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 25 },
-  headerBody: { marginTop: 6, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19 },
-  newButton: { marginTop: 15, minHeight: 43, borderRadius: 11, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  lockText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
+  headerTitle: { marginTop: 9, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 25 },
+  headerBody: { marginTop: 6, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19 },
+  newButton: { marginTop: 15, minHeight: 43, borderRadius: 11, backgroundColor: theme.welcome.brandInk, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   newButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
   errorText: { marginTop: 10, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
   sectionHeader: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 8 },
-  sectionTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 16 },
-  sectionSubtitle: { marginTop: 2, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 16 },
-  planCard: { minHeight: 84, marginHorizontal: 14, marginBottom: 9, paddingHorizontal: 13, paddingVertical: 12, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#f8f8f8', flexDirection: 'row', alignItems: 'center' },
-  planIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#ededed', alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 16 },
+  sectionSubtitle: { marginTop: 2, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 16 },
+  planCard: { minHeight: 84, marginHorizontal: 14, marginBottom: 9, paddingHorizontal: 13, paddingVertical: 12, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.colors.surface, flexDirection: 'row', alignItems: 'center' },
+  planIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: theme.circle.accentSoft, alignItems: 'center', justifyContent: 'center' },
   planCopy: { flex: 1, marginHorizontal: 11 },
   planTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  planTitle: { flex: 1, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
-  statusBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999, backgroundColor: '#e9e9e9' },
-  statusText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 9.5 },
-  planMeta: { marginTop: 4, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5 },
-  planHint: { marginTop: 4, color: COLORS.text, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5, lineHeight: 15 },
+  planTitle: { flex: 1, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
+  statusBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999, backgroundColor: theme.circle.accentSoft },
+  statusText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 9.5 },
+  planMeta: { marginTop: 4, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5 },
+  planHint: { marginTop: 4, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5, lineHeight: 15 },
   emptyState: { minHeight: 330, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34 },
-  emptyTitle: { marginTop: 13, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 18, textAlign: 'center' },
-  emptyBody: { marginTop: 7, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19, textAlign: 'center' },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: COLORS.bg },
-  stateText: { marginTop: 10, color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
+  emptyTitle: { marginTop: 13, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 18, textAlign: 'center' },
+  emptyBody: { marginTop: 7, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: theme.colors.surface },
+  stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
   pressed: { opacity: 0.72 },
-});
+  });
+}

@@ -13,11 +13,13 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   deleteEventPhoto,
   EVENT_PHOTO_SELECTION_LIMIT,
@@ -38,6 +40,8 @@ function formatAddedAt(value) {
 }
 
 function PhotoViewer({ photo, visible, deleting, onClose, onDelete }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   if (!photo) return null;
 
   return (
@@ -101,8 +105,10 @@ function PhotoViewer({ photo, visible, deleting, onClose, onDelete }) {
   );
 }
 
-export function EventPhotoGalleryScreen({ route }) {
-  const { eventId, eventTitle = 'Event' } = route.params || {};
+function EventPhotoGalleryContent({ route }) {
+  const { eventId, eventTitle = 'Event', conversationId } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const [gallery, setGallery] = useState({
     canUpload: false,
@@ -241,9 +247,14 @@ export function EventPhotoGalleryScreen({ route }) {
   }
 
   const header = (
-    <View style={styles.headerCard}>
+    <LinearGradient
+      colors={theme.circle.headerGradient}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.headerCard}
+    >
       <View style={styles.headerIcon}>
-        <Ionicons name="images-outline" size={26} color={COLORS.text} />
+        <Ionicons name="images-outline" size={26} color={theme.colors.text} />
       </View>
       <View style={styles.headerCopy}>
         <Text style={styles.eyebrow}>SHARED EVENT PHOTOS</Text>
@@ -273,7 +284,7 @@ export function EventPhotoGalleryScreen({ route }) {
         </Pressable>
       ) : (
         <View style={styles.uploadNotice}>
-          <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.subtext} />
+          <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.subtext} />
           <Text style={styles.uploadNoticeText}>
             The host, people marked Going, and confirmed attendees can add photos. You can still view everything shared here.
           </Text>
@@ -284,7 +295,7 @@ export function EventPhotoGalleryScreen({ route }) {
         {gallery.photoCount === 1 ? '1 photo' : `${gallery.photoCount} photos`}
       </Text>
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
-    </View>
+    </LinearGradient>
   );
 
   return (
@@ -297,7 +308,7 @@ export function EventPhotoGalleryScreen({ route }) {
         ListHeaderComponent={header}
         ListEmptyComponent={(
           <View style={styles.emptyCard}>
-            <Ionicons name="image-outline" size={36} color={COLORS.subtext} />
+            <Ionicons name="image-outline" size={36} color={theme.colors.subtext} />
             <Text style={styles.emptyTitle}>No event photos yet</Text>
             <Text style={styles.emptyBody}>
               Photos shared here become part of the gathering’s history and remain available to invited guests through their private link.
@@ -342,8 +353,18 @@ export function EventPhotoGalleryScreen({ route }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f7f7' },
+export function EventPhotoGalleryScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <EventPhotoGalleryContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   content: {
     width: '100%',
     maxWidth: 760,
@@ -357,8 +378,8 @@ const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   headerIcon: {
     width: 48,
@@ -366,25 +387,25 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   headerCopy: { marginTop: 14 },
   eyebrow: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
     letterSpacing: 1,
   },
   title: {
     marginTop: 5,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 22,
     lineHeight: 28,
   },
   body: {
     marginTop: 7,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
@@ -393,7 +414,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     marginTop: 16,
     borderRadius: 12,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -409,21 +430,21 @@ const styles = StyleSheet.create({
     marginTop: 15,
     padding: 12,
     borderRadius: 12,
-    backgroundColor: '#f2f2f2',
+    backgroundColor: theme.circle.accentSoft,
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
   },
   uploadNoticeText: {
     flex: 1,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
   },
   countText: {
     marginTop: 13,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,
   },
@@ -454,20 +475,20 @@ const styles = StyleSheet.create({
     padding: 28,
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     alignItems: 'center',
   },
   emptyTitle: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 17,
   },
   emptyBody: {
     maxWidth: 430,
     marginTop: 5,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
@@ -478,11 +499,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 30,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   pressed: { opacity: 0.76 },
@@ -519,4 +540,5 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
   },
-});
+  });
+}

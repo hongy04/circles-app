@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -9,7 +9,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../Avatar';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 
 function interestedCopy(count) {
   if (count === 1) return '1 person would join another gathering.';
@@ -23,6 +23,8 @@ export function EventRepeatCard({
   onToggle,
   onPlanAnother,
 }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   if (!summary?.available) return null;
 
   const people = summary.interestedPeople || [];
@@ -31,7 +33,7 @@ export function EventRepeatCard({
   return (
     <View style={styles.card}>
       <View style={styles.icon}>
-        <Ionicons name="refresh-outline" size={23} color={COLORS.text} />
+        <Ionicons name="refresh-outline" size={23} color={theme.colors.text} />
       </View>
 
       <View style={styles.copy}>
@@ -83,13 +85,13 @@ export function EventRepeatCard({
               {updating ? (
                 <ActivityIndicator
                   size="small"
-                  color={summary.viewerInterested ? '#fff' : COLORS.text}
+                  color={summary.viewerInterested ? '#fff' : theme.colors.text}
                 />
               ) : (
                 <Ionicons
                   name={summary.viewerInterested ? 'checkmark' : 'heart-outline'}
                   size={17}
-                  color={summary.viewerInterested ? '#fff' : COLORS.text}
+                  color={summary.viewerInterested ? '#fff' : theme.colors.text}
                 />
               )}
               <Text style={[
@@ -121,14 +123,15 @@ export function EventRepeatCard({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   card: {
     marginTop: 12,
     padding: 16,
     borderRadius: 17,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     gap: 12,
   },
@@ -138,17 +141,17 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   copy: { flex: 1 },
   title: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
   },
   body: {
     marginTop: 4,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
@@ -163,11 +166,11 @@ const styles = StyleSheet.create({
   stackedAvatar: {
     borderRadius: 17,
     borderWidth: 2,
-    borderColor: COLORS.bg,
+    borderColor: theme.colors.surface,
   },
   peopleText: {
     flex: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,
     lineHeight: 16,
@@ -183,19 +186,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
   },
   signalButtonSelected: {
-    borderColor: COLORS.text,
-    backgroundColor: COLORS.text,
+    borderColor: theme.welcome.brandInk,
+    backgroundColor: theme.welcome.brandInk,
   },
   signalButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
   },
@@ -204,7 +207,7 @@ const styles = StyleSheet.create({
     minHeight: 40,
     paddingHorizontal: 13,
     borderRadius: 12,
-    backgroundColor: COLORS.text,
+    backgroundColor: theme.welcome.brandInk,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -216,4 +219,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   pressed: { opacity: 0.72 },
-});
+  });
+}
