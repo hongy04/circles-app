@@ -10,7 +10,7 @@ function replaceRootRoute(navigation, name, params) {
 }
 
 export function replaceWithMainTabs(navigation) {
-  replaceRootRoute(navigation, 'MainTabs');
+  replaceRootRoute(navigation, 'MainTabs', { showLaunchPortal: true });
 }
 
 export function replaceWithAccountStatus(navigation) {

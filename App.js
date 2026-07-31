@@ -30,6 +30,8 @@ import {
 } from './src/services/notificationService';
 import { Avatar } from './src/components/Avatar';
 import { DevBanner } from './src/components/DevBanner';
+import { LaunchPortal } from './src/components/LaunchPortal';
+import { MonoRingWithRipples } from './src/components/MonoRingWithRipples';
 import { AuthNavigator } from './src/navigation/AuthNavigator';
 import {
   flushPendingPushDestination,
@@ -298,7 +300,7 @@ function GateScreen({ navigation }) {
         }
 
         if (enforcement.active && enforcement.state === 'restricted') {
-          navigation.replace('MainTabs');
+          navigation.replace('MainTabs', { showLaunchPortal: true });
           return;
         }
 
@@ -315,7 +317,7 @@ function GateScreen({ navigation }) {
           return;
         }
 
-        navigation.replace('MainTabs');
+        navigation.replace('MainTabs', { showLaunchPortal: true });
       } catch (error) {
         if (mounted) {
           setErrorMessage(
@@ -334,9 +336,7 @@ function GateScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.launchRoot} edges={['top', 'bottom']}>
-      <View style={styles.launchMark}>
-        <View style={styles.launchMarkInner} />
-      </View>
+      <MonoRingWithRipples size={76} />
       <Text style={styles.launchBrand}>Circles</Text>
 
       {errorMessage ? (
@@ -368,13 +368,27 @@ function nextRelationshipTabBadgeChannelName() {
   return `relationship_tab_badges_${Date.now()}_${relationshipTabBadgeChannelCounter}`;
 }
 
-function AppTabs({ navigation }) {
+function AppTabs({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const [reqCount, setReqCount] = useState(0);
   const [circleBadgeCount, setCircleBadgeCount] = useState(0);
   const [authed, setAuthed] = useState(false);
   const [enforcement, setEnforcement] = useState(null);
   const [enforcementLoading, setEnforcementLoading] = useState(true);
+  const [showLaunchPortal, setShowLaunchPortal] = useState(
+    route?.params?.showLaunchPortal === true
+  );
+
+  useEffect(() => {
+    if (route?.params?.showLaunchPortal === true) {
+      setShowLaunchPortal(true);
+    }
+  }, [route?.params?.showLaunchPortal]);
+
+  const dismissLaunchPortal = () => {
+    setShowLaunchPortal(false);
+    navigation.setParams?.({ showLaunchPortal: false });
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -522,6 +536,9 @@ function AppTabs({ navigation }) {
         <Tabs.Screen name="Feed" component={FeedScreen} />
         <Tabs.Screen name="Me" component={MeScreen} />
       </Tabs.Navigator>
+      {showLaunchPortal ? (
+        <LaunchPortal onComplete={dismissLaunchPortal} />
+      ) : null}
     </View>
   );
 }
