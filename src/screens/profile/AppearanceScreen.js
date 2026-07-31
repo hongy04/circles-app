@@ -1,5 +1,6 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Easing,
   Pressable,
@@ -31,6 +32,7 @@ function ThemeSampleCircle() {
   const beginRipple = (event) => {
     const x = event?.nativeEvent?.locationX;
     const y = event?.nativeEvent?.locationY;
+
     if (Number.isFinite(x) && Number.isFinite(y)) {
       setRippleOrigin({ x, y });
     }
@@ -66,8 +68,8 @@ function ThemeSampleCircle() {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Preview theme ripple"
-      accessibilityHint="Shows the selected theme's fluid Circle response"
+      accessibilityLabel="Preview selected theme ripple"
+      accessibilityHint="Shows how the selected atmosphere changes the fluid Circle"
       onPressIn={beginRipple}
       onPressOut={releaseRipple}
       style={{ width: size, height: size }}
@@ -106,10 +108,55 @@ function PaletteSwatches({ themeId, selected }) {
   );
 }
 
-export function ThemePreviewScreen({ navigation }) {
+export function AppearanceScreen({ navigation }) {
   const theme = useThemeTokens();
-  const { themeId, setThemeId, resetTheme } = useTheme();
+  const {
+    savedThemeId,
+    setThemeId,
+    restoreSavedTheme,
+    saveThemeId,
+  } = useTheme();
+  const [selectedThemeId, setSelectedThemeId] = useState(savedThemeId);
+  const [saving, setSaving] = useState(false);
+  const savedThemeRef = useRef(savedThemeId);
   const themedStyles = useMemo(() => createThemedStyles(theme), [theme]);
+
+  useEffect(() => {
+    savedThemeRef.current = savedThemeId;
+  }, [savedThemeId]);
+
+  useEffect(() => {
+    setSelectedThemeId(savedThemeRef.current);
+    setThemeId(savedThemeRef.current);
+
+    return () => {
+      restoreSavedTheme();
+    };
+  }, [restoreSavedTheme, setThemeId]);
+
+  const hasPendingChange = selectedThemeId !== savedThemeId;
+
+  const selectTheme = (themeId) => {
+    setSelectedThemeId(themeId);
+    setThemeId(themeId);
+  };
+
+  const applyTheme = async () => {
+    if (!hasPendingChange || saving) return;
+
+    setSaving(true);
+    try {
+      const persistedThemeId = await saveThemeId(selectedThemeId);
+      setSelectedThemeId(persistedThemeId);
+    } catch (error) {
+      Alert.alert(
+        'Could not save theme',
+        error?.message || 'Your current theme was kept. Please try again.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <View style={themedStyles.screen}>
@@ -123,7 +170,7 @@ export function ThemePreviewScreen({ navigation }) {
           >
             <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
           </Pressable>
-          <Text style={themedStyles.topBarTitle}>Theme Laboratory</Text>
+          <Text style={themedStyles.topBarTitle}>Appearance</Text>
           <View style={themedStyles.topBarSide} />
         </View>
 
@@ -131,15 +178,11 @@ export function ThemePreviewScreen({ navigation }) {
           contentContainerStyle={themedStyles.content}
           showsVerticalScrollIndicator={false}
         >
-          <View style={themedStyles.devBadge}>
-            <Ionicons name="flask-outline" size={16} color={theme.colors.text} />
-            <Text style={themedStyles.devBadgeText}>DEVELOPMENT PREVIEW</Text>
-          </View>
-
-          <Text style={themedStyles.title}>Choose the atmosphere.</Text>
+          <Text style={themedStyles.title}>Make Circles feel like yours.</Text>
           <Text style={themedStyles.subtitle}>
-            Compare Circles' curated Frutiger Aero directions live. Changes are
-            temporary and return to your saved Appearance choice when the app reloads.
+            Choose a global atmosphere for the welcome experience and every
+            theme-aware surface. Individual Circles can have their own shared
+            look later without changing this preference.
           </Text>
 
           <View style={themedStyles.heroCard}>
@@ -153,20 +196,21 @@ export function ThemePreviewScreen({ navigation }) {
           </View>
 
           <Pressable
-            onPress={() => navigation.navigate('ThemeWelcomePreview')}
+            onPress={() => navigation.navigate('AppearanceWelcomePreview')}
             style={({ pressed }) => [
-              themedStyles.primaryAction,
+              themedStyles.previewAction,
               pressed && themedStyles.pressed,
             ]}
           >
-            <Ionicons name="play-outline" size={20} color={theme.colors.onPrimary} />
-            <Text style={themedStyles.primaryActionText}>Preview full welcome</Text>
+            <Ionicons name="play-outline" size={20} color={theme.colors.text} />
+            <Text style={themedStyles.previewActionText}>Preview full welcome</Text>
           </Pressable>
 
-          <Text style={themedStyles.sectionLabel}>CURATED THEMES</Text>
+          <Text style={themedStyles.sectionLabel}>ATMOSPHERES</Text>
           <View style={themedStyles.themeList}>
             {THEME_OPTIONS.map((option, index) => {
-              const selected = option.id === themeId;
+              const selected = option.id === selectedThemeId;
+              const applied = option.id === savedThemeId;
               const optionTheme = getTheme(option.id);
 
               return (
@@ -175,7 +219,7 @@ export function ThemePreviewScreen({ navigation }) {
                   <Pressable
                     accessibilityRole="radio"
                     accessibilityState={{ checked: selected }}
-                    onPress={() => setThemeId(option.id)}
+                    onPress={() => selectTheme(option.id)}
                     style={({ pressed }) => [
                       themedStyles.themeRow,
                       selected && {
@@ -204,9 +248,9 @@ export function ThemePreviewScreen({ navigation }) {
                     <View style={themedStyles.themeText}>
                       <View style={themedStyles.themeTitleRow}>
                         <Text style={themedStyles.themeName}>{option.name}</Text>
-                        {selected ? (
-                          <View style={themedStyles.selectedBadge}>
-                            <Text style={themedStyles.selectedBadgeText}>ACTIVE</Text>
+                        {applied ? (
+                          <View style={themedStyles.appliedBadge}>
+                            <Text style={themedStyles.appliedBadgeText}>APPLIED</Text>
                           </View>
                         ) : null}
                       </View>
@@ -228,24 +272,51 @@ export function ThemePreviewScreen({ navigation }) {
           </View>
 
           <Pressable
-            onPress={resetTheme}
-            disabled={themeId === DEFAULT_THEME_ID}
+            onPress={() => selectTheme(DEFAULT_THEME_ID)}
+            disabled={selectedThemeId === DEFAULT_THEME_ID}
             style={({ pressed }) => [
               themedStyles.resetAction,
-              themeId === DEFAULT_THEME_ID && themedStyles.resetActionDisabled,
-              pressed && themeId !== DEFAULT_THEME_ID && themedStyles.pressed,
+              selectedThemeId === DEFAULT_THEME_ID && themedStyles.disabled,
+              pressed && selectedThemeId !== DEFAULT_THEME_ID && themedStyles.pressed,
             ]}
           >
             <Ionicons name="refresh-outline" size={18} color={theme.colors.text} />
-            <Text style={themedStyles.resetActionText}>Reset to Aqua Daylight</Text>
+            <Text style={themedStyles.resetActionText}>Select Aqua Daylight</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={applyTheme}
+            disabled={!hasPendingChange || saving}
+            style={({ pressed }) => [
+              themedStyles.applyAction,
+              (!hasPendingChange || saving) && themedStyles.applyActionDisabled,
+              pressed && hasPendingChange && !saving && themedStyles.pressed,
+            ]}
+          >
+            <Ionicons
+              name={hasPendingChange ? 'sparkles-outline' : 'checkmark-circle-outline'}
+              size={20}
+              color={theme.colors.onPrimary}
+            />
+            <Text style={themedStyles.applyActionText}>
+              {saving
+                ? 'Saving…'
+                : hasPendingChange
+                  ? `Apply ${getTheme(selectedThemeId).name}`
+                  : `${getTheme(savedThemeId).name} is applied`}
+            </Text>
           </Pressable>
 
           <View style={themedStyles.noteCard}>
-            <Ionicons name="information-circle-outline" size={20} color={theme.colors.text} />
+            <Ionicons
+              name="cloud-done-outline"
+              size={20}
+              color={theme.colors.text}
+            />
             <Text style={themedStyles.noteText}>
-              This laboratory changes presentation only. It does not save a
-              preference, update Supabase, or change Circle permissions. Use
-              Settings → Appearance to apply a theme to your account.
+              Your global theme follows your Circles account and is restored
+              before the welcome portal appears. Leaving without applying
+              returns to your saved theme.
             </Text>
           </View>
         </ScrollView>
@@ -254,7 +325,7 @@ export function ThemePreviewScreen({ navigation }) {
   );
 }
 
-export function ThemeWelcomePreviewScreen({ navigation }) {
+export function AppearanceWelcomePreviewScreen({ navigation }) {
   const theme = useThemeTokens();
 
   return (
@@ -303,26 +374,7 @@ function createThemedStyles(theme) {
       paddingTop: theme.spacing.lg,
       paddingBottom: 54,
     },
-    devBadge: {
-      alignSelf: 'flex-start',
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 7,
-      paddingHorizontal: 10,
-      paddingVertical: 7,
-      borderRadius: theme.radii.pill,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: theme.colors.border,
-      backgroundColor: theme.colors.surface,
-    },
-    devBadgeText: {
-      color: theme.colors.text,
-      fontFamily: theme.typography.bold,
-      fontSize: 10,
-      letterSpacing: 1.15,
-    },
     title: {
-      marginTop: 18,
       color: theme.colors.text,
       fontFamily: theme.typography.bold,
       fontSize: 30,
@@ -331,7 +383,7 @@ function createThemedStyles(theme) {
     },
     subtitle: {
       marginTop: 9,
-      maxWidth: 560,
+      maxWidth: 580,
       color: theme.colors.subtext,
       fontFamily: theme.typography.regular,
       fontSize: 14,
@@ -385,7 +437,7 @@ function createThemedStyles(theme) {
       fontFamily: theme.typography.semibold,
       fontSize: 12,
     },
-    primaryAction: {
+    previewAction: {
       minHeight: 50,
       marginTop: 12,
       flexDirection: 'row',
@@ -393,10 +445,12 @@ function createThemedStyles(theme) {
       justifyContent: 'center',
       gap: 8,
       borderRadius: theme.radii.md,
-      backgroundColor: theme.colors.primary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
     },
-    primaryActionText: {
-      color: theme.colors.onPrimary,
+    previewActionText: {
+      color: theme.colors.text,
       fontFamily: theme.typography.bold,
       fontSize: 14,
     },
@@ -453,13 +507,13 @@ function createThemedStyles(theme) {
       fontFamily: theme.typography.bold,
       fontSize: 15,
     },
-    selectedBadge: {
+    appliedBadge: {
       paddingHorizontal: 7,
       paddingVertical: 3,
       borderRadius: theme.radii.pill,
       backgroundColor: theme.colors.text,
     },
-    selectedBadgeText: {
+    appliedBadgeText: {
       color: theme.colors.bg,
       fontFamily: theme.typography.bold,
       fontSize: 8,
@@ -471,17 +525,6 @@ function createThemedStyles(theme) {
       fontFamily: theme.typography.regular,
       fontSize: 12,
       lineHeight: 17,
-    },
-    swatchRow: {
-      flexDirection: 'row',
-      gap: 6,
-      marginTop: 9,
-    },
-    swatch: {
-      width: 17,
-      height: 17,
-      borderRadius: 8.5,
-      borderWidth: StyleSheet.hairlineWidth,
     },
     separator: {
       height: StyleSheet.hairlineWidth,
@@ -500,13 +543,28 @@ function createThemedStyles(theme) {
       borderColor: theme.colors.border,
       backgroundColor: theme.colors.surface,
     },
-    resetActionDisabled: {
-      opacity: 0.45,
-    },
     resetActionText: {
       color: theme.colors.text,
       fontFamily: theme.typography.bold,
       fontSize: 13,
+    },
+    applyAction: {
+      minHeight: 52,
+      marginTop: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      borderRadius: theme.radii.md,
+      backgroundColor: theme.colors.primary,
+    },
+    applyActionDisabled: {
+      opacity: 0.46,
+    },
+    applyActionText: {
+      color: theme.colors.onPrimary,
+      fontFamily: theme.typography.bold,
+      fontSize: 14,
     },
     noteCard: {
       marginTop: 18,
@@ -525,6 +583,9 @@ function createThemedStyles(theme) {
       fontFamily: theme.typography.regular,
       fontSize: 12,
       lineHeight: 18,
+    },
+    disabled: {
+      opacity: 0.45,
     },
     pressed: {
       opacity: 0.72,

@@ -12,6 +12,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { COLORS } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeProvider';
+import { getTheme } from '../../theme/themes';
 import { IS_DEVELOPMENT } from '../../config/env';
 import { getAccountSession, signOut } from '../../services/profileService';
 import { getModerationAccess } from '../../services/safetyModerationService';
@@ -54,6 +56,7 @@ function SettingRow({ icon, title, subtitle, onPress, destructive = false }) {
 }
 
 export function AccountSettingsScreen({ navigation }) {
+  const { savedThemeId } = useTheme();
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
@@ -272,6 +275,13 @@ export function AccountSettingsScreen({ navigation }) {
 
           <Text style={styles.sectionLabel}>APP</Text>
           <View style={styles.section}>
+            <SettingRow
+              icon="color-palette-outline"
+              title="Appearance"
+              subtitle={`${getTheme(savedThemeId).name} · Choose your global Circles atmosphere`}
+              onPress={() => navigation.navigate('Appearance')}
+            />
+            <View style={styles.separator} />
             <SettingRow
               icon="notifications-outline"
               title="Push notifications"

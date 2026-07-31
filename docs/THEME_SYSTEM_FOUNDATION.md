@@ -1,19 +1,29 @@
 # Circles Theme System Foundation
 
-**Status:** Frontend foundation implemented  
+**Status:** Global preference layer implemented; Circle-specific personalization next  
 **Default theme:** Aqua Daylight  
 **Visual direction:** Modern Frutiger Aero — futuristic but cozy, clean but personal
 
 ## Purpose
 
-The theme system separates Circles' visual decisions from individual screen files. It allows the app to adopt expressive personalization gradually without turning each screen into a collection of unrelated hard-coded colors and animations.
+The theme system separates Circles' visual decisions from individual screen files. It allows the app to adopt expressive personalization gradually without turning each screen into unrelated hard-coded colors and animations.
 
-The foundation supports two future layers:
+The system supports two layers:
 
-1. **Global user theme** — the visual atmosphere the user chooses for the overall app.
-2. **Circle-specific theme** — a shared visual atmosphere scoped to one Circle or Our Circle.
+1. **Global user theme** — the account-level visual atmosphere for the overall app.
+2. **Circle-specific theme** — a future shared atmosphere scoped to one Circle or Our Circle.
 
-No database preference or user-facing theme picker is included in this step. A development-only Theme Laboratory can switch themes in memory for review; the selection resets to Aqua Daylight when the app reloads.
+## Global preference behavior
+
+Settings now exposes **Appearance** in all builds. The user can:
+
+- preview every curated atmosphere live
+- replay the full welcome portal before applying
+- apply one global theme to their Circles account
+- return to Aqua Daylight
+- leave the screen without applying and automatically return to the saved theme
+
+Migration `066` stores the private account preference in `public.users.theme_id`. The app also maintains a per-user AsyncStorage cache. On launch, the provider reads the cache and reconciles it with Supabase before the welcome portal becomes visible. Signing out returns the signed-out experience to Aqua Daylight without deleting the saved per-account cache.
 
 ## Files
 
@@ -26,8 +36,16 @@ No database preference or user-facing theme picker is included in this step. A d
   - Theme-resolution and token-merging helpers
 - `src/theme/ThemeProvider.js`
   - Global `ThemeProvider`
-  - Nested `ThemeScope` for future Circle-specific themes
+  - Saved-versus-preview theme state
+  - Account hydration and local-cache reconciliation
+  - Nested `ThemeScope` for Circle-specific themes
   - `useTheme()` and `useThemeTokens()` hooks
+- `src/services/themePreferenceService.js`
+  - Supabase preference reads/writes
+  - Per-user local theme cache
+  - Fallback normalization
+- `src/screens/profile/AppearanceScreen.js`
+  - Production theme selection and live preview
 - `src/theme/colors.js`
   - Backward-compatible `COLORS` export for screens not yet migrated
 - `src/theme/index.js`
@@ -35,25 +53,12 @@ No database preference or user-facing theme picker is included in this step. A d
 
 ## Initial curated themes
 
-The registry includes token-complete starting points for:
-
 - Aqua Daylight
 - Citrus Garden
 - Bubblegum Sky
 - After Rain
 
-Aqua Daylight remains the default. Development builds can compare all four through Settings → Theme Laboratory, but the alternatives are not user-facing options and are not persisted yet.
-
-## Development preview
-
-Development builds expose **Settings → Theme Laboratory**. It can:
-
-- switch the global theme in memory
-- preview the live fluid Circle and palette
-- replay the full returning-user welcome portal
-- reset to Aqua Daylight
-
-The laboratory does not write to Supabase, survive an app reload, or expose theme controls in production builds.
+Aqua Daylight remains the default. Development builds still expose **Settings → Theme Laboratory** for temporary design experimentation. Laboratory changes remain in memory and are not saved unless the user applies a theme through the production Appearance screen.
 
 ## Adoption pattern
 
@@ -67,7 +72,7 @@ const theme = useThemeTokens();
 <View style={{ backgroundColor: theme.colors.bg }} />
 ```
 
-A Circle-specific surface can later be scoped without changing the global theme:
+A Circle-specific surface can be scoped without changing the global theme:
 
 ```js
 import { ThemeScope } from '../../theme/ThemeProvider';
@@ -77,34 +82,20 @@ import { ThemeScope } from '../../theme/ThemeProvider';
 </ThemeScope>
 ```
 
-Custom Circle accents can be layered with safe overrides:
-
-```js
-<ThemeScope
-  themeId={circle.theme_id}
-  overrides={{
-    circle: {
-      accent: circle.accent_color,
-    },
-  }}
->
-  <CircleProfileContent />
-</ThemeScope>
-```
+A Circle with no explicit shared theme can omit `themeId` and inherit the user's global preference.
 
 ## Migration strategy
 
-The theme system is intentionally incremental:
-
 1. Welcome and launch atmosphere
-2. Shared reusable components
+2. Global theme persistence and Appearance
 3. Circle profile headers and Circle More
-4. Invitations and event surfaces
-5. Our Circle shared space
-6. Feed and remaining core screens
-7. Theme picker and preference persistence
+4. Circle/Our Circle shared theme selection
+5. Invitations and event surfaces
+6. Our Circle depth features
+7. Feed and remaining core screens
+8. Theme-specific navigation stations and icon families
 
-Safety, moderation, account, and dense form screens should use restrained theme tokens even when expressive themes are active.
+Safety, moderation, account deletion, and dense form screens should use restrained theme tokens even when expressive themes are active.
 
 ## Guardrails
 
@@ -112,4 +103,5 @@ Safety, moderation, account, and dense form screens should use restrained theme 
 - Text contrast and accessibility remain mandatory.
 - Motion respects the operating system's reduced-motion setting.
 - Circle themes must not make private drafts or relationship state appear public.
-- Curated themes are preferred over unrestricted free-form styling in the initial release.
+- Curated themes are preferred over unrestricted free-form styling initially.
+- A global theme is private account state; a Circle theme will be shared Circle state.

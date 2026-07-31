@@ -16,7 +16,7 @@ import {
   Manrope_700Bold,
 } from '@expo-google-fonts/manrope';
 import { COLORS } from './src/theme/colors';
-import { ThemeProvider } from './src/theme/ThemeProvider';
+import { ThemeProvider, useTheme } from './src/theme/ThemeProvider';
 import { IS_DEVELOPMENT } from './src/config/env';
 import { supabase } from './src/lib/supabase';
 import { ensureAuthed } from './src/services/authService';
@@ -51,6 +51,10 @@ import { ProfileConnectionsScreen } from './src/screens/profile/ProfileConnectio
 import { GuestClaimProfileSetupScreen } from './src/screens/profile/GuestClaimProfileSetupScreen';
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
+import {
+  AppearanceScreen,
+  AppearanceWelcomePreviewScreen,
+} from './src/screens/profile/AppearanceScreen';
 import { PushNotificationSettingsScreen } from './src/screens/profile/PushNotificationSettingsScreen';
 import { DeleteAccountScreen } from './src/screens/profile/DeleteAccountScreen';
 import { RomanticSettingsScreen } from './src/screens/profile/RomanticSettingsScreen';
@@ -200,6 +204,11 @@ export default function App() {
           />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
+          <RootStack.Screen name="Appearance" component={AppearanceScreen} />
+          <RootStack.Screen
+            name="AppearanceWelcomePreview"
+            component={AppearanceWelcomePreviewScreen}
+          />
           <RootStack.Screen
             name="PushNotifications"
             component={PushNotificationSettingsScreen}
@@ -282,6 +291,7 @@ export default function App() {
 
 /* ---------------- Launch routing ---------------- */
 function GateScreen({ navigation }) {
+  const { hydrateThemeForUser } = useTheme();
   const [errorMessage, setErrorMessage] = useState('');
   const [attempt, setAttempt] = useState(0);
 
@@ -304,6 +314,12 @@ function GateScreen({ navigation }) {
           navigation.replace('Auth', { screen: 'Welcome' });
           return;
         }
+
+        // Restore the account's saved appearance before any themed portal or
+        // main-app surface becomes visible. A preference failure falls back to
+        // the local cache/default and never blocks account access.
+        await hydrateThemeForUser(session.user.id);
+        if (!mounted) return;
 
         const enforcement = await getMyAccountEnforcementState();
         if (!mounted) return;
@@ -346,7 +362,7 @@ function GateScreen({ navigation }) {
     return () => {
       mounted = false;
     };
-  }, [attempt, navigation]);
+  }, [attempt, hydrateThemeForUser, navigation]);
 
   return (
     <SafeAreaView style={styles.launchRoot} edges={['top', 'bottom']}>
@@ -384,6 +400,7 @@ function nextRelationshipTabBadgeChannelName() {
 
 function AppTabs({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  const { themeReady } = useTheme();
   const [reqCount, setReqCount] = useState(0);
   const [circleBadgeCount, setCircleBadgeCount] = useState(0);
   const [authed, setAuthed] = useState(false);
@@ -478,10 +495,12 @@ function AppTabs({ navigation, route }) {
     };
   }, []);
 
-  if (enforcementLoading) {
+  if (enforcementLoading || (showLaunchPortal && !themeReady)) {
     return (
-      <SafeAreaView style={styles.enforcementLoading} edges={['top']}>
-        <ActivityIndicator />
+      <SafeAreaView style={styles.enforcementLoading} edges={['top', 'bottom']}>
+        <MonoRingWithRipples size={76} />
+        <Text style={styles.launchBrand}>Circles</Text>
+        <ActivityIndicator style={{ marginTop: 22 }} color={COLORS.text} />
       </SafeAreaView>
     );
   }
