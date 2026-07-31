@@ -71,6 +71,10 @@ import { InvitePeopleScreen } from './src/screens/profile/InvitePeopleScreen';
 import { InvitationLandingScreen } from './src/screens/invitations/InvitationLandingScreen';
 import { EventGuestInvitationScreen } from './src/screens/invitations/EventGuestInvitationScreen';
 import { DevAccountsScreen } from './src/screens/dev/DevAccountsScreen';
+import {
+  ThemePreviewScreen,
+  ThemeWelcomePreviewScreen,
+} from './src/screens/dev/ThemePreviewScreen';
 import { InboxScreen } from './src/screens/conversations/InboxScreen';
 import { NotificationsScreen } from './src/screens/conversations/NotificationsScreen';
 import { ConversationNotificationSettingsScreen } from './src/screens/conversations/ConversationNotificationSettingsScreen';
@@ -258,7 +262,14 @@ export default function App() {
           />
           <RootStack.Screen name="InvitePeople" component={InvitePeopleScreen} />
           {IS_DEVELOPMENT ? (
-            <RootStack.Screen name="DevAccounts" component={DevAccountsScreen} />
+            <>
+              <RootStack.Screen name="DevAccounts" component={DevAccountsScreen} />
+              <RootStack.Screen name="ThemePreview" component={ThemePreviewScreen} />
+              <RootStack.Screen
+                name="ThemeWelcomePreview"
+                component={ThemeWelcomePreviewScreen}
+              />
+            </>
           ) : null}
           <RootStack.Screen name="PostDetail" component={PostDetailScreen} />
           <RootStack.Screen name="EditPost" component={EditPostScreen} />

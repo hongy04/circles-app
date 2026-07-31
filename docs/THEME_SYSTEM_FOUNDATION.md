@@ -13,7 +13,7 @@ The foundation supports two future layers:
 1. **Global user theme** — the visual atmosphere the user chooses for the overall app.
 2. **Circle-specific theme** — a shared visual atmosphere scoped to one Circle or Our Circle.
 
-No database preference or theme picker is included in this step. The active theme remains Aqua Daylight, so the current approved welcome experience should look unchanged.
+No database preference or user-facing theme picker is included in this step. A development-only Theme Laboratory can switch themes in memory for review; the selection resets to Aqua Daylight when the app reloads.
 
 ## Files
 
@@ -42,7 +42,18 @@ The registry includes token-complete starting points for:
 - Bubblegum Sky
 - After Rain
 
-Only Aqua Daylight is active. The other themes are definitions for future picker and preview work, not user-facing options yet.
+Aqua Daylight remains the default. Development builds can compare all four through Settings → Theme Laboratory, but the alternatives are not user-facing options and are not persisted yet.
+
+## Development preview
+
+Development builds expose **Settings → Theme Laboratory**. It can:
+
+- switch the global theme in memory
+- preview the live fluid Circle and palette
+- replay the full returning-user welcome portal
+- reset to Aqua Daylight
+
+The laboratory does not write to Supabase, survive an app reload, or expose theme controls in production builds.
 
 ## Adoption pattern
 

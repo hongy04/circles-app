@@ -282,6 +282,13 @@ export function AccountSettingsScreen({ navigation }) {
             {IS_DEVELOPMENT ? (
               <>
                 <SettingRow
+                  icon="color-palette-outline"
+                  title="Theme laboratory"
+                  subtitle="Preview curated Circles atmospheres before they become user-facing"
+                  onPress={() => navigation.navigate('ThemePreview')}
+                />
+                <View style={styles.separator} />
+                <SettingRow
                   icon="flask-outline"
                   title="Test accounts"
                   subtitle="Switch identities and exercise multi-user privacy flows"
