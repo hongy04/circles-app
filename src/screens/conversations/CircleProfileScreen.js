@@ -34,10 +34,6 @@ import {
   subscribeToTwoPersonImportantDateChanges,
 } from '../../services/twoPersonImportantDateService';
 import {
-  listTwoPersonThoughts,
-  subscribeToTwoPersonThoughtChanges,
-} from '../../services/twoPersonThoughtService';
-import {
   listTwoPersonAlbums,
   subscribeToTwoPersonAlbumChanges,
 } from '../../services/twoPersonAlbumService';
@@ -164,7 +160,6 @@ export function CircleProfileScreen({ route, navigation }) {
   const [posts, setPosts] = useState([]);
   const [plans, setPlans] = useState([]);
   const [importantDates, setImportantDates] = useState([]);
-  const [thoughts, setThoughts] = useState([]);
   const [albums, setAlbums] = useState([]);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [loading, setLoading] = useState(true);
@@ -202,7 +197,6 @@ export function CircleProfileScreen({ route, navigation }) {
         setPosts([]);
         setPlans([]);
         setImportantDates([]);
-        setThoughts([]);
         setAlbums([]);
         return;
       }
@@ -214,7 +208,6 @@ export function CircleProfileScreen({ route, navigation }) {
 
       let planRows = [];
       let importantDateRows = [];
-      let thoughtRows = [];
       let albumRows = [];
       if (conversation?.kind === 'direct') {
         try {
@@ -230,12 +223,6 @@ export function CircleProfileScreen({ route, navigation }) {
           importantDateRows = [];
         }
         try {
-          thoughtRows = await listTwoPersonThoughts(conversationId);
-        } catch {
-          // The Circle remains usable until the thoughts migration is installed.
-          thoughtRows = [];
-        }
-        try {
           albumRows = await listTwoPersonAlbums(conversationId);
         } catch {
           // The Circle remains usable until the albums migration is installed.
@@ -247,7 +234,6 @@ export function CircleProfileScreen({ route, navigation }) {
       setPosts(postRows);
       setPlans(planRows);
       setImportantDates(importantDateRows);
-      setThoughts(thoughtRows);
       setAlbums(albumRows);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this private Circle.');
@@ -299,16 +285,6 @@ export function CircleProfileScreen({ route, navigation }) {
     useCallback(() => {
       if (!conversationId) return undefined;
       return subscribeToTwoPersonImportantDateChanges({
-        conversationId,
-        onChange: () => load({ quiet: true }),
-      });
-    }, [conversationId, load])
-  );
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!conversationId) return undefined;
-      return subscribeToTwoPersonThoughtChanges({
         conversationId,
         onChange: () => load({ quiet: true }),
       });
@@ -380,13 +356,6 @@ export function CircleProfileScreen({ route, navigation }) {
     });
   };
 
-  const openThoughts = () => {
-    navigation.navigate('TwoPersonThoughts', {
-      conversationId,
-      circleName: conversation?.title || 'Our Circle',
-    });
-  };
-
   const openAlbums = () => {
     navigation.navigate('TwoPersonAlbums', {
       conversationId,
@@ -394,9 +363,10 @@ export function CircleProfileScreen({ route, navigation }) {
     });
   };
 
-  const openNotificationSettings = () => {
-    navigation.navigate('ConversationNotificationSettings', {
+  const openMore = () => {
+    navigation.navigate('CircleMore', {
       conversationId,
+      circleName: conversation?.title || (isTwoPersonCircle ? 'Our Circle' : 'Circle'),
     });
   };
 
@@ -499,164 +469,28 @@ export function CircleProfileScreen({ route, navigation }) {
 
           {!isTwoPersonCircle ? (
             <Pressable
-              onPress={openPeople}
+              onPress={openEvents}
               style={({ pressed }) => [
                 styles.secondaryAction,
                 pressed && styles.pressed,
               ]}
             >
-              <Ionicons name="people-outline" size={16} color={COLORS.text} />
-              <Text style={styles.secondaryActionText}>People</Text>
+              <Ionicons name="calendar-outline" size={16} color={COLORS.text} />
+              <Text style={styles.secondaryActionText}>Plans</Text>
             </Pressable>
           ) : null}
 
-          {conversation.can_edit ? (
-            <Pressable
-              onPress={() => navigation.navigate('EditCircle', {
-                conversationId,
-              })}
-              style={({ pressed }) => [
-                styles.secondaryAction,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Ionicons name="create-outline" size={16} color={COLORS.text} />
-              <Text style={styles.secondaryActionText}>Edit</Text>
-            </Pressable>
-          ) : null}
+          <Pressable
+            onPress={openMore}
+            style={({ pressed }) => [
+              styles.secondaryAction,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Ionicons name="ellipsis-horizontal" size={17} color={COLORS.text} />
+            <Text style={styles.secondaryActionText}>More</Text>
+          </Pressable>
         </View>
-
-        {!isTwoPersonCircle ? (
-          <Pressable
-            onPress={openEvents}
-            style={({ pressed }) => [
-              styles.plansRow,
-              pressed && styles.pressed,
-            ]}
-          >
-            <View style={styles.plansIcon}>
-              <Ionicons name="calendar-outline" size={20} color={COLORS.text} />
-            </View>
-            <View style={styles.plansCopy}>
-              <Text style={styles.plansTitle}>Plans & Events</Text>
-              <Text style={styles.plansBody}>
-                Make a real plan and let every Circle member RSVP.
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
-          </Pressable>
-        ) : (
-          <Pressable
-            onPress={openPlans}
-            style={({ pressed }) => [
-              styles.plansRow,
-              pressed && styles.pressed,
-            ]}
-          >
-            <View style={styles.plansIcon}>
-              <Ionicons name="sparkles-outline" size={20} color={COLORS.text} />
-            </View>
-            <View style={styles.plansCopy}>
-              <Text style={styles.plansTitle}>Shared Plans</Text>
-              <Text style={styles.plansBody}>
-                {plans.length
-                  ? `${plans.filter((plan) => plan.status !== 'completed').length} active · ${completedPlans.length} memories`
-                  : 'Keep an idea, schedule it together, and turn it into a shared memory.'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
-          </Pressable>
-        )}
-
-        {isTwoPersonCircle ? (
-          <Pressable
-            onPress={openImportantDates}
-            style={({ pressed }) => [
-              styles.plansRow,
-              pressed && styles.pressed,
-            ]}
-          >
-            <View style={styles.plansIcon}>
-              <Ionicons name="calendar-outline" size={20} color={COLORS.text} />
-            </View>
-            <View style={styles.plansCopy}>
-              <Text style={styles.plansTitle}>Important Dates</Text>
-              <Text style={styles.plansBody}>
-                {importantDates.length
-                  ? `${importantDates.length} date${importantDates.length === 1 ? '' : 's'} saved in your shared story.`
-                  : 'Keep anniversaries, birthdays, trips, and traditions that matter.'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
-          </Pressable>
-        ) : null}
-
-        {isTwoPersonCircle ? (
-          <Pressable
-            onPress={openThoughts}
-            style={({ pressed }) => [
-              styles.plansRow,
-              pressed && styles.pressed,
-            ]}
-          >
-            <View style={styles.plansIcon}>
-              <Ionicons name="document-text-outline" size={20} color={COLORS.text} />
-            </View>
-            <View style={styles.plansCopy}>
-              <Text style={styles.plansTitle}>Write Your Thoughts</Text>
-              <Text style={styles.plansBody}>
-                {thoughts.length
-                  ? `${thoughts.filter((item) => item.status === 'shared').length} shared · ${thoughts.filter((item) => item.status === 'draft').length} private draft${thoughts.filter((item) => item.status === 'draft').length === 1 ? '' : 's'}`
-                  : 'Write privately, revise at your own pace, and share only when the words feel ready.'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
-          </Pressable>
-        ) : null}
-
-        {isTwoPersonCircle ? (
-          <Pressable
-            onPress={openAlbums}
-            style={({ pressed }) => [
-              styles.plansRow,
-              pressed && styles.pressed,
-            ]}
-          >
-            <View style={styles.plansIcon}>
-              <Ionicons name="albums-outline" size={20} color={COLORS.text} />
-            </View>
-            <View style={styles.plansCopy}>
-              <Text style={styles.plansTitle}>Shared Albums</Text>
-              <Text style={styles.plansBody}>
-                {albums.length
-                  ? `${albums.length} album${albums.length === 1 ? '' : 's'} · ${albums.reduce((sum, album) => sum + Number(album.photoCount || 0), 0)} photos`
-                  : 'Keep trips, dates, and meaningful occasions together in deliberate photo collections.'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
-          </Pressable>
-        ) : null}
-
-        <Pressable
-          onPress={openNotificationSettings}
-          style={({ pressed }) => [
-            styles.notificationSettingsRow,
-            pressed && styles.pressed,
-          ]}
-        >
-          <View style={styles.notificationSettingsIcon}>
-            <Ionicons name="notifications-outline" size={18} color={COLORS.text} />
-          </View>
-          <View style={styles.notificationSettingsText}>
-            <Text style={styles.notificationSettingsTitle}>Notifications</Text>
-            <Text style={styles.notificationSettingsBody}>
-              {isTwoPersonCircle
-                ? 'Mute this private conversation or choose which activity alerts you.'
-                : 'Mute this Circle or choose which private activity alerts you.'}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
-        </Pressable>
       </View>
 
       {!isTwoPersonCircle ? (
@@ -1057,81 +891,6 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
-  },
-  plansRow: {
-    width: '100%',
-    maxWidth: 520,
-    minHeight: 74,
-    marginTop: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: '#f8f8f8',
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  plansIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#eeeeee',
-  },
-  plansCopy: {
-    flex: 1,
-    marginHorizontal: 11,
-  },
-  plansTitle: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 14,
-  },
-  plansBody: {
-    marginTop: 2,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  notificationSettingsRow: {
-    width: '100%',
-    maxWidth: 520,
-    minHeight: 62,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    paddingHorizontal: 13,
-    borderRadius: 13,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: '#f7f7f7',
-  },
-  notificationSettingsIcon: {
-    width: 38,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 19,
-    backgroundColor: '#ececec',
-  },
-  notificationSettingsText: {
-    flex: 1,
-    marginHorizontal: 11,
-  },
-  notificationSettingsTitle: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 13,
-  },
-  notificationSettingsBody: {
-    marginTop: 2,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 10,
-    lineHeight: 15,
   },
   membersStrip: {
     borderTopWidth: StyleSheet.hairlineWidth,

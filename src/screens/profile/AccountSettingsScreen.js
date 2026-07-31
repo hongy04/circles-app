@@ -272,6 +272,13 @@ export function AccountSettingsScreen({ navigation }) {
 
           <Text style={styles.sectionLabel}>APP</Text>
           <View style={styles.section}>
+            <SettingRow
+              icon="notifications-outline"
+              title="Push notifications"
+              subtitle="Private device alerts, permissions, and registration"
+              onPress={() => navigation.navigate('PushNotifications')}
+            />
+            <View style={styles.separator} />
             {IS_DEVELOPMENT ? (
               <>
                 <SettingRow

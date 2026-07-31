@@ -15,8 +15,10 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSContactsUsageDescription": "Circles uses your contacts to find mutual connections. You can exclude any contact."
-      }
+        "NSContactsUsageDescription": "Circles uses your contacts to find mutual connections. You can exclude any contact.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "circles.ios"
     },
     "android": {
       "adaptiveIcon": {
@@ -26,15 +28,23 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "READ_CONTACTS"
-      ]
+      ],
+      "package": "circles.android"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-font",
-      "expo-localization"
+      "expo-localization",
+      "expo-notifications"
     ],
-    "scheme": "circles"
+    "scheme": "circles",
+    "extra": {
+      "eas": {
+        "projectId": "5fd8c774-47b0-44b2-8250-6012b74a231b"
+      }
+    },
+    "owner": "hongy29"
   }
 }

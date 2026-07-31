@@ -8,6 +8,7 @@ import {
 } from './featureFlagService';
 import { uploadToBucket } from './uploadService';
 import { fetchProfileSocialStats } from './profileDirectoryService';
+import { unregisterCurrentPushDevice } from './pushNotificationService';
 
 const REMOTE_URI_PATTERN = /^https?:\/\//i;
 
@@ -335,6 +336,7 @@ export async function getAccountSession() {
 }
 
 export async function signOut() {
+  await unregisterCurrentPushDevice({ bestEffort: true });
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }

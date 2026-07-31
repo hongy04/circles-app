@@ -19,6 +19,7 @@ import { COLORS } from '../../theme/colors';
 import { supabase } from '../../lib/supabase';
 import { ensureAuthed } from '../../services/authService';
 import { replaceAfterOnboarding } from '../../navigation/navigationActions';
+import { completeContactsOnboarding } from '../../services/onboardingService';
 import { authStyles } from './authStyles';
 
 function getRegionCode() {
@@ -62,6 +63,7 @@ export function ContactsPickerScreen({ route, navigation }) {
             'Contacts unavailable',
             'Contacts permission was not granted. You can sync them later.'
           );
+          await completeContactsOnboarding('unavailable');
           replaceAfterOnboarding(navigation, eventClaimResult);
           return;
         }
@@ -91,6 +93,7 @@ export function ContactsPickerScreen({ route, navigation }) {
             'Could not load contacts',
             error?.message || 'Contacts could not be loaded.'
           );
+          await completeContactsOnboarding('unavailable').catch(() => {});
           replaceAfterOnboarding(navigation, eventClaimResult);
         }
       } finally {
@@ -151,6 +154,8 @@ export function ContactsPickerScreen({ route, navigation }) {
 
       if (error) throw error;
 
+      await completeContactsOnboarding('synced');
+
       navigation.replace('Syncing', {
         summary: data || { uploaded: phones.length },
         eventClaimResult,
@@ -160,6 +165,7 @@ export function ContactsPickerScreen({ route, navigation }) {
         'Could not sync contacts',
         error?.message || 'Failed to sync contacts.'
       );
+      await completeContactsOnboarding('skipped').catch(() => {});
       replaceAfterOnboarding(navigation, eventClaimResult);
     } finally {
       setSubmitting(false);
@@ -176,7 +182,10 @@ export function ContactsPickerScreen({ route, navigation }) {
 
         <Pressable
           style={authStyles.primaryButton}
-          onPress={() => replaceAfterOnboarding(navigation, eventClaimResult)}
+          onPress={async () => {
+            await completeContactsOnboarding('unavailable').catch(() => {});
+            replaceAfterOnboarding(navigation, eventClaimResult);
+          }}
         >
           <Text style={authStyles.primaryButtonText}>
             Continue to Circles
@@ -314,7 +323,18 @@ export function ContactsPickerScreen({ route, navigation }) {
 
       <Pressable
         style={{ marginTop: 10 }}
-        onPress={() => replaceAfterOnboarding(navigation, eventClaimResult)}
+        onPress={async () => {
+          if (submitting) return;
+          setSubmitting(true);
+          try {
+            await completeContactsOnboarding('skipped');
+            replaceAfterOnboarding(navigation, eventClaimResult);
+          } catch (error) {
+            Alert.alert('Could not finish setup', error?.message || 'Please try again.');
+          } finally {
+            setSubmitting(false);
+          }
+        }}
       >
         <Text style={authStyles.linkText}>Skip for now</Text>
       </Pressable>

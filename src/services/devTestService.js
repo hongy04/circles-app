@@ -3,6 +3,7 @@ import {
   IS_DEVELOPMENT,
 } from '../config/env';
 import { supabase } from '../lib/supabase';
+import { unregisterCurrentPushDevice } from './pushNotificationService';
 
 function assertDevelopment() {
   if (!IS_DEVELOPMENT) {
@@ -104,6 +105,7 @@ export async function switchDevAccount(account) {
     (candidate) => candidate.email?.toLowerCase() === previousEmail
   );
 
+  await unregisterCurrentPushDevice({ bestEffort: true });
   await supabase.auth.signOut();
 
   try {

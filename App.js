@@ -9,8 +9,6 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { MotiView } from 'moti';
-import * as Haptics from 'expo-haptics';
 import {
   useFonts,
   Manrope_400Regular,
@@ -32,8 +30,11 @@ import {
 } from './src/services/notificationService';
 import { Avatar } from './src/components/Avatar';
 import { DevBanner } from './src/components/DevBanner';
-import { MonoRingWithRipples } from './src/components/MonoRingWithRipples';
 import { AuthNavigator } from './src/navigation/AuthNavigator';
+import {
+  flushPendingPushDestination,
+  rootNavigationRef,
+} from './src/navigation/rootNavigation';
 import { FeedScreen } from './src/screens/feed/FeedScreen';
 import { CreatePostScreen } from './src/screens/posts/CreatePostScreen';
 import { PostDetailScreen } from './src/screens/posts/PostDetailScreen';
@@ -47,6 +48,7 @@ import { ProfileConnectionsScreen } from './src/screens/profile/ProfileConnectio
 import { GuestClaimProfileSetupScreen } from './src/screens/profile/GuestClaimProfileSetupScreen';
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
+import { PushNotificationSettingsScreen } from './src/screens/profile/PushNotificationSettingsScreen';
 import { DeleteAccountScreen } from './src/screens/profile/DeleteAccountScreen';
 import { RomanticSettingsScreen } from './src/screens/profile/RomanticSettingsScreen';
 import { AgeEligibilityScreen } from './src/screens/profile/AgeEligibilityScreen';
@@ -72,6 +74,7 @@ import { ConversationNotificationSettingsScreen } from './src/screens/conversati
 import { ChatScreen } from './src/screens/conversations/ChatScreen';
 import { CreateGroupScreen } from './src/screens/conversations/CreateGroupScreen';
 import { CircleProfileScreen } from './src/screens/conversations/CircleProfileScreen';
+import { CircleMoreScreen } from './src/screens/conversations/CircleMoreScreen';
 import { CirclePeopleScreen } from './src/screens/conversations/CirclePeopleScreen';
 import { InviteCirclePeopleScreen } from './src/screens/conversations/InviteCirclePeopleScreen';
 import { DirectConversationDetailsScreen } from './src/screens/conversations/DirectConversationDetailsScreen';
@@ -105,6 +108,8 @@ import { TwoPersonAlbumEditorScreen } from './src/screens/conversations/TwoPerso
 import { TwoPersonAlbumDetailScreen } from './src/screens/conversations/TwoPersonAlbumDetailScreen';
 import { EditCirclePostScreen } from './src/screens/conversations/EditCirclePostScreen';
 import { getInviteLinkingPrefixes } from './src/services/inviteService';
+import { PushNotificationBootstrap } from './src/services/pushNotificationService';
+import { getMyOnboardingState } from './src/services/onboardingService';
 import { timeAgo } from './src/utils/timeAgo';
 import {
   getMyAccountEnforcementState,
@@ -112,8 +117,7 @@ import {
 } from './src/services/accountEnforcementService';
 
 /* ---------------- Layout & helpers ---------------- */
-const { width: W, height: H } = Dimensions.get('window');
-const IS_SMALL = W < 360 || H < 720;
+const { width: W } = Dimensions.get('window');
 
 /* ---------------- Navigation ---------------- */
 const RootStack = createNativeStackNavigator();
@@ -137,7 +141,12 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer linking={APP_LINKING}>
+      <PushNotificationBootstrap />
+      <NavigationContainer
+        ref={rootNavigationRef}
+        linking={APP_LINKING}
+        onReady={flushPendingPushDestination}
+      >
         <RootStack.Navigator screenOptions={{ headerShown: false }}>
           <RootStack.Screen name="Gate" component={GateScreen} />
           <RootStack.Screen name="Invite" component={InvitationLandingScreen} />
@@ -183,6 +192,18 @@ export default function App() {
           />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
+          <RootStack.Screen
+            name="PushNotifications"
+            component={PushNotificationSettingsScreen}
+            options={{
+              headerShown: true,
+              title: 'Push Notifications',
+              headerShadowVisible: false,
+              headerBackTitleVisible: false,
+              headerTintColor: COLORS.text,
+              headerTitleStyle: { fontFamily: 'Manrope_700Bold' },
+            }}
+          />
           <RootStack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
           <RootStack.Screen name="BlockedAccounts" component={BlockedAccountsScreen} />
           <RootStack.Screen name="ReportUser" component={ReportUserScreen} />
@@ -243,41 +264,99 @@ export default function App() {
   );
 }
 
-/* ---------------- Gate / Portal ---------------- */
+/* ---------------- Launch routing ---------------- */
 function GateScreen({ navigation }) {
-  const { width: Ww, height: Hh } = Dimensions.get('window');
-  const S = Math.min(Ww, Hh);
-  const size = Math.round(S * (IS_SMALL ? 0.26 : 0.3));
-  const portalScaleTarget = useMemo(() => (Math.hypot(Ww, Hh) / size) * 1.25, [size, Ww, Hh]);
-  const [portal, setPortal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
-  const goIn = async () => {
-    await Haptics.selectionAsync();
-    setPortal(true);
-    setTimeout(() => navigation.replace('Auth'), 450);
-  };
+  useEffect(() => {
+    let mounted = true;
+
+    const routeSession = async () => {
+      setErrorMessage('');
+
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError) throw sessionError;
+        if (!mounted) return;
+
+        if (!session) {
+          navigation.replace('Auth', { screen: 'Welcome' });
+          return;
+        }
+
+        const enforcement = await getMyAccountEnforcementState();
+        if (!mounted) return;
+
+        if (enforcement.active && enforcement.state === 'suspended') {
+          navigation.replace('AccountStatus', { gate: true });
+          return;
+        }
+
+        if (enforcement.active && enforcement.state === 'restricted') {
+          navigation.replace('MainTabs');
+          return;
+        }
+
+        const onboarding = await getMyOnboardingState();
+        if (!mounted) return;
+
+        if (!onboarding.profileCompleted) {
+          navigation.replace('Auth', { screen: 'ProfileSetup' });
+          return;
+        }
+
+        if (!onboarding.contactsCompleted) {
+          navigation.replace('Auth', { screen: 'ContactsIntro' });
+          return;
+        }
+
+        navigation.replace('MainTabs');
+      } catch (error) {
+        if (mounted) {
+          setErrorMessage(
+            error?.message || 'Circles could not open your account.'
+          );
+        }
+      }
+    };
+
+    routeSession();
+
+    return () => {
+      mounted = false;
+    };
+  }, [attempt, navigation]);
 
   return (
-    <View style={styles.gateRoot}>
-      <Pressable onPress={goIn} style={{ alignItems: 'center' }}>
-        <MonoRingWithRipples size={size} />
-        <Text style={styles.title}>Welcome to Circles</Text>
-        <Text style={styles.subtitle}>Tap the circle to enter</Text>
-      </Pressable>
+    <SafeAreaView style={styles.launchRoot} edges={['top', 'bottom']}>
+      <View style={styles.launchMark}>
+        <View style={styles.launchMarkInner} />
+      </View>
+      <Text style={styles.launchBrand}>Circles</Text>
 
-      {portal ? (
-        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <View style={styles.portalCenter}>
-            <MotiView
-              from={{ scale: 0, opacity: 0.9 }}
-              animate={{ scale: portalScaleTarget, opacity: 0 }}
-              transition={{ type: 'timing', duration: 450 }}
-              style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: COLORS.primary }}
-            />
-          </View>
+      {errorMessage ? (
+        <View style={styles.launchErrorCard}>
+          <Text style={styles.launchErrorTitle}>Could not open Circles</Text>
+          <Text style={styles.launchErrorText}>{errorMessage}</Text>
+          <Pressable
+            onPress={() => setAttempt((current) => current + 1)}
+            style={({ pressed }) => [
+              styles.launchRetryButton,
+              pressed && { opacity: 0.68 },
+            ]}
+          >
+            <Text style={styles.launchRetryText}>Try again</Text>
+          </Pressable>
         </View>
-      ) : null}
-    </View>
+      ) : (
+        <ActivityIndicator style={{ marginTop: 22 }} color={COLORS.text} />
+      )}
+    </SafeAreaView>
   );
 }
 
@@ -488,6 +567,11 @@ function CirclesStack() {
         name="CircleProfile"
         component={CircleProfileScreen}
         options={{ title: 'Circle' }}
+      />
+      <CirclesStackNav.Screen
+        name="CircleMore"
+        component={CircleMoreScreen}
+        options={{ title: 'More' }}
       />
       <CirclesStackNav.Screen
         name="CirclePeople"
@@ -1206,10 +1290,72 @@ function MutualsScreen({ navigation, route }) {
 
 /* ---------------- Styles ---------------- */
 const styles = StyleSheet.create({
-  gateRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bg },
-  title: { marginTop: 22, fontFamily: 'Manrope_700Bold', fontSize: 22, color: COLORS.text },
-  subtitle: { marginTop: 6, fontFamily: 'Manrope_400Regular', color: COLORS.subtext },
-  portalCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  launchRoot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.bg,
+    paddingHorizontal: 28,
+  },
+  launchMark: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: COLORS.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  launchMarkInner: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: COLORS.text,
+  },
+  launchBrand: {
+    marginTop: 17,
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 22,
+    letterSpacing: -0.5,
+  },
+  launchErrorCard: {
+    width: '100%',
+    maxWidth: 390,
+    marginTop: 24,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  launchErrorTitle: {
+    color: COLORS.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+  },
+  launchErrorText: {
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  launchRetryButton: {
+    minHeight: 42,
+    marginTop: 14,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  launchRetryText: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+  },
 
 
   tabBadge: { position: 'absolute', right: -6, top: -4, backgroundColor: '#000', minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },

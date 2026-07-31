@@ -15,6 +15,10 @@ export const IS_DEVELOPMENT = APP_MODE === 'development' && __DEV__;
 
 export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 
+export const EAS_PROJECT_ID = (
+  process.env.EXPO_PUBLIC_EAS_PROJECT_ID || ''
+).trim();
+
 export const INVITE_BASE_URL = (
   process.env.EXPO_PUBLIC_INVITE_BASE_URL || ''
 ).trim();
@@ -30,11 +34,6 @@ export const SUPABASE_KEY =
 export const DEV_EMAIL = process.env.EXPO_PUBLIC_DEV_EMAIL;
 export const DEV_PASSWORD = process.env.EXPO_PUBLIC_DEV_PASSWORD;
 export const DEV_NAME = process.env.EXPO_PUBLIC_DEV_NAME || 'Primary Test';
-export const DEV_BYPASS_CODE =
-  process.env.EXPO_PUBLIC_DEV_BYPASS_CODE || '000000';
-export const DEV_PHONE =
-  process.env.EXPO_PUBLIC_DEV_PHONE || '+15550000000';
-
 const DEV_ACCOUNT_2_EMAIL = process.env.EXPO_PUBLIC_DEV_ACCOUNT_2_EMAIL;
 const DEV_ACCOUNT_2_PASSWORD = process.env.EXPO_PUBLIC_DEV_ACCOUNT_2_PASSWORD;
 const DEV_ACCOUNT_2_NAME =
