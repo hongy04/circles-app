@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -14,8 +14,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   getConversationDetails,
   listConversationTimeline,
@@ -38,7 +40,7 @@ import {
   subscribeToTwoPersonAlbumChanges,
 } from '../../services/twoPersonAlbumService';
 
-function Stat({ value, label, onPress }) {
+function Stat({ value, label, onPress, styles }) {
   const content = (
     <>
       <Text style={styles.statValue}>{value}</Text>
@@ -58,7 +60,7 @@ function Stat({ value, label, onPress }) {
   );
 }
 
-function TimelineTile({ item, size, onPress }) {
+function TimelineTile({ item, size, onPress, styles }) {
   return (
     <Pressable
       onPress={onPress}
@@ -85,7 +87,7 @@ function TimelineTile({ item, size, onPress }) {
   );
 }
 
-function PlanMemoryTile({ item, size, onPress }) {
+function PlanMemoryTile({ item, size, onPress, styles, theme }) {
   return (
     <Pressable
       onPress={onPress}
@@ -97,7 +99,7 @@ function PlanMemoryTile({ item, size, onPress }) {
       ]}
     >
       <View style={styles.planMemoryIcon}>
-        <Ionicons name="sparkles" size={21} color={COLORS.text} />
+        <Ionicons name="sparkles" size={21} color={theme.colors.text} />
       </View>
       <Text style={styles.planMemoryLabel}>PLAN MEMORY</Text>
       <Text style={styles.planMemoryTitle} numberOfLines={3}>{item.title}</Text>
@@ -113,7 +115,7 @@ function PlanMemoryTile({ item, size, onPress }) {
   );
 }
 
-function PostTile({ post, size, onPress }) {
+function PostTile({ post, size, onPress, styles }) {
   const firstMedia = post.media?.[0];
 
   return (
@@ -152,9 +154,11 @@ function PostTile({ post, size, onPress }) {
   );
 }
 
-export function CircleProfileScreen({ route, navigation }) {
+function CircleProfileContent({ route, navigation }) {
   const { conversationId, initialTab = 'posts' } = route.params || {};
   const { width } = useWindowDimensions();
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [details, setDetails] = useState(null);
   const [timeline, setTimeline] = useState([]);
   const [posts, setPosts] = useState([]);
@@ -372,7 +376,15 @@ export function CircleProfileScreen({ route, navigation }) {
 
   const header = conversation ? (
     <>
-      <View style={styles.profileHeader}>
+      <LinearGradient
+        colors={theme.circle.headerGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.profileHeader}
+      >
+        <View style={[styles.decal, styles.decalOne, { backgroundColor: theme.circle.decalPalette[1] }]} />
+        <View style={[styles.decal, styles.decalTwo, { backgroundColor: theme.circle.decalPalette[3] }]} />
+        <View style={[styles.decal, styles.decalThree, { backgroundColor: theme.circle.decalPalette[4] }]} />
         <Avatar
           size={92}
           name={conversation.title}
@@ -382,7 +394,7 @@ export function CircleProfileScreen({ route, navigation }) {
         <Text style={styles.title}>{conversation.title}</Text>
 
         <View style={styles.privacyRow}>
-          <Ionicons name="lock-closed" size={12} color={COLORS.subtext} />
+          <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
           <Text style={styles.privacyText}>
             {conversation.kind === 'group'
               ? 'Invitation-only Circle'
@@ -394,7 +406,7 @@ export function CircleProfileScreen({ route, navigation }) {
           conversation.silent_message ? (
             <View style={styles.silentMessageCard}>
               <View style={styles.silentMessageHeading}>
-                <Ionicons name="moon-outline" size={14} color={COLORS.text} />
+                <Ionicons name="moon-outline" size={14} color={theme.colors.text} />
                 <Text style={styles.silentMessageLabel}>
                   A quiet message from {conversation.silent_message_author || 'them'}
                 </Text>
@@ -419,12 +431,14 @@ export function CircleProfileScreen({ route, navigation }) {
             value={Number(conversation.post_count || posts.length)}
             label="Posts"
             onPress={() => setActiveTab('posts')}
+            styles={styles}
           />
           {isTwoPersonCircle ? (
             <Stat
               value={plans.length}
               label="Plans"
               onPress={openPlans}
+              styles={styles}
             />
           ) : null}
           {isTwoPersonCircle ? (
@@ -432,6 +446,7 @@ export function CircleProfileScreen({ route, navigation }) {
               value={importantDates.length}
               label="Dates"
               onPress={openImportantDates}
+              styles={styles}
             />
           ) : null}
           {isTwoPersonCircle ? (
@@ -439,18 +454,21 @@ export function CircleProfileScreen({ route, navigation }) {
               value={albums.length}
               label="Albums"
               onPress={openAlbums}
+              styles={styles}
             />
           ) : null}
           <Stat
             value={Number(conversation.timeline_count || timeline.length) + completedPlans.length}
             label="Timeline"
             onPress={() => setActiveTab('timeline')}
+            styles={styles}
           />
           {!isTwoPersonCircle ? (
             <Stat
               value={members.length}
               label="People"
               onPress={openPeople}
+              styles={styles}
             />
           ) : null}
         </View>
@@ -463,7 +481,7 @@ export function CircleProfileScreen({ route, navigation }) {
               pressed && styles.pressed,
             ]}
           >
-            <Ionicons name="add" size={17} color="#fff" />
+            <Ionicons name="add" size={17} color={theme.welcome.brandInk} />
             <Text style={styles.primaryActionText}>New Post</Text>
           </Pressable>
 
@@ -475,7 +493,7 @@ export function CircleProfileScreen({ route, navigation }) {
                 pressed && styles.pressed,
               ]}
             >
-              <Ionicons name="calendar-outline" size={16} color={COLORS.text} />
+              <Ionicons name="calendar-outline" size={16} color={theme.colors.text} />
               <Text style={styles.secondaryActionText}>Plans</Text>
             </Pressable>
           ) : null}
@@ -487,11 +505,11 @@ export function CircleProfileScreen({ route, navigation }) {
               pressed && styles.pressed,
             ]}
           >
-            <Ionicons name="ellipsis-horizontal" size={17} color={COLORS.text} />
+            <Ionicons name="ellipsis-horizontal" size={17} color={theme.colors.text} />
             <Text style={styles.secondaryActionText}>More</Text>
           </Pressable>
         </View>
-      </View>
+      </LinearGradient>
 
       {!isTwoPersonCircle ? (
         <View style={styles.membersStrip}>
@@ -546,7 +564,7 @@ export function CircleProfileScreen({ route, navigation }) {
           <Ionicons
             name="grid-outline"
             size={18}
-            color={activeTab === 'posts' ? COLORS.text : COLORS.subtext}
+            color={activeTab === 'posts' ? theme.colors.text : theme.colors.subtext}
           />
           <Text style={[
             styles.tabText,
@@ -566,7 +584,7 @@ export function CircleProfileScreen({ route, navigation }) {
           <Ionicons
             name="time-outline"
             size={18}
-            color={activeTab === 'timeline' ? COLORS.text : COLORS.subtext}
+            color={activeTab === 'timeline' ? theme.colors.text : theme.colors.subtext}
           />
           <Text style={[
             styles.tabText,
@@ -591,7 +609,7 @@ export function CircleProfileScreen({ route, navigation }) {
   if (error && !conversation) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="lock-closed-outline" size={36} color={COLORS.text} />
+        <Ionicons name="lock-closed-outline" size={36} color={theme.colors.text} />
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -604,7 +622,7 @@ export function CircleProfileScreen({ route, navigation }) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.lockedScreen}>
         <View style={styles.lockedIcon}>
-          <Ionicons name="lock-closed" size={28} color={COLORS.text} />
+          <Ionicons name="lock-closed" size={28} color={theme.colors.text} />
         </View>
         <Text style={styles.lockedTitle}>Our Circle is closed</Text>
         <Text style={styles.lockedBody}>
@@ -644,6 +662,8 @@ export function CircleProfileScreen({ route, navigation }) {
                     conversationId,
                     circleName: conversation?.title || 'Our Circle',
                   })}
+                  styles={styles}
+                  theme={theme}
                 />
               ) : (
                 <TimelineTile
@@ -654,6 +674,7 @@ export function CircleProfileScreen({ route, navigation }) {
                     initialMediaId: item.id,
                     circleName: conversation?.title || 'Circle',
                   })}
+                  styles={styles}
                 />
               )
             ) : (
@@ -665,6 +686,7 @@ export function CircleProfileScreen({ route, navigation }) {
                   initialPostId: item.id,
                   circleName: conversation?.title || 'Circle',
                 })}
+                styles={styles}
               />
             )
           )}
@@ -675,7 +697,7 @@ export function CircleProfileScreen({ route, navigation }) {
                   ? 'images-outline'
                   : 'albums-outline'}
                 size={38}
-                color={COLORS.subtext}
+                color={theme.colors.subtext}
               />
               <Text style={styles.emptyTitle}>
                 {activeTab === 'timeline'
@@ -707,7 +729,7 @@ export function CircleProfileScreen({ route, navigation }) {
                 setRefreshing(true);
                 load({ quiet: true });
               }}
-              tintColor={COLORS.text}
+              tintColor={theme.colors.text}
             />
           )}
           contentContainerStyle={styles.listContent}
@@ -718,10 +740,20 @@ export function CircleProfileScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+export function CircleProfileScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <CircleProfileContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.circle.profileBackground,
   },
   contentWidth: {
     flex: 1,
@@ -730,22 +762,48 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     borderLeftWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
     borderRightWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
   },
   listContent: {
     flexGrow: 1,
     paddingBottom: 44,
   },
   profileHeader: {
+    overflow: 'hidden',
     alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.circle.accent,
     paddingHorizontal: 22,
     paddingTop: 22,
     paddingBottom: 18,
   },
+  decal: {
+    position: 'absolute',
+    borderRadius: 999,
+    opacity: 0.15,
+  },
+  decalOne: {
+    width: 116,
+    height: 116,
+    top: -54,
+    right: -26,
+  },
+  decalTwo: {
+    width: 64,
+    height: 64,
+    top: 98,
+    left: -28,
+  },
+  decalThree: {
+    width: 78,
+    height: 78,
+    bottom: -42,
+    right: 54,
+  },
   title: {
     marginTop: 12,
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
     fontSize: 22,
     textAlign: 'center',
   },
@@ -756,8 +814,8 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   privacyText: {
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_600SemiBold',
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.semibold,
     fontSize: 11,
   },
   planMemoryTile: {
@@ -765,7 +823,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    backgroundColor: '#f5f3f8',
+    backgroundColor: theme.circle.accentSoft,
   },
   planMemoryIcon: {
     width: 31,
@@ -773,27 +831,27 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#e9e4ef',
+    backgroundColor: theme.colors.surface,
   },
   planMemoryLabel: {
     marginTop: 7,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_700Bold',
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.bold,
     fontSize: 8.5,
     letterSpacing: 0.6,
   },
   planMemoryTitle: {
     flex: 1,
     marginTop: 4,
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
     fontSize: 12,
     lineHeight: 16,
   },
   planMemoryDate: {
     marginTop: 3,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_600SemiBold',
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.semibold,
     fontSize: 9.5,
   },
   silentMessageCard: {
@@ -803,7 +861,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 14,
-    backgroundColor: '#f5f3f8',
+    backgroundColor: theme.circle.accentSoft,
   },
   silentMessageHeading: {
     flexDirection: 'row',
@@ -811,22 +869,22 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   silentMessageLabel: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
     fontSize: 11.5,
   },
   silentMessageText: {
     marginTop: 7,
-    color: COLORS.text,
-    fontFamily: 'Manrope_400Regular',
+    color: theme.colors.text,
+    fontFamily: theme.typography.regular,
     fontSize: 13,
     lineHeight: 19,
   },
   bio: {
     maxWidth: 440,
     marginTop: 10,
-    color: COLORS.text,
-    fontFamily: 'Manrope_400Regular',
+    color: theme.colors.text,
+    fontFamily: theme.typography.regular,
     fontSize: 14,
     lineHeight: 20,
     textAlign: 'center',
@@ -843,14 +901,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   statValue: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
+    color: theme.circle.accent,
+    fontFamily: theme.typography.bold,
     fontSize: 17,
   },
   statLabel: {
     marginTop: 1,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.regular,
     fontSize: 11,
   },
   actionRow: {
@@ -868,11 +926,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 5,
     borderRadius: 9,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
   primaryActionText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
+    color: theme.welcome.brandInk,
+    fontFamily: theme.typography.bold,
     fontSize: 13,
   },
   secondaryAction: {
@@ -884,17 +942,18 @@ const styles = StyleSheet.create({
     gap: 5,
     borderRadius: 9,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: '#f4f4f4',
+    borderColor: theme.circle.accent,
+    backgroundColor: theme.circle.accentSoft,
   },
   secondaryActionText: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
     fontSize: 13,
   },
   membersStrip: {
+    backgroundColor: theme.colors.surface,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.border,
+    borderTopColor: theme.colors.border,
     paddingTop: 12,
     paddingBottom: 11,
   },
@@ -906,13 +965,13 @@ const styles = StyleSheet.create({
     marginBottom: 9,
   },
   membersHeading: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
     fontSize: 13,
   },
   seeAllText: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
     fontSize: 12,
   },
   membersList: {
@@ -926,8 +985,8 @@ const styles = StyleSheet.create({
   memberName: {
     width: 70,
     marginTop: 5,
-    color: COLORS.text,
-    fontFamily: 'Manrope_600SemiBold',
+    color: theme.colors.text,
+    fontFamily: theme.typography.semibold,
     fontSize: 10,
     textAlign: 'center',
   },
@@ -936,7 +995,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
   },
   tab: {
     flex: 1,
@@ -948,22 +1008,22 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   activeTab: {
-    borderBottomColor: COLORS.text,
+    borderBottomColor: theme.circle.accent,
   },
   tabText: {
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_600SemiBold',
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.semibold,
     fontSize: 12,
   },
   activeTabText: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
   },
   gridTile: {
     overflow: 'hidden',
     borderWidth: 0.5,
-    borderColor: COLORS.bg,
-    backgroundColor: '#ececec',
+    borderColor: theme.circle.profileBackground,
+    backgroundColor: theme.colors.surfaceSoft,
   },
   tileMedia: {
     width: '100%',
@@ -1004,15 +1064,15 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     marginTop: 12,
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
     fontSize: 16,
   },
   emptyBody: {
     maxWidth: 420,
     marginTop: 6,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.regular,
     fontSize: 13,
     lineHeight: 19,
     textAlign: 'center',
@@ -1024,11 +1084,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingHorizontal: 18,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
   emptyButtonText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
+    color: theme.welcome.brandInk,
+    fontFamily: theme.typography.bold,
     fontSize: 13,
   },
   lockedScreen: {
@@ -1036,7 +1096,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 30,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.circle.profileBackground,
   },
   lockedIcon: {
     width: 64,
@@ -1044,20 +1104,20 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f0eef4',
+    backgroundColor: theme.circle.accentSoft,
   },
   lockedTitle: {
     marginTop: 18,
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
     fontSize: 20,
     textAlign: 'center',
   },
   lockedBody: {
     maxWidth: 430,
     marginTop: 9,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.regular,
     fontSize: 13,
     lineHeight: 20,
     textAlign: 'center',
@@ -1070,11 +1130,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
   lockedButtonText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
+    color: theme.welcome.brandInk,
+    fontFamily: theme.typography.bold,
     fontSize: 13,
   },
   centerState: {
@@ -1082,17 +1142,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 28,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.circle.profileBackground,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.regular,
   },
   errorText: {
     marginTop: 12,
-    color: COLORS.text,
-    fontFamily: 'Manrope_600SemiBold',
+    color: theme.colors.text,
+    fontFamily: theme.typography.semibold,
     textAlign: 'center',
   },
   retryButton: {
@@ -1100,13 +1160,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
   retryText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
+    color: theme.welcome.brandInk,
+    fontFamily: theme.typography.bold,
   },
   pressed: {
     opacity: 0.7,
   },
-});
+  });
+}

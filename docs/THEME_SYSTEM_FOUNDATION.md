@@ -105,3 +105,23 @@ Safety, moderation, account deletion, and dense form screens should use restrain
 - Circle themes must not make private drafts or relationship state appear public.
 - Curated themes are preferred over unrestricted free-form styling initially.
 - A global theme is private account state; a Circle theme will be shared Circle state.
+
+## Shared Circle themes (Migration 067)
+
+Circle personalization is layered beneath the user's global Appearance choice.
+
+- `conversations.theme_id = null` means the Circle inherits each viewer's own global theme.
+- A stored curated theme id gives the shared Circle the same atmosphere for every member.
+- Group Circle theme changes are limited to owners and admins.
+- Both members of an open two-person Circle have equal theme control.
+- Closed two-person Circles preserve their saved theme but cannot be customized until reopened.
+- `CircleThemeBoundary` scopes profile and More surfaces without changing global tabs, welcome, or unrelated Circles.
+
+Initial theme-aware Circle surfaces:
+
+1. Circle and Our Circle profile headers
+2. Profile counters, action buttons, tabs, plan-memory tiles, and empty states
+3. Circle More identity and feature rows
+4. The Circle customization preview and selector
+
+Later Circle feature screens should be wrapped in the same boundary rather than reading `conversations.theme_id` independently.

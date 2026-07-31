@@ -15,3 +15,7 @@ export {
   useTheme,
   useThemeTokens,
 } from './ThemeProvider';
+export {
+  CircleThemeBoundary,
+  useCircleThemeSettings,
+} from './CircleThemeBoundary';
