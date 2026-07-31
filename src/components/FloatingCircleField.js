@@ -10,17 +10,10 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
+import { useThemeTokens } from '../theme/ThemeProvider';
+
 const TWO_PI = Math.PI * 2;
 const MOTION_STEPS = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
-
-const PALETTE = [
-  [83, 205, 235],
-  [83, 159, 255],
-  [112, 220, 157],
-  [255, 152, 139],
-  [167, 139, 250],
-  [255, 207, 89],
-];
 
 const PORTAL_ZONES = [
   { x: [-0.15, 0.02], y: [0.08, 0.24] },
@@ -97,7 +90,7 @@ function sineRange(phase, amplitude, center = 0) {
   );
 }
 
-function createOrbs(width, height, variant, seed) {
+function createOrbs(width, height, variant, seed, palette, motion) {
   const zones = variant === 'auth' ? AUTH_ZONES : PORTAL_ZONES;
   const random = mulberry32(seed + Math.round(width * 7 + height * 11));
   const minDimension = Math.min(width, height);
@@ -107,10 +100,15 @@ function createOrbs(width, height, variant, seed) {
     const sizeRatio = variant === 'auth'
       ? 0.11 + random() * 0.15
       : 0.12 + random() * 0.19;
-    const size = Math.max(42, Math.min(150, minDimension * sizeRatio * (0.82 + depth * 0.28)));
+    const size = Math.max(
+      42,
+      Math.min(150, minDimension * sizeRatio * (0.82 + depth * 0.28))
+    );
     const x = (zone.x[0] + random() * (zone.x[1] - zone.x[0])) * width;
     const y = (zone.y[0] + random() * (zone.y[1] - zone.y[0])) * height;
-    const rgb = PALETTE[(index + Math.floor(random() * PALETTE.length)) % PALETTE.length];
+    const rgb = palette[
+      (index + Math.floor(random() * palette.length)) % palette.length
+    ];
 
     return {
       id: `${variant}-${index}`,
@@ -122,14 +120,19 @@ function createOrbs(width, height, variant, seed) {
       opacity: 0.11 + depth * 0.13 + random() * 0.04,
       driftX: (5 + depth * 12) * (random() > 0.5 ? 1 : -1),
       driftY: 7 + depth * 13,
-      duration: 10500 + Math.round((1 - depth) * 7200 + random() * 3400),
+      duration:
+        motion.orbBaseDurationMs +
+        Math.round(
+          (1 - depth) * motion.orbDepthDurationMs +
+            random() * motion.orbVarianceDurationMs
+        ),
       phase: random() * TWO_PI,
       scaleAmount: 0.012 + depth * 0.018,
     };
   });
 }
 
-function FloatingOrb({ orb, reducedMotion }) {
+function FloatingOrb({ orb, reducedMotion, visualTokens }) {
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -198,7 +201,7 @@ function FloatingOrb({ orb, reducedMotion }) {
     >
       <LinearGradient
         colors={[
-          'rgba(255,255,255,0.68)',
+          visualTokens.orbGlassTop,
           rgba(orb.rgb, 0.34),
           rgba(orb.rgb, 0.16),
         ]}
@@ -210,7 +213,7 @@ function FloatingOrb({ orb, reducedMotion }) {
           {
             borderRadius: orb.size / 2,
             borderWidth: Math.max(0.8, orb.size * 0.009),
-            borderColor: 'rgba(255,255,255,0.64)',
+            borderColor: visualTokens.orbBorder,
           },
         ]}
       />
@@ -223,7 +226,7 @@ function FloatingOrb({ orb, reducedMotion }) {
             borderRadius: orb.size * 0.31,
             left: orb.size * 0.23,
             top: orb.size * 0.25,
-            backgroundColor: rgba(orb.rgb, 0.08),
+            backgroundColor: rgba(orb.rgb, visualTokens.orbCoreAlpha),
           },
         ]}
       />
@@ -236,6 +239,7 @@ function FloatingOrb({ orb, reducedMotion }) {
             borderRadius: orb.size * 0.1,
             left: orb.size * 0.18,
             top: orb.size * 0.16,
+            backgroundColor: visualTokens.orbHighlight,
           },
         ]}
       />
@@ -244,28 +248,46 @@ function FloatingOrb({ orb, reducedMotion }) {
 }
 
 export function FloatingCircleField({ variant = 'portal' }) {
+  const theme = useThemeTokens();
   const { width, height } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
   const seedRef = useRef(Math.floor(Math.random() * 1000000000));
   const reveal = useRef(new Animated.Value(0)).current;
   const orbs = useMemo(
-    () => createOrbs(width, height, variant, seedRef.current),
-    [height, variant, width]
+    () =>
+      createOrbs(
+        width,
+        height,
+        variant,
+        seedRef.current,
+        theme.welcome.orbPalette,
+        theme.motion
+      ),
+    [height, theme.motion, theme.welcome.orbPalette, variant, width]
   );
 
   useEffect(() => {
     reveal.setValue(0);
     Animated.timing(reveal, {
       toValue: 1,
-      duration: reducedMotion ? 260 : 900,
+      duration: reducedMotion
+        ? theme.motion.welcomeRevealReducedMs
+        : theme.motion.welcomeRevealMs,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [reducedMotion, reveal, variant]);
+  }, [reducedMotion, reveal, theme.motion, variant]);
 
   const backgroundColors = variant === 'auth'
-    ? ['#F7FCFF', '#FCFEFF', '#F6FFF9']
-    : ['#F3FAFF', '#FCFEFF', '#F4FFF8'];
+    ? theme.welcome.authBackground
+    : theme.welcome.portalBackground;
+
+  const visualTokens = {
+    orbGlassTop: theme.welcome.orbGlassTop,
+    orbBorder: theme.welcome.orbBorder,
+    orbHighlight: theme.welcome.orbHighlight,
+    orbCoreAlpha: 0.08,
+  };
 
   return (
     <Animated.View
@@ -282,11 +304,20 @@ export function FloatingCircleField({ variant = 'portal' }) {
         style={StyleSheet.absoluteFill}
       />
 
-      <View style={styles.skyWash} />
-      <View style={styles.gardenWash} />
+      <View
+        style={[styles.skyWash, { backgroundColor: theme.welcome.skyWash }]}
+      />
+      <View
+        style={[styles.gardenWash, { backgroundColor: theme.welcome.gardenWash }]}
+      />
 
       {orbs.map((orb) => (
-        <FloatingOrb key={orb.id} orb={orb} reducedMotion={reducedMotion} />
+        <FloatingOrb
+          key={orb.id}
+          orb={orb}
+          reducedMotion={reducedMotion}
+          visualTokens={visualTokens}
+        />
       ))}
     </Animated.View>
   );
@@ -304,7 +335,6 @@ const styles = StyleSheet.create({
     left: '-8%',
     top: -110,
     borderRadius: 240,
-    backgroundColor: 'rgba(126,207,255,0.08)',
   },
   gardenWash: {
     position: 'absolute',
@@ -313,7 +343,6 @@ const styles = StyleSheet.create({
     left: '-15%',
     bottom: -170,
     borderRadius: 260,
-    backgroundColor: 'rgba(116,225,157,0.07)',
   },
   orb: {
     position: 'absolute',
@@ -324,7 +353,6 @@ const styles = StyleSheet.create({
   },
   orbHighlight: {
     position: 'absolute',
-    backgroundColor: 'rgba(255,255,255,0.22)',
     transform: [{ rotate: '-18deg' }],
   },
 });

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { IS_DEVELOPMENT } from '../../config/env';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { MonoRingWithRipples } from '../../components/MonoRingWithRipples';
 import { FloatingCircleField } from '../../components/FloatingCircleField';
 
@@ -21,6 +21,8 @@ const VALUES = [
 ];
 
 export function WelcomeScreen({ route, navigation }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const inviteToken = route?.params?.inviteToken || null;
   const eventGuestToken = route?.params?.eventGuestToken || null;
 
@@ -49,7 +51,7 @@ export function WelcomeScreen({ route, navigation }) {
           {VALUES.map(([icon, label]) => (
             <View key={label} style={styles.valueRow}>
               <View style={styles.valueIcon}>
-                <Ionicons name={icon} size={18} color={COLORS.text} />
+                <Ionicons name={icon} size={18} color={theme.colors.text} />
               </View>
               <Text style={styles.valueText}>{label}</Text>
             </View>
@@ -65,7 +67,7 @@ export function WelcomeScreen({ route, navigation }) {
             style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
           >
             <Text style={styles.primaryButtonText}>Continue with email</Text>
-            <Ionicons name="arrow-forward" size={19} color="#fff" />
+            <Ionicons name="arrow-forward" size={19} color={theme.colors.onPrimary} />
           </Pressable>
 
           {IS_DEVELOPMENT ? (
@@ -76,7 +78,7 @@ export function WelcomeScreen({ route, navigation }) {
               })}
               style={({ pressed }) => [styles.devButton, pressed && styles.pressed]}
             >
-              <Ionicons name="flask-outline" size={17} color={COLORS.subtext} />
+              <Ionicons name="flask-outline" size={17} color={theme.colors.subtext} />
               <Text style={styles.devButtonText}>Development accounts</Text>
             </Pressable>
           ) : null}
@@ -90,10 +92,11 @@ export function WelcomeScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
     overflow: 'hidden',
   },
   content: {
@@ -116,10 +119,10 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 9,
     borderWidth: 2,
-    borderColor: COLORS.text,
+    borderColor: theme.welcome.brandInk,
   },
   brand: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
     letterSpacing: -0.4,
@@ -135,7 +138,7 @@ const styles = StyleSheet.create({
   title: {
     marginTop: 30,
     maxWidth: 430,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 36,
     lineHeight: 41,
@@ -145,7 +148,7 @@ const styles = StyleSheet.create({
   subtitle: {
     marginTop: 16,
     maxWidth: 410,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 15,
     lineHeight: 23,
@@ -166,13 +169,13 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#f4f4f4',
+    backgroundColor: theme.colors.surfaceSoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   valueText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 14,
   },
@@ -189,10 +192,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.colors.primary,
   },
   primaryButtonText: {
-    color: '#fff',
+    color: theme.colors.onPrimary,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
   },
@@ -206,12 +209,12 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   devButtonText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
   },
   legal: {
-    color: '#8a8a8a',
+    color: theme.colors.legal,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
     lineHeight: 15,
@@ -222,4 +225,5 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.68,
   },
-});
+  });
+}

@@ -8,6 +8,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
+import { useThemeTokens } from '../theme/ThemeProvider';
+
 const WAVE_INPUT_RANGE = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
 const TWO_PI = Math.PI * 2;
 
@@ -235,6 +237,7 @@ export function FluidCircle({
   rippleProgress,
   rippleOrigin,
 }) {
+  const theme = useThemeTokens();
   const flowA = useRef(new Animated.Value(0)).current;
   const flowB = useRef(new Animated.Value(0)).current;
   const breath = useRef(new Animated.Value(0)).current;
@@ -252,7 +255,7 @@ export function FluidCircle({
     const flowALoop = Animated.loop(
       Animated.timing(flowA, {
         toValue: 1,
-        duration: 6100,
+        duration: theme.motion.fluidFlowAMs,
         easing: Easing.linear,
         useNativeDriver: true,
       })
@@ -261,7 +264,7 @@ export function FluidCircle({
     const flowBLoop = Animated.loop(
       Animated.timing(flowB, {
         toValue: 1,
-        duration: 7900,
+        duration: theme.motion.fluidFlowBMs,
         easing: Easing.linear,
         useNativeDriver: true,
       })
@@ -271,13 +274,13 @@ export function FluidCircle({
       Animated.sequence([
         Animated.timing(breath, {
           toValue: 1,
-          duration: 3600,
+          duration: theme.motion.fluidBreathInMs,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(breath, {
           toValue: 0,
-          duration: 4200,
+          duration: theme.motion.fluidBreathOutMs,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
@@ -293,7 +296,7 @@ export function FluidCircle({
       flowBLoop.stop();
       breathLoop.stop();
     };
-  }, [breath, flowA, flowB, reducedMotion]);
+  }, [breath, flowA, flowB, reducedMotion, theme.motion]);
 
   const resolvedPressScale = pressScale || 1;
   const resolvedExpansionScale = expansionScale || 1;
@@ -401,10 +404,14 @@ export function FluidCircle({
             borderRadius: radius,
           },
           animatedSurfaceStyle,
+          {
+            backgroundColor: theme.fluid.surfaceBackground,
+            shadowColor: theme.fluid.shadow,
+          },
         ]}
       >
         <LinearGradient
-          colors={['#F8FDFF', '#DDF4FF', '#ECFAFF']}
+          colors={theme.fluid.surfaceGradient}
           locations={[0, 0.52, 1]}
           start={{ x: 0.12, y: 0.03 }}
           end={{ x: 0.9, y: 0.98 }}
@@ -426,12 +433,7 @@ export function FluidCircle({
           ]}
         >
           <LinearGradient
-            colors={[
-              'rgba(255,255,255,0)',
-              'rgba(255,255,255,0.82)',
-              'rgba(141,220,250,0.08)',
-              'rgba(255,255,255,0)',
-            ]}
+            colors={theme.fluid.lightGradient}
             locations={[0, 0.38, 0.67, 1]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
@@ -477,6 +479,7 @@ export function FluidCircle({
                     transform: tapStyle
                       ? [...idleStyle.transform, ...tapStyle.transforms]
                       : idleStyle.transform,
+                    backgroundColor: theme.fluid.particle,
                   },
                 ]}
               />
@@ -490,6 +493,7 @@ export function FluidCircle({
             {
               borderRadius: radius,
               borderWidth: Math.max(1.6, size * 0.0074),
+              borderColor: theme.fluid.outline,
             },
           ]}
         />
@@ -503,6 +507,7 @@ export function FluidCircle({
               {
                 borderRadius: radius,
                 borderWidth: Math.max(1, size * 0.006),
+                borderColor: theme.fluid.boundaryRipple,
               },
               boundaryRippleStyle,
             ]}
@@ -520,8 +525,6 @@ const styles = StyleSheet.create({
   },
   surface: {
     overflow: 'hidden',
-    backgroundColor: '#EAF8FF',
-    shadowColor: '#62BFE8',
     shadowOpacity: 0.2,
     shadowRadius: 26,
     shadowOffset: { width: 0, height: 14 },
@@ -536,14 +539,11 @@ const styles = StyleSheet.create({
   },
   particle: {
     position: 'absolute',
-    backgroundColor: '#4DB9E5',
   },
   edge: {
     ...StyleSheet.absoluteFillObject,
-    borderColor: '#0A1222',
   },
   boundaryRipple: {
     ...StyleSheet.absoluteFillObject,
-    borderColor: 'rgba(70, 186, 233, 0.72)',
   },
 });

@@ -1,8 +1,6 @@
-export const COLORS = {
-  bg: '#ffffff',
-  text: '#111111',
-  subtext: '#6b6b6b',
-  primary: '#000000',
-  border: '#e6e6e6',
-  divider: '#eeeeee',
-};
+import { DEFAULT_THEME } from './themes';
+
+// Backward-compatible semantic colors for screens that have not yet migrated
+// to useThemeTokens(). This keeps the current app visually unchanged while the
+// theme system is adopted one surface at a time.
+export const COLORS = DEFAULT_THEME.colors;

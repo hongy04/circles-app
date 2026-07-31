@@ -16,6 +16,7 @@ import {
   Manrope_700Bold,
 } from '@expo-google-fonts/manrope';
 import { COLORS } from './src/theme/colors';
+import { ThemeProvider } from './src/theme/ThemeProvider';
 import { IS_DEVELOPMENT } from './src/config/env';
 import { supabase } from './src/lib/supabase';
 import { ensureAuthed } from './src/services/authService';
@@ -142,7 +143,8 @@ export default function App() {
   if (!fontsLoaded) return null;
 
   return (
-    <SafeAreaProvider>
+    <ThemeProvider>
+      <SafeAreaProvider>
       <PushNotificationBootstrap />
       <NavigationContainer
         ref={rootNavigationRef}
@@ -261,8 +263,9 @@ export default function App() {
           <RootStack.Screen name="PostDetail" component={PostDetailScreen} />
           <RootStack.Screen name="EditPost" component={EditPostScreen} />
         </RootStack.Navigator>
-      </NavigationContainer>
-    </SafeAreaProvider>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 }
 

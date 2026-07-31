@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
@@ -14,11 +14,13 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { COLORS } from '../theme/colors';
+import { useThemeTokens } from '../theme/ThemeProvider';
 import { FluidCircle } from './FluidCircle';
 import { FloatingCircleField } from './FloatingCircleField';
 
 export function LaunchPortal({ onComplete }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { width, height } = useWindowDimensions();
   const circleSize = Math.min(230, Math.max(176, width * 0.56));
   const pressScale = useRef(new Animated.Value(1)).current;
@@ -76,7 +78,7 @@ export function LaunchPortal({ onComplete }) {
     rippleProgress.setValue(0);
     Animated.timing(rippleProgress, {
       toValue: 1,
-      duration: 840,
+      duration: theme.motion.tapRippleMs,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
@@ -115,7 +117,7 @@ export function LaunchPortal({ onComplete }) {
     if (reducedMotionRef.current) {
       Animated.timing(overlayOpacity, {
         toValue: 0,
-        duration: 240,
+        duration: theme.motion.portalReducedFadeMs,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }).start(finish);
@@ -127,22 +129,22 @@ export function LaunchPortal({ onComplete }) {
     Animated.parallel([
       Animated.timing(contentOpacity, {
         toValue: 0,
-        duration: 190,
+        duration: theme.motion.portalCopyFadeMs,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
       Animated.sequence([
-        Animated.delay(145),
+        Animated.delay(theme.motion.portalExpansionDelayMs),
         Animated.parallel([
           Animated.timing(circleOpacity, {
             toValue: 0,
-            duration: 275,
+            duration: theme.motion.portalSurfaceFadeMs,
             easing: Easing.in(Easing.quad),
             useNativeDriver: true,
           }),
           Animated.timing(expansionScale, {
             toValue: coverScale,
-            duration: 690,
+            duration: theme.motion.portalExpansionMs,
             easing: Easing.inOut(Easing.cubic),
             useNativeDriver: true,
           }),
@@ -151,7 +153,7 @@ export function LaunchPortal({ onComplete }) {
     ]).start(() => {
       Animated.timing(overlayOpacity, {
         toValue: 0,
-        duration: 205,
+        duration: theme.motion.portalOverlayFadeMs,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }).start(finish);
@@ -196,7 +198,7 @@ export function LaunchPortal({ onComplete }) {
             ]}
           >
             <LinearGradient
-              colors={['#EAF9FF', '#CDEFFF', '#F4FCFF']}
+              colors={theme.fluid.portalWash}
               locations={[0, 0.55, 1]}
               start={{ x: 0.18, y: 0.08 }}
               end={{ x: 0.86, y: 0.95 }}
@@ -223,12 +225,13 @@ export function LaunchPortal({ onComplete }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
     elevation: 1000,
-    backgroundColor: '#F7FCFF',
+    backgroundColor: theme.welcome.portalBackground[0],
   },
   safeArea: {
     flex: 1,
@@ -243,14 +246,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   eyebrow: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
     letterSpacing: 5.2,
   },
   title: {
     marginTop: 17,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 17,
     letterSpacing: -0.2,
@@ -263,7 +266,7 @@ const styles = StyleSheet.create({
   portalWash: {
     position: 'absolute',
     overflow: 'hidden',
-    shadowColor: '#8FD7F4',
+    shadowColor: theme.fluid.portalShadow,
     shadowOpacity: 0.16,
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 10 },
@@ -272,7 +275,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   prompt: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 13,
     letterSpacing: 0.2,
@@ -281,6 +284,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: StyleSheet.hairlineWidth,
     marginTop: 14,
-    backgroundColor: 'rgba(17,17,17,0.35)',
+    backgroundColor: theme.welcome.promptLine,
   },
-});
+  });
+}
