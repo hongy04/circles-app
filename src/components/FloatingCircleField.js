@@ -304,12 +304,6 @@ export function FloatingCircleField({ variant = 'portal' }) {
         style={StyleSheet.absoluteFill}
       />
 
-      <View
-        style={[styles.skyWash, { backgroundColor: theme.welcome.skyWash }]}
-      />
-      <View
-        style={[styles.gardenWash, { backgroundColor: theme.welcome.gardenWash }]}
-      />
 
       {orbs.map((orb) => (
         <FloatingOrb
@@ -327,22 +321,6 @@ const styles = StyleSheet.create({
   field: {
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
-  },
-  skyWash: {
-    position: 'absolute',
-    width: '115%',
-    height: 240,
-    left: '-8%',
-    top: -110,
-    borderRadius: 240,
-  },
-  gardenWash: {
-    position: 'absolute',
-    width: '130%',
-    height: 260,
-    left: '-15%',
-    bottom: -170,
-    borderRadius: 260,
   },
   orb: {
     position: 'absolute',
