@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -131,6 +131,7 @@ export function NotificationsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const hasLoadedRef = useRef(false);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.isRead).length,
@@ -146,6 +147,7 @@ export function NotificationsScreen({ navigation }) {
     } catch (loadError) {
       setError(loadError?.message || 'Could not load notifications.');
     } finally {
+      hasLoadedRef.current = true;
       setLoading(false);
       setRefreshing(false);
     }
@@ -153,7 +155,7 @@ export function NotificationsScreen({ navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      load({ quiet: hasLoadedRef.current });
       return subscribeToNotificationChanges(() => load({ quiet: true }));
     }, [load])
   );

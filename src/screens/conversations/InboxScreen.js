@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -228,6 +228,7 @@ export function InboxScreen({ navigation }) {
   const [error, setError] = useState(null);
   const [respondingId, setRespondingId] = useState(null);
   const [notificationCount, setNotificationCount] = useState(0);
+  const hasLoadedRef = useRef(false);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
@@ -249,6 +250,7 @@ export function InboxScreen({ navigation }) {
     } catch (loadError) {
       setError(loadError?.message || 'Could not load private conversations.');
     } finally {
+      hasLoadedRef.current = true;
       setLoading(false);
       setRefreshing(false);
     }
@@ -296,7 +298,7 @@ export function InboxScreen({ navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      load({ quiet: hasLoadedRef.current });
     }, [load])
   );
 

@@ -1,8 +1,8 @@
 import 'react-native-gesture-handler';
 import 'react-native-reanimated';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Dimensions, Image, Pressable, ScrollView, StyleSheet, Text, View
+  ActivityIndicator, Alert, Dimensions, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -1042,7 +1042,9 @@ function MutualsScreen({ navigation, route }) {
   const [enforcement, setEnforcement] = useState(null);
   const [enforcementLoading, setEnforcementLoading] = useState(true);
   const [trustedRankingActive, setTrustedRankingActive] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const hasTrackedOpen = useRef(false);
+  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
     if (route?.params?.initialTab) {
@@ -1057,8 +1059,8 @@ function MutualsScreen({ navigation, route }) {
     })();
   }, []);
 
-  const load = async () => {
-    setLoading(true);
+  const load = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet && !hasLoadedRef.current) setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -1121,20 +1123,30 @@ function MutualsScreen({ navigation, route }) {
     } catch (err) {
       Alert.alert('Could not load people', err?.message || 'Please try again.');
     } finally {
+      hasLoadedRef.current = true;
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
   useEffect(() => {
     if (!authed) return;
     const ch = supabase
       .channel('people_relationship_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests' }, () => load({ quiet: true }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, () => load({ quiet: true }))
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [authed]);
+  }, [authed, load]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (!hasLoadedRef.current) return;
+      load({ quiet: true });
+    });
+    return unsubscribe;
+  }, [load, navigation]);
 
   const sendRequest = async (userId) => {
     if (!authed && IS_DEVELOPMENT) {
@@ -1181,7 +1193,7 @@ function MutualsScreen({ navigation, route }) {
         surface: 'mutuals',
         action,
       });
-      await load();
+      await load({ quiet: true });
     } catch (error) {
       Alert.alert('Could not update request', error?.message || 'Please try again.');
     } finally {
@@ -1259,7 +1271,19 @@ function MutualsScreen({ navigation, route }) {
       </View>
 
       {tab === 'mutuals' ? (
-        <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }}>
+        <ScrollView
+          contentContainerStyle={{ padding: 12, gap: 12, flexGrow: 1 }}
+          refreshControl={(
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                load({ quiet: true });
+              }}
+              tintColor={theme.circle.accent}
+            />
+          )}
+        >
           {trustedRankingActive ? (
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 11, borderRadius: 12, backgroundColor: theme.colors.surfaceSoft }}>
               <Ionicons name="git-network-outline" size={18} color={theme.colors.text} />
@@ -1304,7 +1328,19 @@ function MutualsScreen({ navigation, route }) {
           ))}
         </ScrollView>
       ) : tab === 'requests' ? (
-        <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }}>
+        <ScrollView
+          contentContainerStyle={{ padding: 12, gap: 12, flexGrow: 1 }}
+          refreshControl={(
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                load({ quiet: true });
+              }}
+              tintColor={theme.circle.accent}
+            />
+          )}
+        >
           {incoming.length === 0 ? (
             <Text style={{ textAlign: 'center', color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', paddingTop: 38 }}>No requests right now.</Text>
           ) : incoming.map((request) => (
