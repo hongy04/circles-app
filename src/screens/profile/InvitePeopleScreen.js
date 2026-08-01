@@ -18,7 +18,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Contacts from 'expo-contacts';
 
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { getRegionCode, normalizeToE164 } from '../../utils/contactPhones';
 import {
   createPersonalInvite,
@@ -54,6 +54,8 @@ function mapContacts(data, region) {
 }
 
 export function InvitePeopleScreen({ navigation }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [invite, setInvite] = useState(null);
   const [loadingInvite, setLoadingInvite] = useState(true);
   const [inviteError, setInviteError] = useState('');
@@ -181,10 +183,6 @@ export function InvitePeopleScreen({ navigation }) {
   const header = (
     <View>
       <View style={styles.heroCard}>
-        <View style={styles.heroIcon}>
-          <Ionicons name="people-outline" size={26} color={COLORS.text} />
-        </View>
-        <Text style={styles.heroTitle}>Bring your real people to Circles</Text>
         <Text style={styles.heroBody}>
           Your link creates social context, not automatic access. Each person
           still chooses whether to connect with you.
@@ -200,10 +198,10 @@ export function InvitePeopleScreen({ navigation }) {
           ]}
         >
           {loadingInvite || sharing ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={theme.colors.onPrimary} />
           ) : (
             <>
-              <Ionicons name="share-outline" size={19} color="#fff" />
+              <Ionicons name="share-outline" size={19} color={theme.colors.onPrimary} />
               <Text style={styles.primaryButtonText}>Share invite link</Text>
             </>
           )}
@@ -253,12 +251,12 @@ export function InvitePeopleScreen({ navigation }) {
 
       {contactsLoaded ? (
         <View style={styles.searchBox}>
-          <Ionicons name="search" size={18} color={COLORS.subtext} />
+          <Ionicons name="search" size={18} color={theme.colors.subtext} />
           <TextInput
             value={query}
             onChangeText={setQuery}
             placeholder="Search contacts"
-            placeholderTextColor="#8e8e93"
+            placeholderTextColor={theme.colors.legal}
             autoCorrect={false}
             returnKeyType="search"
             onSubmitEditing={Keyboard.dismiss}
@@ -266,7 +264,7 @@ export function InvitePeopleScreen({ navigation }) {
           />
           {query ? (
             <Pressable onPress={() => setQuery('')} hitSlop={8}>
-              <Ionicons name="close-circle" size={18} color="#a3a3a3" />
+              <Ionicons name="close-circle" size={18} color={theme.colors.subtext} />
             </Pressable>
           ) : null}
         </View>
@@ -282,7 +280,7 @@ export function InvitePeopleScreen({ navigation }) {
           hitSlop={10}
           style={styles.topBarSide}
         >
-          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
+          <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
         </Pressable>
         <Text style={styles.topBarTitle}>Invite People</Text>
         <View style={styles.topBarSide} />
@@ -303,7 +301,7 @@ export function InvitePeopleScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={contactsLoaded ? (
           <View style={styles.emptyState}>
-            <Ionicons name="person-add-outline" size={34} color={COLORS.subtext} />
+            <Ionicons name="person-add-outline" size={34} color={theme.colors.subtext} />
             <Text style={styles.emptyTitle}>
               {query ? 'No matching contacts' : 'No phone contacts found'}
             </Text>
@@ -334,7 +332,7 @@ export function InvitePeopleScreen({ navigation }) {
                 ]}
               >
                 {busy ? (
-                  <ActivityIndicator size="small" color={sent ? COLORS.text : '#fff'} />
+                  <ActivityIndicator size="small" color={sent ? theme.colors.text : theme.colors.onPrimary} />
                 ) : (
                   <Text style={sent ? styles.invitedText : styles.inviteText}>
                     {sent ? 'Invited' : 'Invite'}
@@ -350,8 +348,9 @@ export function InvitePeopleScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f7f7' },
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
   keyboardView: { flex: 1 },
   topBar: {
     minHeight: 52,
@@ -359,8 +358,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
   },
   topBarSide: {
     width: 52,
@@ -371,7 +370,7 @@ const styles = StyleSheet.create({
   topBarTitle: {
     flex: 1,
     textAlign: 'center',
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
   },
@@ -384,65 +383,53 @@ const styles = StyleSheet.create({
     paddingBottom: 44,
   },
   heroCard: {
-    borderRadius: 18,
+    borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
-    padding: 18,
-  },
-  heroIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
-  },
-  heroTitle: {
-    marginTop: 14,
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 20,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSoft,
+    padding: 15,
   },
   heroBody: {
-    marginTop: 7,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
-    lineHeight: 20,
+    fontSize: 12,
+    lineHeight: 18,
   },
   primaryButton: {
     minHeight: 48,
-    marginTop: 18,
+    marginTop: 14,
     borderRadius: 13,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     paddingHorizontal: 16,
   },
-  primaryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
+  primaryButtonText: { color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold' },
   disabled: { opacity: 0.45 },
   pressed: { opacity: 0.7 },
   errorBox: {
     marginTop: 12,
     borderRadius: 10,
-    backgroundColor: '#fff1f0',
+    backgroundColor: theme.colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.danger,
     padding: 11,
   },
   errorText: {
-    color: '#8a1c13',
+    color: theme.colors.danger,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
   },
   retryText: {
     marginTop: 6,
-    color: '#8a1c13',
+    color: theme.colors.danger,
     fontFamily: 'Manrope_700Bold',
   },
   linkPreview: {
     marginTop: 12,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -456,13 +443,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   sectionTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 17,
   },
   sectionBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 17,
@@ -472,28 +459,28 @@ const styles = StyleSheet.create({
     minHeight: 40,
     borderRadius: 11,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
   },
-  secondaryButtonText: { color: COLORS.text, fontFamily: 'Manrope_700Bold' },
+  secondaryButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold' },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
     minHeight: 44,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 12,
     marginBottom: 10,
   },
   searchInput: {
     flex: 1,
     marginHorizontal: 8,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
   },
   contactRow: {
@@ -502,16 +489,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 12,
     marginBottom: 9,
   },
   contactCopy: { flex: 1, marginHorizontal: 11 },
-  contactName: { color: COLORS.text, fontFamily: 'Manrope_700Bold' },
+  contactName: { color: theme.colors.text, fontFamily: 'Manrope_700Bold' },
   contactPhone: {
     marginTop: 2,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
   },
@@ -519,22 +506,19 @@ const styles = StyleSheet.create({
     minWidth: 78,
     minHeight: 36,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
   invitedButton: {
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.colors.surfaceSoft,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
   },
-  inviteText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 12 },
-  invitedText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },
+  inviteText: { color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold', fontSize: 12 },
+  invitedText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },
   emptyState: { alignItems: 'center', paddingVertical: 42 },
-  emptyTitle: {
-    marginTop: 10,
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-  },
-});
+  emptyTitle: { marginTop: 10, color: theme.colors.text, fontFamily: 'Manrope_700Bold' },
+  });
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   fetchOwnPostForEditing,
   updateOwnPostCaption,
@@ -19,6 +19,8 @@ import {
 const CAPTION_LIMIT = 2200;
 
 export function EditPostScreen({ route, navigation }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { postId } = route.params || {};
   const [caption, setCaption] = useState('');
   const [originalCaption, setOriginalCaption] = useState('');
@@ -86,7 +88,7 @@ export function EditPostScreen({ route, navigation }) {
   if (error) {
     return (
       <SafeAreaView edges={['top']} style={styles.centerRoot}>
-        <Ionicons name="alert-circle-outline" size={36} color={COLORS.subtext} />
+        <Ionicons name="alert-circle-outline" size={36} color={theme.colors.subtext} />
         <Text style={styles.errorTitle}>Post unavailable</Text>
         <Text style={styles.errorBody}>{error}</Text>
         <View style={styles.errorActions}>
@@ -110,7 +112,7 @@ export function EditPostScreen({ route, navigation }) {
           hitSlop={10}
           style={styles.headerButton}
         >
-          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
+          <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
         </Pressable>
 
         <Text style={styles.headerTitle}>Edit caption</Text>
@@ -122,7 +124,7 @@ export function EditPostScreen({ route, navigation }) {
           style={styles.headerButton}
         >
           {saving ? (
-            <ActivityIndicator size="small" color={COLORS.primary} />
+            <ActivityIndicator size="small" color={theme.circle.accent} />
           ) : (
             <Text style={[styles.saveText, !hasChanges && styles.disabledText]}>
               Save
@@ -141,7 +143,7 @@ export function EditPostScreen({ route, navigation }) {
           autoFocus
           maxLength={CAPTION_LIMIT}
           placeholder="Write a caption…"
-          placeholderTextColor={COLORS.subtext}
+          placeholderTextColor={theme.colors.subtext}
           style={styles.input}
         />
         <Text style={styles.counter}>{caption.length}/{CAPTION_LIMIT}</Text>
@@ -153,122 +155,85 @@ export function EditPostScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
+function createStyles(theme) {
+  return StyleSheet.create({
+  root: { flex: 1, backgroundColor: theme.colors.bg },
   centerRoot: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 28,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
-  stateText: {
-    marginTop: 10,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-  },
+  stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
   errorTitle: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
   },
-  errorBody: {
-    marginTop: 6,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
-  },
-  errorActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
-  },
+  errorBody: { marginTop: 6, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', textAlign: 'center' },
+  errorActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   secondaryButton: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     borderRadius: 10,
+    backgroundColor: theme.colors.surface,
   },
-  secondaryButtonText: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-  },
+  secondaryButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold' },
   primaryButton: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
-  primaryButtonText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
-  },
+  primaryButtonText: { color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold' },
   header: {
     minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
   },
-  headerButton: {
-    width: 64,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  headerButton: { width: 64, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   headerTitle: {
     flex: 1,
     textAlign: 'center',
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 17,
   },
-  saveText: {
-    color: COLORS.primary,
-    fontFamily: 'Manrope_700Bold',
-  },
-  disabledText: {
-    opacity: 0.35,
-  },
-  content: {
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
-    padding: 16,
-  },
-  label: {
-    marginBottom: 7,
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-  },
+  saveText: { color: theme.circle.accent, fontFamily: 'Manrope_700Bold' },
+  disabledText: { opacity: 0.35 },
+  content: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 16 },
+  label: { marginBottom: 7, color: theme.colors.text, fontFamily: 'Manrope_700Bold' },
   input: {
     minHeight: 180,
     padding: 14,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     borderRadius: 14,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     textAlignVertical: 'top',
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   counter: {
     marginTop: 7,
     textAlign: 'right',
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
   },
   helper: {
     marginTop: 12,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 13,
     lineHeight: 19,
   },
-});
+  });
+}

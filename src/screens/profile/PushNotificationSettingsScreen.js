@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   disablePushNotifications,
   enablePushNotifications,
@@ -65,6 +65,8 @@ function statusCopy(state) {
 }
 
 export function PushNotificationSettingsScreen() {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -115,7 +117,7 @@ export function PushNotificationSettingsScreen() {
       <View style={styles.content}>
         <View style={styles.statusCard}>
           <View style={styles.iconWrap}>
-            <Ionicons name={copy.icon} size={27} color={COLORS.text} />
+            <Ionicons name={copy.icon} size={27} color={theme.colors.text} />
           </View>
           <Text style={styles.title}>{copy.title}</Text>
           <Text style={styles.body}>{copy.body}</Text>
@@ -138,7 +140,7 @@ export function PushNotificationSettingsScreen() {
               (pressed || busy) && styles.buttonPressed,
             ]}
           >
-            {busy ? <ActivityIndicator color="#fff" /> : (
+            {busy ? <ActivityIndicator color={theme.colors.onPrimary} /> : (
               <Text style={styles.primaryButtonText}>Enable Push Notifications</Text>
             )}
           </Pressable>
@@ -182,9 +184,10 @@ export function PushNotificationSettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f7f7' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.bg },
   content: {
     width: '100%',
     maxWidth: 680,
@@ -194,9 +197,9 @@ const styles = StyleSheet.create({
   statusCard: {
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     borderRadius: 18,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
     paddingHorizontal: 22,
     paddingVertical: 28,
   },
@@ -206,17 +209,19 @@ const styles = StyleSheet.create({
     borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.colors.surfaceSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.border,
     marginBottom: 15,
   },
   title: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
     textAlign: 'center',
   },
   body: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 13,
     lineHeight: 20,
@@ -225,19 +230,19 @@ const styles = StyleSheet.create({
   },
   privacyCard: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     borderRadius: 14,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surfaceSoft,
     padding: 16,
     marginTop: 16,
   },
   privacyTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
   privacyBody: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
@@ -248,12 +253,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 14,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
     marginTop: 18,
     paddingHorizontal: 18,
   },
   primaryButtonText: {
-    color: '#fff',
+    color: theme.colors.onPrimary,
     fontFamily: 'Manrope_700Bold',
   },
   secondaryButton: {
@@ -262,18 +267,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
     marginTop: 12,
     paddingHorizontal: 18,
   },
   secondaryButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
   },
   buttonPressed: { opacity: 0.68 },
   footer: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 17,
@@ -281,4 +286,5 @@ const styles = StyleSheet.create({
     marginTop: 18,
     paddingHorizontal: 10,
   },
-});
+  });
+}

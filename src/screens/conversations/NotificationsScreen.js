@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
 import {
   listNotifications,
@@ -83,7 +83,7 @@ function isSafetyNotification(type) {
     || type === 'safety_age_correction_resolved';
 }
 
-function NotificationRow({ notification, onOpen }) {
+function NotificationRow({ notification, onOpen, styles, theme }) {
   const copy = notificationCopy(notification);
   const isSafety = isSafetyNotification(notification.type);
 
@@ -99,7 +99,7 @@ function NotificationRow({ notification, onOpen }) {
       <View style={styles.avatarWrap}>
         {isSafety ? (
           <View style={styles.systemAvatar}>
-            <Ionicons name="shield-checkmark" size={23} color={COLORS.text} />
+            <Ionicons name="shield-checkmark" size={23} color={theme.colors.text} />
           </View>
         ) : (
           <Avatar
@@ -108,7 +108,7 @@ function NotificationRow({ notification, onOpen }) {
             uri={notification.actorAvatar}
           />
         )}
-        <View style={[styles.typeBadge, isSafety && styles.safetyTypeBadge]}>
+        <View style={[styles.typeBadge, { backgroundColor: isSafety ? theme.colors.text : theme.circle.accent, borderColor: theme.colors.bg }]}>
           <Ionicons name={copy.icon} size={13} color="#fff" />
         </View>
       </View>
@@ -125,6 +125,8 @@ function NotificationRow({ notification, onOpen }) {
 }
 
 export function NotificationsScreen({ navigation }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -257,7 +259,7 @@ export function NotificationsScreen({ navigation }) {
         data={notifications}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <NotificationRow notification={item} onOpen={openNotification} />
+          <NotificationRow notification={item} onOpen={openNotification} styles={styles} theme={theme} />
         )}
         refreshControl={(
           <RefreshControl
@@ -266,7 +268,7 @@ export function NotificationsScreen({ navigation }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={COLORS.text}
+            tintColor={theme.colors.text}
           />
         )}
         ListHeaderComponent={error ? (
@@ -282,7 +284,7 @@ export function NotificationsScreen({ navigation }) {
             <Ionicons
               name="notifications-outline"
               size={42}
-              color={COLORS.subtext}
+              color={theme.colors.subtext}
             />
             <Text style={styles.emptyTitle}>No notifications yet</Text>
             <Text style={styles.emptyBody}>
@@ -298,8 +300,9 @@ export function NotificationsScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
   listContent: { flexGrow: 1, paddingBottom: 36 },
   row: {
     minHeight: 78,
@@ -308,10 +311,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
   },
-  unreadRow: { backgroundColor: '#f7f7f7' },
+  unreadRow: { backgroundColor: theme.colors.surfaceSoft },
   avatarWrap: { width: 54, height: 54, justifyContent: 'center' },
   systemAvatar: {
     width: 48,
@@ -319,9 +322,9 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.colors.surfaceSoft,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
   },
   typeBadge: {
     position: 'absolute',
@@ -332,21 +335,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primary,
     borderWidth: 2,
-    borderColor: COLORS.bg,
   },
-  safetyTypeBadge: { backgroundColor: '#303030' },
   rowBody: { flex: 1, marginHorizontal: 11 },
   message: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 13,
     lineHeight: 19,
   },
   time: {
     marginTop: 4,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 10,
   },
@@ -355,10 +355,10 @@ const styles = StyleSheet.create({
     height: 8,
     marginRight: 8,
     borderRadius: 4,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
   markAllText: {
-    color: COLORS.primary,
+    color: theme.circle.accent,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
   },
@@ -367,18 +367,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+    marginHorizontal: 12,
+    marginTop: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: '#f6f6f6',
+    borderRadius: 12,
+    backgroundColor: theme.colors.surfaceSoft,
   },
   errorText: {
     flex: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
   },
   retryText: {
-    color: COLORS.primary,
+    color: theme.circle.accent,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
   },
@@ -391,14 +394,14 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     marginTop: 13,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 17,
   },
   emptyBody: {
     maxWidth: 430,
     marginTop: 7,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 13,
     lineHeight: 19,
@@ -408,12 +411,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   pressed: { opacity: 0.7 },
-});
+  });
+}

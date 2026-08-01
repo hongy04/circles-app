@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   fetchMyEditableProfile,
   normalizeUsername,
@@ -28,6 +28,8 @@ const NAME_LIMIT = 40;
 const USERNAME_LIMIT = 24;
 
 export function EditProfileScreen({ navigation }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -147,7 +149,7 @@ export function EditProfileScreen({ navigation }) {
           hitSlop={10}
           style={styles.topBarSide}
         >
-          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
+          <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
         </Pressable>
 
         <Text style={styles.topBarTitle}>Edit profile</Text>
@@ -159,7 +161,7 @@ export function EditProfileScreen({ navigation }) {
           style={[styles.topBarSide, styles.topBarSave]}
         >
           {saving ? (
-            <ActivityIndicator size="small" color={COLORS.text} />
+            <ActivityIndicator size="small" color={theme.colors.text} />
           ) : (
             <Text style={styles.topBarSaveText}>Save</Text>
           )}
@@ -182,7 +184,7 @@ export function EditProfileScreen({ navigation }) {
                 uri={avatarUri}
               />
               <View style={styles.cameraBadge}>
-                <Ionicons name="camera" size={17} color="#fff" />
+                <Ionicons name="camera" size={17} color={theme.colors.onPrimary} />
               </View>
             </Pressable>
 
@@ -200,7 +202,7 @@ export function EditProfileScreen({ navigation }) {
               value={displayName}
               onChangeText={(value) => setDisplayName(value.slice(0, NAME_LIMIT))}
               placeholder="Your name"
-              placeholderTextColor="#9a9a9a"
+              placeholderTextColor={theme.colors.legal}
               autoCapitalize="words"
               style={styles.input}
             />
@@ -218,7 +220,7 @@ export function EditProfileScreen({ navigation }) {
                 onChangeText={(value) => setUsername(value.slice(0, USERNAME_LIMIT + 1))}
                 onBlur={() => setUsername(normalizedUsername)}
                 placeholder="yourname"
-                placeholderTextColor="#9a9a9a"
+                placeholderTextColor={theme.colors.legal}
                 autoCapitalize="none"
                 autoCorrect={false}
                 style={styles.usernameInput}
@@ -238,7 +240,7 @@ export function EditProfileScreen({ navigation }) {
               value={bio}
               onChangeText={(value) => setBio(value.slice(0, BIO_LIMIT))}
               placeholder="A little about you"
-              placeholderTextColor="#9a9a9a"
+              placeholderTextColor={theme.colors.legal}
               multiline
               textAlignVertical="top"
               style={[styles.input, styles.bioInput]}
@@ -261,7 +263,7 @@ export function EditProfileScreen({ navigation }) {
             ]}
           >
             {saving ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={theme.colors.onPrimary} />
             ) : (
               <Text style={styles.saveButtonText}>Save changes</Text>
             )}
@@ -272,20 +274,21 @@ export function EditProfileScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   flex: { flex: 1 },
   screen: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   centeredRoot: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   loadingText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     marginTop: 10,
   },
@@ -295,7 +298,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
   },
   topBarSide: {
     width: 54,
@@ -306,15 +310,13 @@ const styles = StyleSheet.create({
   topBarTitle: {
     flex: 1,
     textAlign: 'center',
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
   },
-  topBarSave: {
-    alignItems: 'flex-end',
-  },
+  topBarSave: { alignItems: 'flex-end' },
   topBarSaveText: {
-    color: COLORS.text,
+    color: theme.circle.accent,
     fontFamily: 'Manrope_700Bold',
   },
   content: {
@@ -325,13 +327,8 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 50,
   },
-  avatarSection: {
-    alignItems: 'center',
-    marginBottom: 26,
-  },
-  avatarButton: {
-    position: 'relative',
-  },
+  avatarSection: { alignItems: 'center', marginBottom: 26 },
+  avatarButton: { position: 'relative' },
   cameraBadge: {
     position: 'absolute',
     right: 2,
@@ -339,62 +336,53 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
     borderWidth: 3,
-    borderColor: COLORS.bg,
+    borderColor: theme.colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  changePhotoButton: {
-    marginTop: 11,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
+  changePhotoButton: { marginTop: 11, paddingHorizontal: 12, paddingVertical: 7 },
   changePhotoText: {
-    color: COLORS.text,
+    color: theme.circle.accent,
     fontFamily: 'Manrope_700Bold',
   },
-  fieldGroup: {
-    marginBottom: 18,
-  },
+  fieldGroup: { marginBottom: 18 },
   fieldLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 7,
   },
-  label: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-  },
+  label: { color: theme.colors.text, fontFamily: 'Manrope_700Bold' },
   counter: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
   },
   input: {
     minHeight: 48,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     borderRadius: 12,
     paddingHorizontal: 13,
     paddingVertical: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   usernameInputWrap: {
     minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     borderRadius: 12,
     paddingHorizontal: 13,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   atSign: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 16,
     marginRight: 3,
@@ -402,19 +390,17 @@ const styles = StyleSheet.create({
   usernameInput: {
     flex: 1,
     paddingVertical: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
   },
   helperText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 17,
     marginTop: 7,
   },
-  bioInput: {
-    minHeight: 110,
-  },
+  bioInput: { minHeight: 110 },
   savingStatus: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -422,22 +408,15 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 12,
   },
-  savingStatusText: {
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-  },
+  savingStatusText: { color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
   saveButton: {
     minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 12,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
-  saveButtonText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
-  },
-  pressed: {
-    opacity: 0.72,
-  },
-});
+  saveButtonText: { color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold' },
+  pressed: { opacity: 0.72 },
+  });
+}

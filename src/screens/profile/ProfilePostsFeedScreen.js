@@ -16,7 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { InstagramCommentsSheet } from '../../components/comments/InstagramCommentsSheet';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
 import { fetchProfilePage } from '../../services/profileService';
 import { fetchPostDetail } from '../../services/postService';
@@ -81,6 +81,8 @@ function PersonalPostFeedCard({
   onOpenComments,
   onOpenProfile,
   onToggleLike,
+  styles,
+  theme,
 }) {
   return (
     <View style={[styles.card, { height }]}> 
@@ -96,7 +98,7 @@ function PersonalPostFeedCard({
           </Text>
           <Text style={styles.time}>{timeAgo(post.createdAt)}</Text>
         </View>
-        <Ionicons name="ellipsis-horizontal" size={20} color={COLORS.text} />
+        <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.text} />
       </Pressable>
 
       <FlatList
@@ -127,7 +129,7 @@ function PersonalPostFeedCard({
           <Ionicons
             name={post.liked ? 'heart' : 'heart-outline'}
             size={26}
-            color={post.liked ? '#ff3b30' : COLORS.text}
+            color={post.liked ? '#ff3b30' : theme.colors.text}
           />
         </Pressable>
         <Text style={styles.engagementCount}>
@@ -139,7 +141,7 @@ function PersonalPostFeedCard({
           hitSlop={10}
           style={styles.commentActionButton}
         >
-          <Ionicons name="chatbubble-outline" size={24} color={COLORS.text} />
+          <Ionicons name="chatbubble-outline" size={24} color={theme.colors.text} />
         </Pressable>
         <Text style={styles.engagementCount}>
           {post.commentCount} {post.commentCount === 1 ? 'comment' : 'comments'}
@@ -170,6 +172,8 @@ function PersonalPostFeedCard({
 }
 
 export function ProfilePostsFeedScreen({ route, navigation }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { userId, profileName, initialPostId } = route.params || {};
   const { width } = useWindowDimensions();
   const stageWidth = Math.min(width, 720);
@@ -301,7 +305,7 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
     <SafeAreaView edges={['top']} style={styles.screen}>
       <View style={styles.topBar}>
         <Pressable onPress={() => navigation.goBack()} hitSlop={10} style={styles.topBarButton}>
-          <Ionicons name="chevron-back" size={25} color={COLORS.text} />
+          <Ionicons name="chevron-back" size={25} color={theme.colors.text} />
         </Pressable>
         <View style={styles.topBarTitleWrap}>
           <Text style={styles.topBarEyebrow}>Posts</Text>
@@ -312,7 +316,7 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
 
       {error && !posts.length ? (
         <View style={styles.centerState}>
-          <Ionicons name="alert-circle-outline" size={36} color={COLORS.subtext} />
+          <Ionicons name="alert-circle-outline" size={36} color={theme.colors.subtext} />
           <Text style={styles.errorText}>{error}</Text>
           <Pressable onPress={() => load()} style={styles.retryButton}>
             <Text style={styles.retryText}>Try again</Text>
@@ -338,18 +342,20 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
               onOpenComments={() => openComments(item)}
               onOpenProfile={() => navigation.navigate('Profile', { userId: item.authorId })}
               onToggleLike={() => toggleLike(item.id)}
+              styles={styles}
+              theme={theme}
             />
           )}
           refreshControl={(
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => load({ refresh: true })}
-              tintColor={COLORS.text}
+              tintColor={theme.colors.text}
             />
           )}
           ListEmptyComponent={(
             <View style={styles.centerState}>
-              <Ionicons name="images-outline" size={38} color={COLORS.subtext} />
+              <Ionicons name="images-outline" size={38} color={theme.colors.subtext} />
               <Text style={styles.errorText}>No posts to scroll through yet.</Text>
             </View>
           )}
@@ -375,14 +381,16 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
   topBar: {
     minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
     paddingHorizontal: 8,
   },
   topBarButton: {
@@ -394,12 +402,12 @@ const styles = StyleSheet.create({
   topBarTitleWrap: { flex: 1, alignItems: 'center' },
   topBarEyebrow: {
     fontFamily: 'Manrope_400Regular',
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontSize: 10,
   },
   topBarTitle: {
     fontFamily: 'Manrope_700Bold',
-    color: COLORS.text,
+    color: theme.colors.text,
     fontSize: 15,
   },
   listContent: { paddingBottom: 34 },
@@ -407,9 +415,9 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: theme.colors.border,
   },
   authorRow: {
     height: 58,
@@ -418,24 +426,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   authorText: { flex: 1, marginLeft: 10 },
-  authorName: { fontFamily: 'Manrope_700Bold', color: COLORS.text },
-  time: { marginTop: 2, fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 11 },
+  authorName: { fontFamily: 'Manrope_700Bold', color: theme.colors.text },
+  time: { marginTop: 2, fontFamily: 'Manrope_400Regular', color: theme.colors.subtext, fontSize: 11 },
   mediaPage: { backgroundColor: '#111', alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: '100%' },
   videoPage: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1c1c1e' },
   actionRow: { height: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
   actionButton: { marginRight: 6 },
   commentActionButton: { marginLeft: 15, marginRight: 6 },
-  engagementCount: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },
-  mediaCount: { marginLeft: 'auto', color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
+  engagementCount: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },
+  mediaCount: { marginLeft: 'auto', color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
   details: { paddingHorizontal: 12, paddingBottom: 16 },
-  caption: { color: COLORS.text, fontFamily: 'Manrope_400Regular', lineHeight: 19 },
+  caption: { color: theme.colors.text, fontFamily: 'Manrope_400Regular', lineHeight: 19 },
   captionAuthor: { fontFamily: 'Manrope_700Bold' },
   commentsButton: { alignSelf: 'flex-start', paddingTop: 6, paddingBottom: 8, paddingRight: 18 },
-  commentsLink: { color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13 },
-  centerState: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: COLORS.bg },
-  stateText: { marginTop: 10, color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
-  errorText: { marginTop: 12, color: COLORS.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
-  retryButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: COLORS.primary },
-  retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
-});
+  commentsLink: { color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13 },
+  centerState: {
+    flex: 1,
+    minHeight: 260,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    backgroundColor: theme.colors.bg,
+  },
+  stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
+  errorText: { marginTop: 12, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', textAlign: 'center' },
+  retryButton: {
+    marginTop: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: theme.circle.accent,
+  },
+  retryText: { color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold' },
+  });
+}

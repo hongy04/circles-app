@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,7 +18,7 @@ import {
 } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Video } from 'expo-av';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { Avatar } from '../../components/Avatar';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import {
@@ -48,6 +48,8 @@ function localCommentId() {
 }
 
 export function PostDetailScreen({ route, navigation }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { postId } = route.params || {};
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -319,7 +321,7 @@ export function PostDetailScreen({ route, navigation }) {
   if (error || !post) {
     return (
       <SafeAreaView edges={['top']} style={styles.centerRoot}>
-        <Ionicons name="alert-circle-outline" size={34} color={COLORS.subtext} />
+        <Ionicons name="alert-circle-outline" size={34} color={theme.colors.subtext} />
         <Text style={styles.errorTitle}>Post unavailable</Text>
         <Text style={styles.errorBody}>
           {error || 'The post could not be found.'}
@@ -419,7 +421,7 @@ export function PostDetailScreen({ route, navigation }) {
           <Ionicons
             name={liked ? 'heart' : 'heart-outline'}
             size={23}
-            color={liked ? '#ff3b30' : COLORS.text}
+            color={liked ? '#ff3b30' : theme.colors.text}
           />
           <Text style={styles.engagementText}>
             {likes} {likes === 1 ? 'like' : 'likes'}
@@ -431,7 +433,7 @@ export function PostDetailScreen({ route, navigation }) {
           hitSlop={10}
           style={styles.engagementButton}
         >
-          <Ionicons name="chatbubble-outline" size={22} color={COLORS.text} />
+          <Ionicons name="chatbubble-outline" size={22} color={theme.colors.text} />
           <Text style={styles.engagementText}>
             {commentCount} {commentCount === 1 ? 'comment' : 'comments'}
           </Text>
@@ -461,7 +463,7 @@ export function PostDetailScreen({ route, navigation }) {
           hitSlop={10}
           style={styles.headerButton}
         >
-          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
+          <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Post</Text>
         {isOwner ? (
@@ -472,7 +474,7 @@ export function PostDetailScreen({ route, navigation }) {
             accessibilityLabel="Manage post"
             style={styles.headerButton}
           >
-            <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.text} />
+            <Ionicons name="ellipsis-horizontal" size={22} color={theme.colors.text} />
           </Pressable>
         ) : (
           <View style={styles.headerButton} />
@@ -547,129 +549,73 @@ export function PostDetailScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  contentWidth: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
-  },
+function createStyles(theme) {
+  return StyleSheet.create({
+  root: { flex: 1, backgroundColor: theme.colors.bg },
+  keyboardView: { flex: 1 },
+  contentWidth: { flex: 1, width: '100%', maxWidth: 720, alignSelf: 'center' },
   centerRoot: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 28,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
-  stateText: {
-    marginTop: 10,
-    fontFamily: 'Manrope_400Regular',
-    color: COLORS.subtext,
-  },
+  stateText: { marginTop: 10, fontFamily: 'Manrope_400Regular', color: theme.colors.subtext },
   errorTitle: {
     marginTop: 12,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
-    color: COLORS.text,
+    color: theme.colors.text,
   },
   errorBody: {
     marginTop: 6,
     fontFamily: 'Manrope_400Regular',
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     textAlign: 'center',
   },
-  errorActions: {
-    flexDirection: 'row',
-    marginTop: 16,
-    gap: 10,
-  },
+  errorActions: { flexDirection: 'row', marginTop: 16, gap: 10 },
   secondaryButton: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     borderRadius: 10,
+    backgroundColor: theme.colors.surface,
   },
-  secondaryButtonText: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-  },
+  secondaryButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold' },
   primaryButton: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
-  primaryButtonText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
-  },
+  primaryButtonText: { color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold' },
   header: {
     minHeight: 54,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
   },
-  headerButton: {
-    width: 54,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 18,
-    color: COLORS.text,
-  },
-  listContent: {
-    flexGrow: 1,
-    paddingBottom: 22,
-  },
-  card: {
-    width: '100%',
-    alignSelf: 'center',
-  },
-  authorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-  },
-  authorText: {
-    marginLeft: 10,
-    flex: 1,
-  },
-  authorName: {
-    fontFamily: 'Manrope_700Bold',
-    color: COLORS.text,
-  },
+  headerButton: { width: 54, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontFamily: 'Manrope_700Bold', fontSize: 18, color: theme.colors.text },
+  listContent: { flexGrow: 1, paddingBottom: 22 },
+  card: { width: '100%', alignSelf: 'center', backgroundColor: theme.colors.surface },
+  authorRow: { flexDirection: 'row', alignItems: 'center', padding: 12 },
+  authorText: { marginLeft: 10, flex: 1 },
+  authorName: { fontFamily: 'Manrope_700Bold', color: theme.colors.text },
   timestamp: {
     marginTop: 1,
     fontFamily: 'Manrope_400Regular',
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontSize: 12,
   },
-  mediaSection: {
-    position: 'relative',
-    alignItems: 'center',
-    backgroundColor: '#000',
-  },
-  mediaSlide: {
-    aspectRatio: 1,
-    backgroundColor: '#000',
-  },
-  media: {
-    width: '100%',
-    height: '100%',
-  },
+  mediaSection: { position: 'relative', alignItems: 'center', backgroundColor: '#000' },
+  mediaSlide: { aspectRatio: 1, backgroundColor: '#000' },
+  media: { width: '100%', height: '100%' },
   pageBadge: {
     position: 'absolute',
     top: 12,
@@ -679,11 +625,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'rgba(0,0,0,0.58)',
   },
-  pageBadgeText: {
-    color: '#fff',
-    fontFamily: 'Manrope_600SemiBold',
-    fontSize: 12,
-  },
+  pageBadgeText: { color: '#fff', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
   engagementRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -691,38 +633,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     paddingTop: 12,
   },
-  engagementButton: {
-    minHeight: 34,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  engagementText: {
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 13,
-  },
-  details: {
-    paddingHorizontal: 13,
-    paddingTop: 8,
-    paddingBottom: 13,
-  },
-  caption: {
-    marginTop: 6,
-    color: COLORS.text,
-  },
-  captionName: {
-    fontFamily: 'Manrope_700Bold',
-  },
-  captionBody: {
-    fontFamily: 'Manrope_400Regular',
-  },
-  pressed: {
-    opacity: 0.7,
-  },
+  engagementButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  engagementText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+  details: { paddingHorizontal: 13, paddingTop: 8, paddingBottom: 13 },
+  caption: { marginTop: 6, color: theme.colors.text },
+  captionName: { fontFamily: 'Manrope_700Bold' },
+  captionBody: { fontFamily: 'Manrope_400Regular' },
+  pressed: { opacity: 0.7 },
   commentsDivider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: COLORS.border,
+    backgroundColor: theme.colors.border,
     marginBottom: 2,
   },
-});
+  });
+}

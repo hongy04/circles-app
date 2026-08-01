@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -11,10 +11,10 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { fetchProfileConnectionDirectory } from '../../services/profileDirectoryService';
 
-function ConnectionRow({ person, onPress }) {
+function ConnectionRow({ person, onPress, styles, theme }) {
   return (
     <Pressable
       onPress={onPress}
@@ -31,12 +31,14 @@ function ConnectionRow({ person, onPress }) {
           {person.username ? `@${person.username}` : 'Accepted connection'}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
+      <Ionicons name="chevron-forward" size={18} color={theme.colors.subtext} />
     </Pressable>
   );
 }
 
 export function ProfileConnectionsScreen({ route, navigation }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const userId = route?.params?.userId || null;
   const profileName = route?.params?.profileName || 'Profile';
   const [directory, setDirectory] = useState(null);
@@ -78,7 +80,7 @@ export function ProfileConnectionsScreen({ route, navigation }) {
   if (error && !directory) {
     return (
       <View style={styles.centered}>
-        <Ionicons name="alert-circle-outline" size={38} color={COLORS.subtext} />
+        <Ionicons name="alert-circle-outline" size={38} color={theme.colors.subtext} />
         <Text style={styles.errorTitle}>Connections unavailable</Text>
         <Text style={styles.errorBody}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
@@ -100,6 +102,8 @@ export function ProfileConnectionsScreen({ route, navigation }) {
         <ConnectionRow
           person={item}
           onPress={() => navigation.navigate('Profile', { userId: item.userId })}
+          styles={styles}
+          theme={theme}
         />
       )}
       ListHeaderComponent={(
@@ -107,7 +111,7 @@ export function ProfileConnectionsScreen({ route, navigation }) {
           <Ionicons
             name={isSelf ? 'people-outline' : 'git-network-outline'}
             size={25}
-            color={COLORS.text}
+            color={theme.colors.text}
           />
           <View style={styles.introCopy}>
             <Text style={styles.introTitle}>
@@ -123,7 +127,7 @@ export function ProfileConnectionsScreen({ route, navigation }) {
       )}
       ListEmptyComponent={(
         <View style={styles.emptyRoot}>
-          <Ionicons name="people-outline" size={36} color={COLORS.subtext} />
+          <Ionicons name="people-outline" size={36} color={theme.colors.subtext} />
           <Text style={styles.emptyTitle}>
             {isSelf ? 'No connections yet' : 'No mutual connections'}
           </Text>
@@ -138,7 +142,7 @@ export function ProfileConnectionsScreen({ route, navigation }) {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={() => load({ refresh: true })}
-          tintColor={COLORS.text}
+          tintColor={theme.colors.text}
         />
       )}
       contentContainerStyle={styles.content}
@@ -147,8 +151,9 @@ export function ProfileConnectionsScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
   content: {
     width: '100%',
     maxWidth: 720,
@@ -163,73 +168,73 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 28,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   loadingText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   errorTitle: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
   },
   errorBody: {
     marginTop: 6,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },
   retryButton: {
     marginTop: 16,
     borderRadius: 11,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
     paddingHorizontal: 18,
     paddingVertical: 10,
   },
-  retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
+  retryText: { color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold' },
   introCard: {
     flexDirection: 'row',
-    padding: 16,
-    marginBottom: 6,
-    borderRadius: 16,
-    backgroundColor: '#f5f5f5',
+    padding: 14,
+    marginBottom: 4,
+    borderRadius: 14,
+    backgroundColor: theme.colors.surfaceSoft,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
   },
   introCopy: { flex: 1, marginLeft: 12 },
   introTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
-    fontSize: 15,
+    fontSize: 14,
   },
   introBody: {
-    marginTop: 4,
-    color: COLORS.subtext,
+    marginTop: 3,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 11,
+    lineHeight: 17,
   },
   personRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     padding: 12,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   personCopy: { flex: 1, marginHorizontal: 12 },
   personName: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   personMeta: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
@@ -242,18 +247,19 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     marginTop: 10,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 17,
     textAlign: 'center',
   },
   emptyBody: {
     marginTop: 6,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
     textAlign: 'center',
   },
   pressed: { opacity: 0.68 },
-});
+  });
+}

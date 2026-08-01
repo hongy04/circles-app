@@ -15,14 +15,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   getConversationDetails,
   listConversationTimeline,
   subscribeToConversationChanges,
 } from '../../services/conversationService';
 
-function SharedMediaTile({ item, size, onPress }) {
+function SharedMediaTile({ item, size, onPress, styles }) {
   return (
     <Pressable
       onPress={onPress}
@@ -50,6 +50,8 @@ function SharedMediaTile({ item, size, onPress }) {
 }
 
 export function DirectConversationDetailsScreen({ route, navigation }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { conversationId } = route.params || {};
   const { width } = useWindowDimensions();
   const [details, setDetails] = useState(null);
@@ -128,7 +130,7 @@ export function DirectConversationDetailsScreen({ route, navigation }) {
         />
         <Text style={styles.title}>{conversation.title}</Text>
         <View style={styles.privacyRow}>
-          <Ionicons name="lock-closed" size={12} color={COLORS.subtext} />
+          <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
           <Text style={styles.privacyText}>Private direct conversation</Text>
         </View>
 
@@ -143,7 +145,7 @@ export function DirectConversationDetailsScreen({ route, navigation }) {
                 pressed && styles.pressed,
               ]}
             >
-              <Ionicons name="person-outline" size={17} color={COLORS.text} />
+              <Ionicons name="person-outline" size={17} color={theme.colors.text} />
               <Text style={styles.profileButtonText}>View Profile</Text>
             </Pressable>
           ) : null}
@@ -158,7 +160,7 @@ export function DirectConversationDetailsScreen({ route, navigation }) {
               pressed && styles.pressed,
             ]}
           >
-            <Ionicons name="notifications-outline" size={17} color={COLORS.text} />
+            <Ionicons name="notifications-outline" size={17} color={theme.colors.text} />
             <Text style={styles.profileButtonText}>Notifications</Text>
           </Pressable>
         </View>
@@ -183,7 +185,7 @@ export function DirectConversationDetailsScreen({ route, navigation }) {
   if (error && !conversation) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="lock-closed-outline" size={36} color={COLORS.text} />
+        <Ionicons name="lock-closed-outline" size={36} color={theme.colors.text} />
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -208,11 +210,12 @@ export function DirectConversationDetailsScreen({ route, navigation }) {
                 items: viewerItems,
                 startIndex: index,
               })}
+              styles={styles}
             />
           )}
           ListEmptyComponent={(
             <View style={styles.emptyState}>
-              <Ionicons name="images-outline" size={38} color={COLORS.subtext} />
+              <Ionicons name="images-outline" size={38} color={theme.colors.subtext} />
               <Text style={styles.emptyTitle}>No shared media yet</Text>
               <Text style={styles.emptyBody}>
                 Photos and videos sent in this direct chat will stay available
@@ -228,7 +231,7 @@ export function DirectConversationDetailsScreen({ route, navigation }) {
                 setRefreshing(true);
                 load({ quiet: true });
               }}
-              tintColor={COLORS.text}
+              tintColor={theme.colors.text}
             />
           )}
           contentContainerStyle={styles.listContent}
@@ -239,10 +242,11 @@ export function DirectConversationDetailsScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   contentWidth: {
     flex: 1,
@@ -251,12 +255,9 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     borderLeftWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
     borderRightWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
   },
-  listContent: {
-    flexGrow: 1,
-    paddingBottom: 44,
-  },
+  listContent: { flexGrow: 1, paddingBottom: 44 },
   profileHeader: {
     alignItems: 'center',
     paddingHorizontal: 22,
@@ -265,7 +266,7 @@ const styles = StyleSheet.create({
   },
   title: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 22,
     textAlign: 'center',
@@ -277,7 +278,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   privacyText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,
   },
@@ -297,11 +298,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: '#f4f4f4',
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSoft,
   },
   profileButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
@@ -312,29 +313,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
   },
   sectionTitle: {
     flex: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   sectionCount: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
   },
   mediaTile: {
     overflow: 'hidden',
     borderWidth: 0.5,
-    borderColor: COLORS.bg,
-    backgroundColor: '#ececec',
+    borderColor: theme.colors.bg,
+    backgroundColor: theme.colors.surfaceSoft,
   },
-  mediaImage: {
-    width: '100%',
-    height: '100%',
-  },
+  mediaImage: { width: '100%', height: '100%' },
   videoTile: {
     flex: 1,
     alignItems: 'center',
@@ -359,14 +357,14 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
   },
   emptyBody: {
     maxWidth: 430,
     marginTop: 6,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 13,
     lineHeight: 19,
@@ -377,16 +375,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 28,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   errorText: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
@@ -395,13 +393,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
-  retryText: {
-    color: '#fff',
-    fontFamily: 'Manrope_700Bold',
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-});
+  retryText: { color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold' },
+  pressed: { opacity: 0.7 },
+  });
+}

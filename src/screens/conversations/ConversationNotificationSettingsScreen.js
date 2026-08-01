@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   getConversationNotificationSettings,
   setConversationMute,
@@ -42,11 +42,13 @@ function SettingRow({
   value,
   disabled,
   onValueChange,
+  styles,
+  theme,
 }) {
   return (
     <View style={styles.settingRow}>
       <View style={styles.settingIcon}>
-        <Ionicons name={icon} size={20} color={COLORS.text} />
+        <Ionicons name={icon} size={20} color={theme.colors.text} />
       </View>
       <View style={styles.settingText}>
         <Text style={styles.settingTitle}>{title}</Text>
@@ -56,7 +58,7 @@ function SettingRow({
         value={value}
         onValueChange={onValueChange}
         disabled={disabled}
-        trackColor={{ false: '#d1d1d6', true: '#7b7b7b' }}
+        trackColor={{ false: theme.colors.border, true: theme.circle.accent }}
         thumbColor="#fff"
       />
     </View>
@@ -64,6 +66,8 @@ function SettingRow({
 }
 
 export function ConversationNotificationSettingsScreen({ route }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { conversationId } = route.params || {};
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -186,7 +190,7 @@ export function ConversationNotificationSettingsScreen({ route }) {
   if (error || !settings) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="notifications-off-outline" size={38} color={COLORS.subtext} />
+        <Ionicons name="notifications-off-outline" size={38} color={theme.colors.subtext} />
         <Text style={styles.errorText}>{error || 'Settings unavailable.'}</Text>
         <Pressable onPress={load} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -198,19 +202,6 @@ export function ConversationNotificationSettingsScreen({ route }) {
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.headingBlock}>
-          <Ionicons
-            name={settings.muted ? 'notifications-off-outline' : 'notifications-outline'}
-            size={34}
-            color={COLORS.text}
-          />
-          <Text style={styles.title}>{settings.title}</Text>
-          <Text style={styles.subtitle}>
-            These preferences belong only to your account. Other members keep
-            their own independent notification settings.
-          </Text>
-        </View>
-
         <Text style={styles.sectionLabel}>ALERT STATUS</Text>
         <Pressable
           onPress={showMuteOptions}
@@ -224,7 +215,7 @@ export function ConversationNotificationSettingsScreen({ route }) {
             <Ionicons
               name={settings.muted ? 'notifications-off' : 'notifications'}
               size={21}
-              color={settings.muted ? COLORS.subtext : COLORS.text}
+              color={settings.muted ? theme.colors.subtext : theme.colors.text}
             />
           </View>
           <View style={styles.muteText}>
@@ -247,6 +238,8 @@ export function ConversationNotificationSettingsScreen({ route }) {
             value={settings.notifyMessages}
             disabled={saving}
             onValueChange={(value) => updatePreference('notifyMessages', value)}
+            styles={styles}
+            theme={theme}
           />
 
           {settings.isCircle ? (
@@ -259,6 +252,8 @@ export function ConversationNotificationSettingsScreen({ route }) {
                 value={settings.notifyCirclePosts}
                 disabled={saving}
                 onValueChange={(value) => updatePreference('notifyCirclePosts', value)}
+                styles={styles}
+                theme={theme}
               />
               <View style={styles.divider} />
               <SettingRow
@@ -268,13 +263,15 @@ export function ConversationNotificationSettingsScreen({ route }) {
                 value={settings.notifyCircleInteractions}
                 disabled={saving}
                 onValueChange={(value) => updatePreference('notifyCircleInteractions', value)}
+                styles={styles}
+                theme={theme}
               />
             </>
           ) : null}
         </View>
 
         <View style={styles.authenticityCard}>
-          <Ionicons name="eye-outline" size={20} color={COLORS.text} />
+          <Ionicons name="eye-outline" size={20} color={theme.colors.text} />
           <View style={styles.authenticityText}>
             <Text style={styles.authenticityTitle}>Authenticity stays intact</Text>
             <Text style={styles.authenticityBody}>
@@ -285,39 +282,23 @@ export function ConversationNotificationSettingsScreen({ route }) {
         </View>
 
         <Text style={styles.pushNote}>
-          These settings power Circles’ in-app alerts now and are ready to be
-          respected by device push notifications when push delivery is added.
+          These preferences apply to Circles activity alerts and are respected by
+          registered device push notifications.
         </Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  content: { padding: 16, paddingBottom: 44 },
-  headingBlock: { alignItems: 'center', paddingHorizontal: 20, paddingVertical: 18 },
-  title: {
-    marginTop: 9,
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 20,
-    textAlign: 'center',
-  },
-  subtitle: {
-    maxWidth: 500,
-    marginTop: 6,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 12,
-    lineHeight: 18,
-    textAlign: 'center',
-  },
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
+  content: { width: '100%', maxWidth: 680, alignSelf: 'center', padding: 16, paddingBottom: 44 },
   sectionLabel: {
-    marginTop: 18,
+    marginTop: 12,
     marginBottom: 7,
     marginLeft: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
     letterSpacing: 0.7,
@@ -329,8 +310,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: '#f7f7f7',
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSoft,
   },
   muteIcon: {
     width: 42,
@@ -338,17 +319,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 21,
-    backgroundColor: '#ececec',
+    backgroundColor: theme.colors.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.border,
   },
   muteText: { flex: 1, marginHorizontal: 12 },
-  muteTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
-  muteBody: { marginTop: 3, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11 },
+  muteTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
+  muteBody: { marginTop: 3, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11 },
   settingsCard: {
     overflow: 'hidden',
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
   },
   settingRow: {
     minHeight: 82,
@@ -359,15 +342,15 @@ const styles = StyleSheet.create({
   },
   settingIcon: { width: 35, alignItems: 'flex-start' },
   settingText: { flex: 1, paddingRight: 12 },
-  settingTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+  settingTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
   settingBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
   },
-  divider: { height: StyleSheet.hairlineWidth, marginLeft: 49, backgroundColor: COLORS.border },
+  divider: { height: StyleSheet.hairlineWidth, marginLeft: 49, backgroundColor: theme.colors.border },
   authenticityCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -375,13 +358,15 @@ const styles = StyleSheet.create({
     marginTop: 20,
     padding: 15,
     borderRadius: 14,
-    backgroundColor: '#f4f4f4',
+    backgroundColor: theme.colors.surfaceSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.border,
   },
   authenticityText: { flex: 1 },
-  authenticityTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+  authenticityTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
   authenticityBody: {
     marginTop: 4,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 17,
@@ -389,7 +374,7 @@ const styles = StyleSheet.create({
   pushNote: {
     marginTop: 15,
     paddingHorizontal: 8,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
     lineHeight: 15,
@@ -400,12 +385,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 28,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
-  stateText: { marginTop: 10, color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
+  stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
   errorText: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
@@ -414,8 +399,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
-  retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
+  retryText: { color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold' },
   pressed: { opacity: 0.7 },
-});
+  });
+}
