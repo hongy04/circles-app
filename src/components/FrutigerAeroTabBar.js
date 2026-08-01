@@ -18,45 +18,200 @@ function rgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-function GrassRidge({ theme }) {
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function GrassRidge({ theme, activeIndex = 0, totalTabs = 4 }) {
   const tokens = theme.navigation?.aero || {};
-  const blades = useMemo(
-    () => Array.from({ length: 42 }, (_, index) => ({
-      left: `${(index / 41) * 100}%`,
-      height: 7 + ((index * 7) % 8),
-      rotate: -15 + ((index * 19) % 31),
-      opacity: 0.46 + (((index * 13) % 5) * 0.08),
-    })),
-    []
-  );
+  const breezeA = useRef(new Animated.Value(0)).current;
+  const breezeB = useRef(new Animated.Value(0)).current;
+  const breezeC = useRef(new Animated.Value(0)).current;
+  const gust = useRef(new Animated.Value(0)).current;
+
+  const particles = useMemo(() => {
+    const rows = 4;
+    const cols = 44;
+    const all = [];
+
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const stagger = row % 2 === 0 ? 0.1 : 0.58;
+        const jitter = ((((col + 1) * (row + 3) * 17) % 9) - 4) * 0.12;
+        const left = clamp(((col + stagger) / cols) * 100 + jitter, 1, 99);
+        const xNorm = left / 100;
+        const width = 1.1 + (((col * 7 + row * 3) % 4) * 0.18);
+        const height = 3.2 + row * 1.15 + (((col * 5 + row * 11) % 4) * 0.5);
+        const bottom = 2 + row * 3.1 + (((col * 3 + row) % 2) * 0.35);
+        const opacity = 0.24 + row * 0.1 + (((col + row * 2) % 3) * 0.04);
+        const paletteBand = (col + row) % 3;
+        const baseColor = paletteBand === 0
+          ? rgba(tokens.grassLight || '#DDF6AF', 0.82)
+          : paletteBand === 1
+            ? rgba(tokens.grassMid || '#A6E17B', 0.84)
+            : rgba(tokens.grassDark || '#70BE64', 0.82);
+
+        all.push({
+          key: `${row}-${col}`,
+          left: `${left}%`,
+          xNorm,
+          width,
+          height,
+          bottom,
+          opacity,
+          color: baseColor,
+          group: (col + row) % 3,
+          direction: row % 2 === 0 ? 1 : -1,
+          rotate: `${-4 + (((col * 13 + row * 19) % 9))}deg`,
+        });
+      }
+    }
+
+    return all;
+  }, [tokens.grassDark, tokens.grassLight, tokens.grassMid]);
+
+  useEffect(() => {
+    const makeLoop = (value, duration, delay = 0) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(value, {
+            toValue: 1,
+            duration,
+            delay,
+            useNativeDriver: true,
+          }),
+          Animated.timing(value, {
+            toValue: 0,
+            duration,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
+    const loopA = makeLoop(breezeA, 3400);
+    const loopB = makeLoop(breezeB, 4300, 180);
+    const loopC = makeLoop(breezeC, 5200, 90);
+
+    loopA.start();
+    loopB.start();
+    loopC.start();
+
+    return () => {
+      loopA.stop();
+      loopB.stop();
+      loopC.stop();
+    };
+  }, [breezeA, breezeB, breezeC]);
+
+  useEffect(() => {
+    gust.stopAnimation();
+    gust.setValue(0);
+    Animated.sequence([
+      Animated.timing(gust, {
+        toValue: 1,
+        duration: 340,
+        useNativeDriver: true,
+      }),
+      Animated.timing(gust, {
+        toValue: 0,
+        duration: 420,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [activeIndex, gust]);
+
+  const activeCenter = clamp((activeIndex + 0.5) / Math.max(1, totalTabs), 0.08, 0.92);
+
+  const breezeXByGroup = [
+    breezeA.interpolate({ inputRange: [0, 1], outputRange: [-1.2, 1.2] }),
+    breezeB.interpolate({ inputRange: [0, 1], outputRange: [1.4, -1.1] }),
+    breezeC.interpolate({ inputRange: [0, 1], outputRange: [-1.0, 1.5] }),
+  ];
+  const breezeYByGroup = [
+    breezeB.interpolate({ inputRange: [0, 1], outputRange: [0.3, -0.9] }),
+    breezeC.interpolate({ inputRange: [0, 1], outputRange: [-0.8, 0.2] }),
+    breezeA.interpolate({ inputRange: [0, 1], outputRange: [0.25, -0.7] }),
+  ];
 
   return (
     <View pointerEvents="none" style={styles.grassWrap}>
       <LinearGradient
         colors={[
-          tokens.grassLight || '#D8F3A8',
-          tokens.grassMid || '#9FDC73',
-          tokens.grassDark || '#6DBA61',
+          rgba(tokens.grassLight || '#DDF6AF', 0),
+          rgba(tokens.grassLight || '#DDF6AF', 0.22),
+          rgba(tokens.grassMid || '#A6E17B', 0.42),
+          rgba(tokens.grassDark || '#70BE64', 0.6),
         ]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={styles.grassBase}
       />
-      {blades.map((blade, index) => (
-        <View
-          key={index}
-          style={[
-            styles.grassBlade,
-            {
-              left: blade.left,
-              height: blade.height,
-              opacity: blade.opacity,
-              backgroundColor: tokens.grassBlade || '#72C665',
-              transform: [{ rotate: `${blade.rotate}deg` }],
-            },
-          ]}
-        />
-      ))}
+      <LinearGradient
+        colors={[
+          'rgba(255,255,255,0.14)',
+          'rgba(255,255,255,0)',
+        ]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.grassMist}
+      />
+      {particles.map((particle) => {
+        const focusWeight = clamp(1 - Math.abs(particle.xNorm - activeCenter) / 0.28, 0, 1);
+        const gustX = gust.interpolate({
+          inputRange: [0, 0.45, 1],
+          outputRange: [
+            0,
+            particle.direction * focusWeight * 2.4,
+            0,
+          ],
+        });
+        const gustY = gust.interpolate({
+          inputRange: [0, 0.45, 1],
+          outputRange: [
+            0,
+            -focusWeight * 1.35,
+            0,
+          ],
+        });
+        const glowOpacity = gust.interpolate({
+          inputRange: [0, 0.45, 1],
+          outputRange: [0.05, 0.05 + (focusWeight * 0.16), 0.05],
+        });
+        const swayX = breezeXByGroup[particle.group];
+        const swayY = breezeYByGroup[particle.group];
+
+        return (
+          <Animated.View
+            key={particle.key}
+            style={[
+              styles.grassParticle,
+              {
+                left: particle.left,
+                bottom: particle.bottom,
+                width: particle.width,
+                height: particle.height,
+                opacity: particle.opacity,
+                backgroundColor: particle.color,
+                borderRadius: particle.width,
+                transform: [
+                  { translateX: Animated.add(swayX, gustX) },
+                  { translateY: Animated.add(swayY, gustY) },
+                  { rotate: particle.rotate },
+                ],
+              },
+            ]}
+          >
+            <Animated.View
+              style={[
+                styles.grassParticleGlow,
+                {
+                  opacity: glowOpacity,
+                },
+              ]}
+            />
+          </Animated.View>
+        );
+      })}
     </View>
   );
 }
@@ -276,7 +431,7 @@ export function FrutigerAeroTabBar({
           ]}
         >
           <View pointerEvents="none" style={styles.skySheen} />
-          <GrassRidge theme={theme} />
+          <GrassRidge theme={theme} activeIndex={state.index} totalTabs={state.routes.length} />
           <View style={styles.tabsRow}>
             {state.routes.map((route, index) => {
               const descriptor = descriptors[route.key];
@@ -343,21 +498,34 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 27,
+    height: 28,
+    overflow: 'hidden',
   },
   grassBase: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    height: 22,
+    height: 24,
   },
-  grassBlade: {
+  grassMist: {
     position: 'absolute',
-    bottom: 15,
-    width: 1.6,
-    borderRadius: 2,
-    transformOrigin: 'bottom',
+    left: 0,
+    right: 0,
+    bottom: 11,
+    height: 10,
+  },
+  grassParticle: {
+    position: 'absolute',
+    overflow: 'hidden',
+  },
+  grassParticleGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '60%',
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
   tabsRow: {
     zIndex: 2,
