@@ -94,11 +94,11 @@ const baseTheme = {
     ],
   },
   circle: {
-    accent: '#4DB9E5',
-    accentSoft: '#DDF4FF',
+    accent: '#111111',
+    accentSoft: '#F1F3F5',
     profileBackground: '#FFFFFF',
-    headerGradient: ['#F7FCFF', '#EAF8FF'],
-    decalPalette: ['#53CDEB', '#70DC9D', '#A78BFA', '#FF988B', '#FFCF59'],
+    headerGradient: ['#FFFFFF', '#F7F8FA'],
+    decalPalette: ['#0A1222', '#5B6573', '#AAB2BC', '#D8DEE4', '#EEF1F4'],
   },
 };
 
@@ -130,19 +130,34 @@ function createTheme({ id, name, description, overrides = {} }) {
 }
 
 export const THEME_IDS = {
+  DEFAULT: 'default',
   AQUA_DAYLIGHT: 'aqua-daylight',
   CITRUS_GARDEN: 'citrus-garden',
   BUBBLEGUM_SKY: 'bubblegum-sky',
   AFTER_RAIN: 'after-rain',
 };
 
-export const DEFAULT_THEME_ID = THEME_IDS.AQUA_DAYLIGHT;
+export const DEFAULT_THEME_ID = THEME_IDS.DEFAULT;
 
 export const THEME_REGISTRY = {
+  [THEME_IDS.DEFAULT]: createTheme({
+    id: THEME_IDS.DEFAULT,
+    name: 'Default',
+    description: 'The original clean Circles interface, with a welcoming aqua launch atmosphere.',
+  }),
   [THEME_IDS.AQUA_DAYLIGHT]: createTheme({
     id: THEME_IDS.AQUA_DAYLIGHT,
     name: 'Aqua Daylight',
-    description: 'The default Circles atmosphere: clear water, open sky, and soft green light.',
+    description: 'Clear water, open sky, and soft green light throughout Circles.',
+    overrides: {
+      circle: {
+        accent: '#4DB9E5',
+        accentSoft: '#DDF4FF',
+        profileBackground: '#FFFFFF',
+        headerGradient: ['#F7FCFF', '#EAF8FF'],
+        decalPalette: ['#53CDEB', '#70DC9D', '#A78BFA', '#FF988B', '#FFCF59'],
+      },
+    },
   }),
   [THEME_IDS.CITRUS_GARDEN]: createTheme({
     id: THEME_IDS.CITRUS_GARDEN,

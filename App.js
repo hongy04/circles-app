@@ -16,7 +16,7 @@ import {
   Manrope_700Bold,
 } from '@expo-google-fonts/manrope';
 import { COLORS } from './src/theme/colors';
-import { ThemeProvider, useTheme } from './src/theme/ThemeProvider';
+import { ThemeProvider, useTheme, useThemeTokens } from './src/theme/ThemeProvider';
 import { IS_DEVELOPMENT } from './src/config/env';
 import { supabase } from './src/lib/supabase';
 import { ensureAuthed } from './src/services/authService';
@@ -402,6 +402,7 @@ function nextRelationshipTabBadgeChannelName() {
 function AppTabs({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { themeReady } = useTheme();
+  const theme = useThemeTokens();
   const [reqCount, setReqCount] = useState(0);
   const [circleBadgeCount, setCircleBadgeCount] = useState(0);
   const [authed, setAuthed] = useState(false);
@@ -498,10 +499,10 @@ function AppTabs({ navigation, route }) {
 
   if (enforcementLoading || (showLaunchPortal && !themeReady)) {
     return (
-      <SafeAreaView style={styles.enforcementLoading} edges={['top', 'bottom']}>
+      <SafeAreaView style={[styles.enforcementLoading, { backgroundColor: theme.colors.bg }]} edges={['top', 'bottom']}>
         <MonoRingWithRipples size={76} />
         <Text style={styles.launchBrand}>Circles</Text>
-        <ActivityIndicator style={{ marginTop: 22 }} color={COLORS.text} />
+        <ActivityIndicator style={{ marginTop: 22 }} color={theme.colors.text} />
       </SafeAreaView>
     );
   }
@@ -517,7 +518,7 @@ function AppTabs({ navigation, route }) {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
+    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       {IS_DEVELOPMENT && !authed ? <DevBanner /> : null}
       {enforcement?.active && enforcement.state === 'restricted' ? (
         <Pressable
@@ -534,14 +535,14 @@ function AppTabs({ navigation, route }) {
       <Tabs.Navigator
         screenOptions={({ route }) => ({
           headerShown: false,
-          tabBarActiveTintColor: COLORS.primary,
-          tabBarInactiveTintColor: '#9e9e9e',
+          tabBarActiveTintColor: theme.circle.accent,
+          tabBarInactiveTintColor: theme.colors.subtext,
           tabBarStyle: {
             paddingBottom: Math.max(8, insets.bottom),
             paddingTop: 6,
-            backgroundColor: COLORS.bg,
+            backgroundColor: theme.colors.surface,
             borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: COLORS.border,
+            borderTopColor: theme.colors.border,
           },
           tabBarLabelStyle: { fontFamily: 'Manrope_600SemiBold', marginBottom: 4 },
           tabBarIcon: ({ color, size, focused }) => {
@@ -554,16 +555,16 @@ function AppTabs({ navigation, route }) {
               <View style={{ width: size, height: size }}>
                 <Ionicons name={name} size={size} color={color} />
                 {route.name === 'Mutuals' && reqCount > 0 ? (
-                  <View style={styles.tabBadge}><Text style={styles.tabBadgeText}>{reqCount > 99 ? '99+' : String(reqCount)}</Text></View>
+                  <View style={[styles.tabBadge, { backgroundColor: theme.circle.accent }]}><Text style={[styles.tabBadgeText, { color: theme.colors.onPrimary }]}>{reqCount > 99 ? '99+' : String(reqCount)}</Text></View>
                 ) : null}
                 {route.name === 'Circles' && circleBadgeCount > 0 ? (
-                  <View style={styles.tabBadge}><Text style={styles.tabBadgeText}>{circleBadgeCount > 99 ? '99+' : String(circleBadgeCount)}</Text></View>
+                  <View style={[styles.tabBadge, { backgroundColor: theme.circle.accent }]}><Text style={[styles.tabBadgeText, { color: theme.colors.onPrimary }]}>{circleBadgeCount > 99 ? '99+' : String(circleBadgeCount)}</Text></View>
                 ) : null}
               </View>
             );
           },
         })}
-        sceneContainerStyle={{ backgroundColor: COLORS.bg }}
+        sceneContainerStyle={{ backgroundColor: theme.colors.bg }}
       >
         <Tabs.Screen name="Circles" component={CirclesStack} />
         <Tabs.Screen name="Mutuals" component={MutualsScreen} />
@@ -579,14 +580,17 @@ function AppTabs({ navigation, route }) {
 
 /* ---------------- Circles stack ---------------- */
 function CirclesStack() {
+  const theme = useThemeTokens();
+
   return (
     <CirclesStackNav.Navigator
       screenOptions={{
         headerShadowVisible: false,
-        headerTitleStyle: { fontFamily: 'Manrope_700Bold', color: COLORS.text },
-        headerTintColor: COLORS.text,
+        headerTitleStyle: { fontFamily: 'Manrope_700Bold', color: theme.colors.text },
+        headerTintColor: theme.colors.text,
+        headerStyle: { backgroundColor: theme.colors.surface },
         headerBackTitleVisible: false,
-        contentStyle: { backgroundColor: COLORS.bg },
+        contentStyle: { backgroundColor: theme.colors.bg },
       }}
     >
       <CirclesStackNav.Screen
@@ -865,6 +869,7 @@ function getMutualContext(user) {
 
 
 function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
+  const theme = useThemeTokens();
   const [imageFailed, setImageFailed] = useState(false);
   const context = getMutualContext(user);
   const hasPreview = Boolean(user.preview_post_id);
@@ -881,17 +886,17 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
 
   if (!hasPreview) {
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider, borderRadius: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.border, borderRadius: 12, backgroundColor: theme.colors.surface }}>
         <Pressable
           onPress={onOpenProfile}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
         >
           <Avatar size={48} name={user.display_name || 'Unknown'} uri={user.avatar_url} />
           <View style={{ flex: 1, marginHorizontal: 12 }}>
-            <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>{user.display_name || 'Unknown'}</Text>
-            <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }} numberOfLines={1}>{context.primary}</Text>
+            <Text style={{ fontFamily: 'Manrope_700Bold', color: theme.colors.text }} numberOfLines={1}>{user.display_name || 'Unknown'}</Text>
+            <Text style={{ fontFamily: 'Manrope_400Regular', color: theme.colors.subtext, fontSize: 12 }} numberOfLines={1}>{context.primary}</Text>
             {context.secondary ? (
-              <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 11, marginTop: 2 }} numberOfLines={1}>{context.secondary}</Text>
+              <Text style={{ fontFamily: 'Manrope_400Regular', color: theme.colors.subtext, fontSize: 11, marginTop: 2 }} numberOfLines={1}>{context.secondary}</Text>
             ) : null}
           </View>
         </Pressable>
@@ -902,18 +907,18 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
             paddingHorizontal: 14,
             paddingVertical: 8,
             borderRadius: 10,
-            backgroundColor: COLORS.primary,
+            backgroundColor: theme.circle.accent,
             opacity: pressed || sending ? 0.7 : 1,
           })}
         >
-          {sending ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Request</Text>}
+          {sending ? <ActivityIndicator color={theme.colors.onPrimary} /> : <Text style={{ color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold' }}>Request</Text>}
         </Pressable>
       </View>
     );
   }
 
   return (
-    <View style={{ borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider, borderRadius: 16, overflow: 'hidden', backgroundColor: COLORS.bg }}>
+    <View style={{ borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.border, borderRadius: 16, overflow: 'hidden', backgroundColor: theme.colors.surface }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12 }}>
         <Pressable
           onPress={onOpenProfile}
@@ -921,10 +926,10 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
         >
           <Avatar size={46} name={user.display_name || 'Unknown'} uri={user.avatar_url} />
           <View style={{ flex: 1, marginHorizontal: 11 }}>
-            <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>
+            <Text style={{ fontFamily: 'Manrope_700Bold', color: theme.colors.text }} numberOfLines={1}>
               {user.display_name || 'Unknown'}
             </Text>
-            <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }} numberOfLines={1}>
+            <Text style={{ fontFamily: 'Manrope_400Regular', color: theme.colors.subtext, fontSize: 12 }} numberOfLines={1}>
               {context.primary}{previewTime ? ` · ${previewTime}` : ''}
             </Text>
           </View>
@@ -938,13 +943,13 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
             minHeight: 36,
             paddingHorizontal: 12,
             borderRadius: 10,
-            backgroundColor: COLORS.primary,
+            backgroundColor: theme.circle.accent,
             alignItems: 'center',
             justifyContent: 'center',
             opacity: pressed || sending ? 0.7 : 1,
           })}
         >
-          {sending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 12 }}>Request</Text>}
+          {sending ? <ActivityIndicator color={theme.colors.onPrimary} size="small" /> : <Text style={{ color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold', fontSize: 12 }}>Request</Text>}
         </Pressable>
       </View>
 
@@ -978,30 +983,30 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
 
         <View style={{ position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.66)' }}>
           <Ionicons name="eye" size={13} color="#fff" />
-          <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 11 }}>Mutuals preview</Text>
+          <Text style={{ color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold', fontSize: 11 }}>Mutuals preview</Text>
         </View>
 
         {Number(user.preview_media_count || 0) > 1 ? (
           <View style={{ position: 'absolute', top: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.66)' }}>
             <Ionicons name="copy-outline" size={13} color="#fff" />
-            <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 11 }}>{user.preview_media_count}</Text>
+            <Text style={{ color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold', fontSize: 11 }}>{user.preview_media_count}</Text>
           </View>
         ) : null}
       </Pressable>
 
       <Pressable onPress={onOpenProfile} style={({ pressed }) => ({ paddingHorizontal: 13, paddingVertical: 12, opacity: pressed ? 0.65 : 1 })}>
         {context.secondary ? (
-          <Text style={{ color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11, marginBottom: 6 }} numberOfLines={1}>
+          <Text style={{ color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11, marginBottom: 6 }} numberOfLines={1}>
             {context.secondary}
           </Text>
         ) : null}
         {user.preview_caption ? (
-          <Text style={{ color: COLORS.text, fontFamily: 'Manrope_400Regular', lineHeight: 20 }} numberOfLines={3}>
+          <Text style={{ color: theme.colors.text, fontFamily: 'Manrope_400Regular', lineHeight: 20 }} numberOfLines={3}>
             <Text style={{ fontFamily: 'Manrope_700Bold' }}>{user.display_name || 'Unknown'} </Text>
             {user.preview_caption}
           </Text>
         ) : (
-          <Text style={{ color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12 }}>
+          <Text style={{ color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12 }}>
             Open their private profile to request a connection.
           </Text>
         )}
@@ -1011,6 +1016,7 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
 }
 
 function MutualsScreen({ navigation, route }) {
+  const theme = useThemeTokens();
   const [loading, setLoading] = useState(true);
   const [candidates, setCandidates] = useState([]);
   const [incoming, setIncoming] = useState([]);
@@ -1172,8 +1178,8 @@ function MutualsScreen({ navigation, route }) {
 
   if (loading) {
     return (
-      <SafeAreaView edges={['top']} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator />
+      <SafeAreaView edges={['top']} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.bg }}>
+        <ActivityIndicator color={theme.circle.accent} />
       </SafeAreaView>
     );
   }
@@ -1184,11 +1190,11 @@ function MutualsScreen({ navigation, route }) {
   ];
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: COLORS.bg }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 8 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 24 }}>Mutuals</Text>
-          <Text style={{ color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, marginTop: 2 }}>
+          <Text style={{ color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 24 }}>Mutuals</Text>
+          <Text style={{ color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, marginTop: 2 }}>
             Discover trusted context and handle connection requests.
           </Text>
         </View>
@@ -1198,7 +1204,7 @@ function MutualsScreen({ navigation, route }) {
             minHeight: 40,
             borderRadius: 12,
             borderWidth: 1,
-            borderColor: COLORS.border,
+            borderColor: theme.colors.border,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 6,
@@ -1206,12 +1212,12 @@ function MutualsScreen({ navigation, route }) {
             opacity: pressed ? 0.65 : 1,
           })}
         >
-          <Ionicons name="person-add-outline" size={18} color={COLORS.text} />
-          <Text style={{ color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12 }}>Invite</Text>
+          <Ionicons name="person-add-outline" size={18} color={theme.colors.text} />
+          <Text style={{ color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12 }}>Invite</Text>
         </Pressable>
       </View>
 
-      <View style={{ flexDirection: 'row', margin: 12, backgroundColor: '#f2f2f2', borderRadius: 10 }}>
+      <View style={{ flexDirection: 'row', margin: 12, backgroundColor: theme.colors.surfaceSoft, borderRadius: 10 }}>
         {segmentItems.map((item) => (
           <Pressable
             key={item.key}
@@ -1220,7 +1226,7 @@ function MutualsScreen({ navigation, route }) {
               flex: 1,
               paddingVertical: 10,
               alignItems: 'center',
-              backgroundColor: tab === item.key ? COLORS.primary : 'transparent',
+              backgroundColor: tab === item.key ? theme.circle.accent : 'transparent',
               borderRadius: 10,
               opacity: pressed ? 0.9 : 1,
             })}
@@ -1228,7 +1234,7 @@ function MutualsScreen({ navigation, route }) {
             <Text
               numberOfLines={1}
               style={{
-                color: tab === item.key ? '#fff' : COLORS.text,
+                color: tab === item.key ? theme.colors.onPrimary : theme.colors.text,
                 fontFamily: 'Manrope_700Bold',
                 fontSize: 12,
               }}
@@ -1242,20 +1248,20 @@ function MutualsScreen({ navigation, route }) {
       {tab === 'mutuals' ? (
         <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }}>
           {trustedRankingActive ? (
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 11, borderRadius: 12, backgroundColor: '#f5f5f5' }}>
-              <Ionicons name="git-network-outline" size={18} color={COLORS.text} />
-              <Text style={{ flex: 1, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, lineHeight: 18 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 11, borderRadius: 12, backgroundColor: theme.colors.surfaceSoft }}>
+              <Ionicons name="git-network-outline" size={18} color={theme.colors.text} />
+              <Text style={{ flex: 1, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, lineHeight: 18 }}>
                 Ordered by shared events, shared Circles, mutual connections, and mutual contacts — never popularity or engagement.
               </Text>
             </View>
           ) : null}
           {candidates.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: 38, paddingHorizontal: 24 }}>
-              <Ionicons name="people-outline" size={38} color={COLORS.subtext} />
-              <Text style={{ marginTop: 10, textAlign: 'center', color: COLORS.text, fontFamily: 'Manrope_700Bold' }}>
+              <Ionicons name="people-outline" size={38} color={theme.colors.subtext} />
+              <Text style={{ marginTop: 10, textAlign: 'center', color: theme.colors.text, fontFamily: 'Manrope_700Bold' }}>
                 No mutuals yet
               </Text>
-              <Text style={{ marginTop: 5, textAlign: 'center', color: COLORS.subtext, fontFamily: 'Manrope_400Regular', lineHeight: 19 }}>
+              <Text style={{ marginTop: 5, textAlign: 'center', color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', lineHeight: 19 }}>
                 Mutuals appear through shared events, shared Circles, mutual connections, or privacy-safe contact overlap. Profiles remain private until both people connect.
               </Text>
               <Pressable
@@ -1264,14 +1270,14 @@ function MutualsScreen({ navigation, route }) {
                   marginTop: 16,
                   minHeight: 42,
                   borderRadius: 11,
-                  backgroundColor: COLORS.primary,
+                  backgroundColor: theme.circle.accent,
                   alignItems: 'center',
                   justifyContent: 'center',
                   paddingHorizontal: 18,
                   opacity: pressed ? 0.7 : 1,
                 })}
               >
-                <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Invite people</Text>
+                <Text style={{ color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold' }}>Invite people</Text>
               </Pressable>
             </View>
           ) : candidates.map((user) => (
@@ -1287,19 +1293,19 @@ function MutualsScreen({ navigation, route }) {
       ) : tab === 'requests' ? (
         <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }}>
           {incoming.length === 0 ? (
-            <Text style={{ textAlign: 'center', color: COLORS.subtext, fontFamily: 'Manrope_400Regular', paddingTop: 38 }}>No requests right now.</Text>
+            <Text style={{ textAlign: 'center', color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', paddingTop: 38 }}>No requests right now.</Text>
           ) : incoming.map((request) => (
-            <View key={request.id} style={{ padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider, borderRadius: 12 }}>
+            <View key={request.id} style={{ padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.border, borderRadius: 12, backgroundColor: theme.colors.surface }}>
               <Pressable
                 onPress={() => navigation.navigate('Profile', { userId: request.from_user })}
                 style={{ flexDirection: 'row', alignItems: 'center' }}
               >
                 <Avatar size={48} name={request.display_name || 'Unknown'} uri={request.avatar_url} />
                 <View style={{ flex: 1, marginHorizontal: 12 }}>
-                  <Text style={{ fontFamily: 'Manrope_700Bold', color: COLORS.text }} numberOfLines={1}>{request.display_name || 'Unknown'}</Text>
-                  <Text style={{ fontFamily: 'Manrope_400Regular', color: COLORS.subtext, fontSize: 12 }}>wants to connect</Text>
+                  <Text style={{ fontFamily: 'Manrope_700Bold', color: theme.colors.text }} numberOfLines={1}>{request.display_name || 'Unknown'}</Text>
+                  <Text style={{ fontFamily: 'Manrope_400Regular', color: theme.colors.subtext, fontSize: 12 }}>wants to connect</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.subtext} />
               </Pressable>
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
                 <Pressable
@@ -1309,12 +1315,12 @@ function MutualsScreen({ navigation, route }) {
                     flex: 1,
                     paddingVertical: 10,
                     borderRadius: 10,
-                    backgroundColor: COLORS.primary,
+                    backgroundColor: theme.circle.accent,
                     alignItems: 'center',
                     opacity: pressed || responding[request.id] ? 0.7 : 1,
                   })}
                 >
-                  {responding[request.id] ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontFamily: 'Manrope_700Bold' }}>Accept</Text>}
+                  {responding[request.id] ? <ActivityIndicator color={theme.colors.onPrimary} /> : <Text style={{ color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold' }}>Accept</Text>}
                 </Pressable>
                 <Pressable
                   onPress={() => respond(request.id, 'decline')}
@@ -1324,12 +1330,12 @@ function MutualsScreen({ navigation, route }) {
                     paddingVertical: 10,
                     borderRadius: 10,
                     borderWidth: 1,
-                    borderColor: COLORS.border,
+                    borderColor: theme.colors.border,
                     alignItems: 'center',
                     opacity: pressed || responding[request.id] ? 0.7 : 1,
                   })}
                 >
-                  <Text style={{ color: COLORS.text, fontFamily: 'Manrope_700Bold' }}>Decline</Text>
+                  <Text style={{ color: theme.colors.text, fontFamily: 'Manrope_700Bold' }}>Decline</Text>
                 </Pressable>
               </View>
             </View>

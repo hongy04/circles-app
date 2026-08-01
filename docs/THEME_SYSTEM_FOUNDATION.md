@@ -1,7 +1,7 @@
 # Circles Theme System Foundation
 
-**Status:** Global and Circle-specific personalization implemented; shared feature surfaces are being migrated incrementally  
-**Default theme:** Aqua Daylight  
+**Status:** Global and Circle-specific personalization implemented across core and shared surfaces
+**Default theme:** Default (clean neutral interface with the approved aqua launch atmosphere)
 **Visual direction:** Modern Frutiger Aero — futuristic but cozy, clean but personal
 
 ## Purpose
@@ -20,10 +20,10 @@ Settings now exposes **Appearance** in all builds. The user can:
 - preview every curated atmosphere live
 - replay the full welcome portal before applying
 - apply one global theme to their Circles account
-- return to Aqua Daylight
+- return to the clean Default theme
 - leave the screen without applying and automatically return to the saved theme
 
-Migration `066` stores the private account preference in `public.users.theme_id`. The app also maintains a per-user AsyncStorage cache. On launch, the provider reads the cache and reconciles it with Supabase before the welcome portal becomes visible. Signing out returns the signed-out experience to Aqua Daylight without deleting the saved per-account cache.
+Migration `066` stores the private account preference in `public.users.theme_id`. The app also maintains a per-user AsyncStorage cache. On launch, the provider reads the cache and reconciles it with Supabase before the welcome portal becomes visible. Signing out returns the signed-out experience to the Default theme without deleting the saved per-account cache.
 
 ## Files
 
@@ -53,12 +53,13 @@ Migration `066` stores the private account preference in `public.users.theme_id`
 
 ## Initial curated themes
 
+- Default
 - Aqua Daylight
 - Citrus Garden
 - Bubblegum Sky
 - After Rain
 
-Aqua Daylight remains the default. Development builds still expose **Settings → Theme Laboratory** for temporary design experimentation. Laboratory changes remain in memory and are not saved unless the user applies a theme through the production Appearance screen.
+Default is the neutral fallback for new accounts and for users who prefer the original clean Circles styling. Aqua Daylight and the other expressive atmospheres remain opt-in. Development builds still expose **Settings → Theme Laboratory** for temporary design experimentation. Laboratory changes remain in memory and are not saved unless the user applies a theme through the production Appearance screen.
 
 ## Adoption pattern
 
@@ -93,8 +94,9 @@ A Circle with no explicit shared theme can omit `themeId` and inherit the user's
 5. Planning, events, polls, RSVP, and completed-memory surfaces
 6. Circle posts, Timeline, comments, and post editors
 7. Remaining invitations and member-management surfaces
-8. Feed and remaining core screens
-9. Theme-specific navigation stations and icon families
+8. Feed, Mutuals, Circles, Me, account settings, and core navigation surfaces
+9. Remaining global secondary screens
+10. Theme-specific navigation stations and icon families
 
 Safety, moderation, account deletion, and dense form screens should use restrained theme tokens even when expressive themes are active.
 
@@ -129,3 +131,16 @@ Theme-aware Circle surfaces now include:
 7. Circle People, member roles, pending invitations, Circle invite selection, event-attendee connections, and controlled guest-management flows
 
 Feature screens rely on the native navigation title and avoid redundant decorative title headers. Each feature route is wrapped in `CircleThemeBoundary` rather than reading `conversations.theme_id` independently. This preserves one permission-aware theme source and keeps the shared theme scoped away from global tabs, welcome, and unrelated Circles.
+
+
+## Default theme and global core surfaces (Migration 068)
+
+Migration `068` adds an explicit `default` theme id for both private account preferences and shared Circle themes.
+
+- New accounts default to the neutral Circles interface.
+- Existing saved selections remain unchanged.
+- The Default theme keeps the approved aqua welcome/portal atmosphere while using black, white, gray, and restrained neutral accents throughout the app.
+- `conversations.theme_id = 'default'` is a real shared neutral theme.
+- `conversations.theme_id = null` still means each viewer inherits their own global theme.
+- Feed, Mutuals, Circles, Me, account settings, comments, stories, unread badges, and the bottom navigation now read global theme tokens.
+- Media remains visually neutral so user photos and videos stay central.

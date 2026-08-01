@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,22 +11,29 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { COLORS } from '../../theme/colors';
-import { useTheme } from '../../theme/ThemeProvider';
+import { useTheme, useThemeTokens } from '../../theme/ThemeProvider';
 import { getTheme } from '../../theme/themes';
 import { IS_DEVELOPMENT } from '../../config/env';
 import { getAccountSession, signOut } from '../../services/profileService';
 import { getModerationAccess } from '../../services/safetyModerationService';
 import { getMyAccountEnforcementState } from '../../services/accountEnforcementService';
 
+
+function useSettingsTheme() {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  return { theme, styles };
+}
+
 function SettingRow({ icon, title, subtitle, onPress, destructive = false }) {
+  const { theme, styles } = useSettingsTheme();
   const content = (
     <>
       <View style={[styles.rowIcon, destructive && styles.rowIconDestructive]}>
         <Ionicons
           name={icon}
           size={19}
-          color={destructive ? '#b42318' : COLORS.text}
+          color={destructive ? '#b42318' : theme.colors.text}
         />
       </View>
       <View style={styles.rowText}>
@@ -56,6 +63,7 @@ function SettingRow({ icon, title, subtitle, onPress, destructive = false }) {
 }
 
 export function AccountSettingsScreen({ navigation }) {
+  const { theme, styles } = useSettingsTheme();
   const { savedThemeId } = useTheme();
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -141,7 +149,7 @@ export function AccountSettingsScreen({ navigation }) {
           hitSlop={10}
           style={styles.topBarSide}
         >
-          <Ionicons name="chevron-back" size={24} color={COLORS.text} />
+          <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
         </Pressable>
         <Text style={styles.topBarTitle}>Settings</Text>
         <View style={styles.topBarSide} />
@@ -332,10 +340,11 @@ export function AccountSettingsScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f7f7f7',
+    backgroundColor: theme.colors.surfaceSoft,
   },
   topBar: {
     minHeight: 52,
@@ -343,8 +352,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
   },
   topBarSide: {
     width: 52,
@@ -355,7 +364,7 @@ const styles = StyleSheet.create({
   topBarTitle: {
     flex: 1,
     textAlign: 'center',
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
   },
@@ -373,7 +382,7 @@ const styles = StyleSheet.create({
     paddingBottom: 44,
   },
   sectionLabel: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 11,
     letterSpacing: 0.6,
@@ -384,8 +393,8 @@ const styles = StyleSheet.create({
   section: {
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
     overflow: 'hidden',
     marginBottom: 20,
   },
@@ -416,11 +425,11 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   rowTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
   },
   rowSubtitle: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 17,
@@ -431,15 +440,16 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: COLORS.border,
+    backgroundColor: theme.colors.border,
     marginLeft: 62,
   },
   footerText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
     textAlign: 'center',
     paddingHorizontal: 20,
   },
-});
+  });
+}

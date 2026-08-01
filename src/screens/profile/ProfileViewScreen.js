@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { ProfileHeader } from '../../components/profile/ProfileHeader';
 import { TwoPersonCircleProposalCard } from '../../components/profile/TwoPersonCircleProposalCard';
 import { PreConnectionProfileShell } from '../../components/profile/PreConnectionProfileShell';
@@ -37,7 +37,15 @@ import {
   sendProfileConnectionRequest,
 } from '../../services/profileService';
 
+
+function useProfileTheme() {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  return { theme, styles };
+}
+
 function TopBar({ isSelf, profile, navigation, onManageProfile }) {
+  const { theme, styles } = useProfileTheme();
   const title = isSelf
     ? profile?.username
       ? `@${profile.username}`
@@ -55,7 +63,7 @@ function TopBar({ isSelf, profile, navigation, onManageProfile }) {
             hitSlop={10}
             style={styles.iconButton}
           >
-            <Ionicons name="chevron-back" size={24} color={COLORS.text} />
+            <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
           </Pressable>
         ) : null}
       </View>
@@ -71,7 +79,7 @@ function TopBar({ isSelf, profile, navigation, onManageProfile }) {
             hitSlop={10}
             style={styles.iconButton}
           >
-            <Ionicons name="settings-outline" size={22} color={COLORS.text} />
+            <Ionicons name="settings-outline" size={22} color={theme.colors.text} />
           </Pressable>
         ) : profile?.id ? (
           <Pressable
@@ -79,7 +87,7 @@ function TopBar({ isSelf, profile, navigation, onManageProfile }) {
             hitSlop={10}
             style={styles.iconButton}
           >
-            <Ionicons name="ellipsis-horizontal" size={22} color={COLORS.text} />
+            <Ionicons name="ellipsis-horizontal" size={22} color={theme.colors.text} />
           </Pressable>
         ) : null}
       </View>
@@ -94,6 +102,7 @@ function RomanticInterestCard({
   onInterestPress,
   onFocusPress,
 }) {
+  const { theme, styles } = useProfileTheme();
   const firstName = (profile?.display_name || 'them').trim().split(/\s+/)[0];
   const mutual = Boolean(status?.mutualRevealed);
   const selected = Boolean(status?.selectedByMe);
@@ -153,12 +162,12 @@ function RomanticInterestCard({
           focusActive && styles.romanticFocusIcon,
         ]}>
           {busy ? (
-            <ActivityIndicator size="small" color={COLORS.text} />
+            <ActivityIndicator size="small" color={theme.colors.text} />
           ) : (
             <Ionicons
               name={focusActive ? 'infinite' : selected ? 'heart' : 'heart-outline'}
               size={20}
-              color={COLORS.text}
+              color={theme.colors.text}
             />
           )}
         </View>
@@ -169,7 +178,7 @@ function RomanticInterestCard({
         <Ionicons
           name={selected ? 'checkmark' : 'chevron-forward'}
           size={18}
-          color={COLORS.subtext}
+          color={theme.colors.subtext}
         />
       </Pressable>
 
@@ -189,7 +198,7 @@ function RomanticInterestCard({
             <Ionicons
               name={focusActive ? 'pause-circle-outline' : focusSelected ? 'checkmark-circle' : 'radio-button-on-outline'}
               size={19}
-              color={COLORS.text}
+              color={theme.colors.text}
             />
             <View style={styles.focusActionCopy}>
               <Text style={styles.focusActionTitle}>{focusLabel}</Text>
@@ -201,7 +210,7 @@ function RomanticInterestCard({
                 </Text>
               ) : null}
             </View>
-            <Ionicons name="chevron-forward" size={17} color={COLORS.subtext} />
+            <Ionicons name="chevron-forward" size={17} color={theme.colors.subtext} />
           </Pressable>
         </>
       ) : null}
@@ -210,10 +219,11 @@ function RomanticInterestCard({
 }
 
 function EmptyPosts({ isSelf, canViewPosts, onCreatePost }) {
+  const { theme, styles } = useProfileTheme();
   if (!canViewPosts) {
     return (
       <View style={styles.emptyRoot}>
-        <Ionicons name="lock-closed-outline" size={34} color={COLORS.subtext} />
+        <Ionicons name="lock-closed-outline" size={34} color={theme.colors.subtext} />
         <Text style={styles.emptyTitle}>Private posts</Text>
         <Text style={styles.emptyText}>
           Connect with this person to see what they share with their circles.
@@ -227,7 +237,7 @@ function EmptyPosts({ isSelf, canViewPosts, onCreatePost }) {
       <Ionicons
         name={isSelf ? 'images-outline' : 'camera-outline'}
         size={36}
-        color={COLORS.subtext}
+        color={theme.colors.subtext}
       />
       <Text style={styles.emptyTitle}>
         {isSelf ? 'Share your first moment' : 'No posts yet'}
@@ -259,6 +269,7 @@ export function ProfileViewScreen({
   sourceEventId = null,
   isSelf = false,
 }) {
+  const { theme, styles } = useProfileTheme();
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -968,7 +979,7 @@ export function ProfileViewScreen({
 
       {profile.can_view_posts ? (
         <View style={styles.gridHeading}>
-          <Ionicons name="grid-outline" size={18} color={COLORS.text} />
+          <Ionicons name="grid-outline" size={18} color={theme.colors.text} />
           <Text style={styles.gridHeadingText}>Posts</Text>
         </View>
       ) : (
@@ -995,10 +1006,10 @@ export function ProfileViewScreen({
             style={styles.errorBack}
             hitSlop={10}
           >
-            <Ionicons name="chevron-back" size={24} color={COLORS.text} />
+            <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
           </Pressable>
         ) : null}
-        <Ionicons name="alert-circle-outline" size={38} color={COLORS.subtext} />
+        <Ionicons name="alert-circle-outline" size={38} color={theme.colors.subtext} />
         <Text style={styles.emptyTitle}>Profile unavailable</Text>
         <Text style={styles.emptyText}>{error}</Text>
         <Pressable
@@ -1053,7 +1064,7 @@ export function ProfileViewScreen({
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => load({ refresh: true })}
-              tintColor={COLORS.text}
+              tintColor={theme.colors.text}
             />
           )}
           contentContainerStyle={styles.listContent}
@@ -1078,10 +1089,11 @@ export function ProfileViewScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   contentWidth: {
     flex: 1,
@@ -1090,7 +1102,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     borderLeftWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
     borderRightWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
   },
   listContent: {
     flexGrow: 1,
@@ -1105,7 +1117,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: theme.colors.border,
   },
   topBarSide: {
     width: 46,
@@ -1117,7 +1129,7 @@ const styles = StyleSheet.create({
   topBarTitle: {
     flex: 1,
     textAlign: 'center',
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
   },
@@ -1132,8 +1144,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: '#fafafa',
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSoft,
     overflow: 'hidden',
   },
   romanticMainRow: {
@@ -1166,20 +1178,20 @@ const styles = StyleSheet.create({
     marginLeft: 11,
   },
   romanticChannelTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13.5,
   },
   romanticChannelBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11.5,
     lineHeight: 17,
   },
   romanticCardSeparator: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: COLORS.border,
+    backgroundColor: theme.colors.border,
     marginLeft: 63,
   },
   focusActionRow: {
@@ -1194,13 +1206,13 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   focusActionTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12.5,
   },
   focusActionBody: {
     marginTop: 2,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10.5,
     lineHeight: 15,
@@ -1213,10 +1225,10 @@ const styles = StyleSheet.create({
     gap: 7,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
   },
   gridHeadingText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
@@ -1224,12 +1236,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
     paddingHorizontal: 28,
   },
   loadingText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   errorBack: {
@@ -1249,14 +1261,14 @@ const styles = StyleSheet.create({
     paddingVertical: 34,
   },
   emptyTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
     marginTop: 12,
     textAlign: 'center',
   },
   emptyText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     lineHeight: 21,
     textAlign: 'center',
@@ -1268,15 +1280,16 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingHorizontal: 18,
     borderRadius: 12,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   emptyButtonText: {
-    color: '#fff',
+    color: theme.colors.onPrimary,
     fontFamily: 'Manrope_700Bold',
   },
   pressed: {
     opacity: 0.72,
   },
-});
+  });
+}

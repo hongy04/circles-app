@@ -181,8 +181,8 @@ export function AppearanceScreen({ navigation }) {
           <Text style={themedStyles.title}>Make Circles feel like yours.</Text>
           <Text style={themedStyles.subtitle}>
             Choose a global atmosphere for the welcome experience and every
-            theme-aware surface. Individual Circles can have their own shared
-            look later without changing this preference.
+            theme-aware surface. Individual Circles can still keep their own
+            shared look without changing this preference.
           </Text>
 
           <View style={themedStyles.heroCard}>
@@ -281,7 +281,7 @@ export function AppearanceScreen({ navigation }) {
             ]}
           >
             <Ionicons name="refresh-outline" size={18} color={theme.colors.text} />
-            <Text style={themedStyles.resetActionText}>Select Aqua Daylight</Text>
+            <Text style={themedStyles.resetActionText}>Select Default</Text>
           </Pressable>
 
           <Pressable

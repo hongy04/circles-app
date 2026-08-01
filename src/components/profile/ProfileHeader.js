@@ -1,10 +1,18 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../Avatar';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
+
+
+function useProfileHeaderTheme() {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  return { theme, styles };
+}
 
 function Stat({ value, label, onPress, accessibilityHint }) {
+  const { styles } = useProfileHeaderTheme();
   const content = (
     <>
       <Text style={styles.statValue}>{value}</Text>
@@ -36,6 +44,7 @@ function RelationshipActions({
   onAccept,
   onDecline,
 }) {
+  const { theme, styles } = useProfileHeaderTheme();
   const relationship = profile.relationship_status;
 
   if (relationship === 'self') return null;
@@ -44,7 +53,7 @@ function RelationshipActions({
     return (
       <View style={styles.actionsRow}>
         <View style={styles.connectedButton}>
-          <Ionicons name="checkmark-circle" size={18} color={COLORS.text} />
+          <Ionicons name="checkmark-circle" size={18} color={theme.colors.text} />
           <Text style={styles.connectedButtonText}>Connected</Text>
         </View>
       </View>
@@ -55,7 +64,7 @@ function RelationshipActions({
     return (
       <View style={styles.actionsRow}>
         <View style={styles.connectedButton}>
-          <Ionicons name="time-outline" size={18} color={COLORS.subtext} />
+          <Ionicons name="time-outline" size={18} color={theme.colors.subtext} />
           <Text style={styles.connectedButtonText}>Requested</Text>
         </View>
       </View>
@@ -74,7 +83,7 @@ function RelationshipActions({
           ]}
         >
           {busy ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color={theme.colors.onPrimary} size="small" />
           ) : (
             <Text style={styles.primaryButtonText}>Accept</Text>
           )}
@@ -106,7 +115,7 @@ function RelationshipActions({
           ]}
         >
           {busy ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color={theme.colors.onPrimary} size="small" />
           ) : (
             <Text style={styles.primaryButtonText}>Connect</Text>
           )}
@@ -132,6 +141,7 @@ export function ProfileHeader({
   onEventsPress,
   onConnectionsPress,
 }) {
+  const { styles } = useProfileHeaderTheme();
   const displayName = profile.display_name || (isSelf ? 'You' : 'User');
   const username = profile.username ? `@${profile.username}` : null;
 
@@ -219,7 +229,8 @@ export function ProfileHeader({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   root: {
     paddingHorizontal: 18,
     paddingTop: 14,
@@ -234,28 +245,28 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
   name: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 22,
   },
   username: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     marginTop: 3,
   },
   usernameHint: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     marginTop: 3,
   },
   bio: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     marginTop: 14,
     lineHeight: 21,
   },
   bioHint: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     marginTop: 14,
     lineHeight: 21,
@@ -267,19 +278,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
   },
   stat: {
     flex: 1,
     alignItems: 'center',
   },
   statValue: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 17,
   },
   statLabel: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10.5,
     lineHeight: 14,
@@ -292,7 +303,7 @@ const styles = StyleSheet.create({
   statDivider: {
     width: StyleSheet.hairlineWidth,
     height: 32,
-    backgroundColor: COLORS.border,
+    backgroundColor: theme.colors.border,
   },
   actionsRow: {
     flexDirection: 'row',
@@ -303,13 +314,13 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 44,
     borderRadius: 12,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
   },
   primaryButtonText: {
-    color: '#fff',
+    color: theme.colors.onPrimary,
     fontFamily: 'Manrope_700Bold',
   },
   secondaryButton: {
@@ -317,14 +328,14 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
   },
   secondaryButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
   },
   connectedButton: {
@@ -332,8 +343,8 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: '#f7f7f7',
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSoft,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -341,10 +352,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   connectedButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
   },
   buttonPressed: {
     opacity: 0.7,
   },
-});
+  });
+}

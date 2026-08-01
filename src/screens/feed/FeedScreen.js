@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -17,7 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { supabase } from '../../lib/supabase';
 import {
   addPostComment,
@@ -49,6 +50,8 @@ function localCommentId() {
 }
 
 export function FeedScreen({ navigation }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [posts, setPosts] = useState([]);
   const [stories, setStories] = useState([]);
   const [authed, setAuthed] = useState(false);
@@ -589,7 +592,7 @@ export function FeedScreen({ navigation }) {
         <Ionicons
           name="cloud-offline-outline"
           size={34}
-          color={COLORS.subtext}
+          color={theme.colors.subtext}
         />
         <Text style={styles.errorTitle}>Couldn’t load the feed</Text>
         <Text style={styles.errorBody}>{feedError}</Text>
@@ -656,7 +659,7 @@ export function FeedScreen({ navigation }) {
                 <Ionicons
                   name="add-circle-outline"
                   size={27}
-                  color={COLORS.text}
+                  color={theme.colors.text}
                 />
               </Pressable>
             </View>
@@ -681,7 +684,7 @@ export function FeedScreen({ navigation }) {
                 <Ionicons
                   name="alert-circle-outline"
                   size={16}
-                  color={COLORS.subtext}
+                  color={theme.colors.subtext}
                 />
                 <Text style={styles.inlineNotice}>
                   {storyError} Tap to retry.
@@ -697,7 +700,7 @@ export function FeedScreen({ navigation }) {
                 <Ionicons
                   name="alert-circle-outline"
                   size={18}
-                  color={COLORS.text}
+                  color={theme.colors.text}
                 />
                 <Text style={styles.noticeText} numberOfLines={2}>
                   {feedError} Tap to retry.
@@ -711,7 +714,7 @@ export function FeedScreen({ navigation }) {
             <Ionicons
               name="images-outline"
               size={38}
-              color={COLORS.subtext}
+              color={theme.colors.subtext}
             />
             <Text style={styles.emptyTitle}>Your feed is ready</Text>
             <Text style={styles.emptyBody}>
@@ -792,38 +795,39 @@ export function FeedScreen({ navigation }) {
           pressed && styles.floatingButtonPressed,
         ]}
       >
-        <Ionicons name="add" size={28} color="#fff" />
+        <Ionicons name="add" size={28} color={theme.colors.onPrimary} />
       </Pressable>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   centerRoot: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 28,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   loadingText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   errorTitle: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
   },
   errorBody: {
     marginTop: 6,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },
@@ -832,10 +836,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 11,
     borderRadius: 11,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
   retryButtonText: {
-    color: '#fff',
+    color: theme.colors.onPrimary,
     fontFamily: 'Manrope_700Bold',
   },
   feedHeader: {
@@ -846,7 +850,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   feedTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 24,
   },
@@ -858,7 +862,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: '#f4f4f4',
+    backgroundColor: theme.colors.surfaceSoft,
   },
   storyNoticePressed: {
     opacity: 0.7,
@@ -866,7 +870,7 @@ const styles = StyleSheet.create({
   inlineNotice: {
     flex: 1,
     marginLeft: 7,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
   },
@@ -877,12 +881,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     padding: 10,
     borderRadius: 10,
-    backgroundColor: '#f4f4f4',
+    backgroundColor: theme.colors.surfaceSoft,
   },
   noticeText: {
     flex: 1,
     marginLeft: 8,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
   },
@@ -897,13 +901,13 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
   },
   emptyBody: {
     marginTop: 6,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },
@@ -912,10 +916,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
   emptyButtonText: {
-    color: '#fff',
+    color: theme.colors.onPrimary,
     fontFamily: 'Manrope_700Bold',
   },
   footerSpinner: {
@@ -923,7 +927,7 @@ const styles = StyleSheet.create({
   },
   endText: {
     marginVertical: 18,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },
@@ -940,7 +944,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
     shadowColor: '#000',
     shadowOpacity: 0.2,
     shadowRadius: 6,
@@ -951,4 +955,5 @@ const styles = StyleSheet.create({
     opacity: 0.85,
     transform: [{ scale: 0.97 }],
   },
-});
+  });
+}

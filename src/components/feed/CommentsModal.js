@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -15,7 +15,7 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
 import {
   InstagramCommentComposer,
@@ -37,6 +37,8 @@ function CommentsContent({
   onClose,
 }) {
   const insets = useSafeAreaInsets();
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   return (
     <SafeAreaView
@@ -57,7 +59,7 @@ function CommentsContent({
           <Ionicons
             name="close"
             size={26}
-            color={COLORS.text}
+            color={theme.colors.text}
           />
         </Pressable>
 
@@ -152,10 +154,11 @@ export function CommentsModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   keyboardView: {
     flex: 1,
@@ -164,7 +167,7 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingHorizontal: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: theme.colors.border,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -184,7 +187,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
-    color: COLORS.text,
+    color: theme.colors.text,
   },
   scroll: {
     flex: 1,
@@ -197,4 +200,5 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.65,
   },
-});
+  });
+}

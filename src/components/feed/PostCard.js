@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -6,7 +6,7 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { Avatar } from '../Avatar';
 import { PostMediaCarousel } from './PostMediaCarousel';
 
@@ -27,6 +27,8 @@ export function PostCard({
   onOpenProfile,
   onOpenMenu,
 }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [captionExpanded, setCaptionExpanded] = useState(false);
 
   useEffect(() => {
@@ -74,7 +76,7 @@ export function PostCard({
             <Ionicons
               name="ellipsis-horizontal"
               size={20}
-              color={COLORS.text}
+              color={theme.colors.text}
             />
           </Pressable>
         ) : (
@@ -99,7 +101,7 @@ export function PostCard({
           <Ionicons
             name={post.liked ? 'heart' : 'heart-outline'}
             size={26}
-            color={post.liked ? '#ff3b30' : COLORS.text}
+            color={post.liked ? '#ff3b30' : theme.colors.text}
           />
         </Pressable>
         <Text style={styles.engagementCount}>
@@ -114,7 +116,7 @@ export function PostCard({
           <Ionicons
             name="chatbubble-outline"
             size={24}
-            color={COLORS.text}
+            color={theme.colors.text}
           />
         </Pressable>
         <Text style={styles.engagementCount}>
@@ -159,14 +161,15 @@ export function PostCard({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   root: {
     width: '100%',
     maxWidth: 640,
     alignSelf: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.divider,
-    backgroundColor: COLORS.bg,
+    borderBottomColor: theme.colors.divider,
+    backgroundColor: theme.colors.surface,
   },
   header: {
     flexDirection: 'row',
@@ -191,12 +194,12 @@ const styles = StyleSheet.create({
   },
   authorName: {
     fontFamily: 'Manrope_700Bold',
-    color: COLORS.text,
+    color: theme.colors.text,
   },
   time: {
     marginTop: 1,
     fontFamily: 'Manrope_400Regular',
-    color: '#888',
+    color: theme.colors.subtext,
     fontSize: 12,
   },
   actionRow: {
@@ -213,13 +216,13 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   engagementCount: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
   },
   mediaCount: {
     marginLeft: 'auto',
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,
   },
@@ -228,7 +231,7 @@ const styles = StyleSheet.create({
     paddingBottom: 13,
   },
   caption: {
-    color: COLORS.text,
+    color: theme.colors.text,
   },
   captionName: {
     fontFamily: 'Manrope_700Bold',
@@ -237,12 +240,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
   },
   moreText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
   },
   commentsLink: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     marginTop: 7,
     fontFamily: 'Manrope_400Regular',
   },
-});
+  });
+}

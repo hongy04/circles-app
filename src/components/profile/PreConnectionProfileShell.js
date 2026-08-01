@@ -6,17 +6,26 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
+
+
+function useShellTheme() {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  return { theme, styles };
+}
 
 function pluralize(count, singular, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
 function ContextChip({ icon, label }) {
+  const { theme, styles } = useShellTheme();
+
   return (
     <View style={styles.contextChip}>
-      <Ionicons name={icon} size={14} color={COLORS.text} />
+      <Ionicons name={icon} size={14} color={theme.colors.text} />
       <Text style={styles.contextChipText}>{label}</Text>
     </View>
   );
@@ -83,6 +92,7 @@ function buildContext(profile) {
 }
 
 function SelectedPreview({ profile }) {
+  const { theme, styles } = useShellTheme();
   const [imageFailed, setImageFailed] = useState(false);
   const hasPreview = Boolean(profile?.preview_post_id);
   const isVideo = profile?.preview_media_type === 'video';
@@ -99,7 +109,7 @@ function SelectedPreview({ profile }) {
     return (
       <View style={styles.noPreviewCard}>
         <View style={styles.noPreviewIcon}>
-          <Ionicons name="eye-off-outline" size={22} color={COLORS.subtext} />
+          <Ionicons name="eye-off-outline" size={22} color={theme.colors.subtext} />
         </View>
         <View style={styles.noPreviewText}>
           <Text style={styles.noPreviewTitle}>No preview selected</Text>
@@ -176,6 +186,7 @@ function SelectedPreview({ profile }) {
 }
 
 export function PreConnectionProfileShell({ profile }) {
+  const { theme, styles } = useShellTheme();
   const contexts = useMemo(() => buildContext(profile), [profile]);
 
   return (
@@ -198,7 +209,7 @@ export function PreConnectionProfileShell({ profile }) {
 
       <View style={styles.lockCard}>
         <View style={styles.lockIcon}>
-          <Ionicons name="lock-closed-outline" size={20} color={COLORS.text} />
+          <Ionicons name="lock-closed-outline" size={20} color={theme.colors.text} />
         </View>
         <View style={styles.lockText}>
           <Text style={styles.lockTitle}>Everything else stays private</Text>
@@ -211,31 +222,32 @@ export function PreConnectionProfileShell({ profile }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   root: {
     paddingHorizontal: 16,
     paddingBottom: 34,
     gap: 16,
   },
   sectionEyebrow: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
     letterSpacing: 0.8,
   },
   contextSection: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     paddingTop: 18,
   },
   contextTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
     marginTop: 5,
   },
   contextBody: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 13,
     lineHeight: 19,
@@ -255,11 +267,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     borderRadius: 17,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: '#f8f8f8',
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSoft,
   },
   contextChipText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
   },
@@ -267,10 +279,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     borderRadius: 16,
     padding: 16,
-    backgroundColor: '#fafafa',
+    backgroundColor: theme.colors.surfaceSoft,
   },
   noPreviewIcon: {
     width: 44,
@@ -278,18 +290,18 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.circle.accentSoft,
   },
   noPreviewText: {
     flex: 1,
     marginLeft: 12,
   },
   noPreviewTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
   },
   noPreviewBody: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
@@ -297,10 +309,10 @@ const styles = StyleSheet.create({
   },
   previewCard: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   previewHeadingRow: {
     minHeight: 70,
@@ -311,13 +323,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   previewHeading: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
     marginTop: 3,
   },
   previewAge: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
   },
@@ -374,7 +386,7 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   previewCaption: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     lineHeight: 20,
   },
@@ -382,7 +394,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
   },
   previewCaptionMuted: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
@@ -391,10 +403,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: theme.colors.border,
     borderRadius: 16,
     padding: 15,
-    backgroundColor: '#f8f8f8',
+    backgroundColor: theme.colors.surfaceSoft,
   },
   lockIcon: {
     width: 38,
@@ -402,21 +414,22 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ececec',
+    backgroundColor: theme.circle.accentSoft,
   },
   lockText: {
     flex: 1,
     marginLeft: 11,
   },
   lockTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
   },
   lockBody: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
     marginTop: 4,
   },
-});
+  });
+}

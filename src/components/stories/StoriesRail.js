@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Image,
   Pressable,
@@ -8,10 +8,13 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { getInitials } from '../../utils/getInitials';
 
 function StoryAvatar({ story, seen }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
   return (
     <View
       style={[
@@ -38,6 +41,8 @@ export function StoriesRail({
   onOpen,
   seenStoryUserIds = new Set(),
 }) {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const ownIndex = stories.findIndex((story) => story.isMine);
   const ownStory = ownIndex >= 0 ? stories[ownIndex] : null;
 
@@ -70,7 +75,7 @@ export function StoriesRail({
                   <Ionicons
                     name="person-outline"
                     size={25}
-                    color={COLORS.subtext}
+                    color={theme.colors.subtext}
                   />
                 </View>
               </View>
@@ -87,7 +92,7 @@ export function StoriesRail({
               pressed && styles.pressed,
             ]}
           >
-            <Ionicons name="add" size={16} color="#fff" />
+            <Ionicons name="add" size={16} color={theme.colors.onPrimary} />
           </Pressable>
 
           <Text numberOfLines={1} style={styles.label}>
@@ -125,7 +130,8 @@ export function StoriesRail({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   root: {
     paddingVertical: 10,
   },
@@ -147,13 +153,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   unseenRing: {
-    borderColor: COLORS.primary,
+    borderColor: theme.circle.accent,
   },
   seenRing: {
-    borderColor: '#c7c7cc',
+    borderColor: theme.colors.border,
   },
   emptyRing: {
-    borderColor: '#d1d1d6',
+    borderColor: theme.colors.border,
   },
   avatarInner: {
     width: 58,
@@ -162,14 +168,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 29,
-    backgroundColor: '#f2f2f2',
+    backgroundColor: theme.colors.surfaceSoft,
   },
   avatarImage: {
     width: '100%',
     height: '100%',
   },
   initials: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
   },
   emptyAvatar: {
@@ -178,7 +184,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 29,
-    backgroundColor: '#f2f2f2',
+    backgroundColor: theme.colors.surfaceSoft,
   },
   addBadge: {
     position: 'absolute',
@@ -190,13 +196,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: COLORS.bg,
-    backgroundColor: COLORS.primary,
+    borderColor: theme.colors.surface,
+    backgroundColor: theme.circle.accent,
   },
   label: {
     maxWidth: 72,
     marginTop: 6,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
     textAlign: 'center',
@@ -204,4 +210,5 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.7,
   },
-});
+  });
+}

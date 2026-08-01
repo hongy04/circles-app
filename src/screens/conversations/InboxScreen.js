@@ -15,7 +15,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Avatar } from '../../components/Avatar';
 import { UnreadBadge } from '../../components/UnreadBadge';
-import { COLORS } from '../../theme/colors';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
 import {
   listConversationInvitations,
@@ -28,6 +28,13 @@ import {
   getNotificationCenterUnreadCount,
   subscribeToNotificationChanges,
 } from '../../services/notificationService';
+
+
+function useInboxTheme() {
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  return { theme, styles };
+}
 
 function getConversationSubtitle(conversation) {
   return conversation.lastMessage
@@ -44,6 +51,8 @@ function PinnedConversation({
   onTogglePin,
   itemWidth,
 }) {
+  const { theme, styles } = useInboxTheme();
+
   return (
     <View style={[styles.pinnedCell, { width: itemWidth }]}> 
       <Pressable
@@ -68,7 +77,7 @@ function PinnedConversation({
 
           {conversation.isCircle ? (
             <View style={styles.groupBadge}>
-              <Ionicons name="people" size={13} color="#fff" />
+              <Ionicons name="people" size={13} color={theme.colors.onPrimary} />
             </View>
           ) : null}
 
@@ -80,7 +89,7 @@ function PinnedConversation({
 
           {conversation.notificationsMuted ? (
             <View style={styles.pinnedMuteBadge}>
-              <Ionicons name="notifications-off" size={12} color="#fff" />
+              <Ionicons name="notifications-off" size={12} color={theme.colors.onPrimary} />
             </View>
           ) : null}
         </View>
@@ -94,6 +103,7 @@ function PinnedConversation({
 }
 
 function ConversationRow({ conversation, onOpen, onTogglePin }) {
+  const { theme, styles } = useInboxTheme();
   const subtitle = getConversationSubtitle(conversation);
 
   return (
@@ -118,7 +128,7 @@ function ConversationRow({ conversation, onOpen, onTogglePin }) {
         />
         {conversation.isCircle ? (
           <View style={styles.rowGroupBadge}>
-            <Ionicons name="people" size={11} color="#fff" />
+            <Ionicons name="people" size={11} color={theme.colors.onPrimary} />
           </View>
         ) : null}
       </View>
@@ -141,7 +151,7 @@ function ConversationRow({ conversation, onOpen, onTogglePin }) {
             <Ionicons
               name="notifications-off-outline"
               size={16}
-              color={COLORS.subtext}
+              color={theme.colors.subtext}
               style={styles.rowMuteIcon}
             />
           ) : null}
@@ -157,6 +167,8 @@ function ConversationRow({ conversation, onOpen, onTogglePin }) {
 }
 
 function InvitationCard({ invitation, busy, onRespond }) {
+  const { theme, styles } = useInboxTheme();
+
   return (
     <View style={styles.invitationCard}>
       <View style={styles.invitationHeader}>
@@ -196,7 +208,7 @@ function InvitationCard({ invitation, busy, onRespond }) {
           ]}
         >
           {busy ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color={theme.colors.onPrimary} size="small" />
           ) : (
             <Text style={styles.primaryButtonText}>Accept</Text>
           )}
@@ -207,6 +219,7 @@ function InvitationCard({ invitation, busy, onRespond }) {
 }
 
 export function InboxScreen({ navigation }) {
+  const { theme, styles } = useInboxTheme();
   const { width } = useWindowDimensions();
   const [conversations, setConversations] = useState([]);
   const [invitations, setInvitations] = useState([]);
@@ -255,7 +268,7 @@ export function InboxScreen({ navigation }) {
               pressed && styles.headerButtonPressed,
             ]}
           >
-            <Ionicons name="notifications-outline" size={24} color={COLORS.text} />
+            <Ionicons name="notifications-outline" size={24} color={theme.colors.text} />
             {notificationCount > 0 ? (
               <View style={styles.headerBadge}>
                 <Text style={styles.headerBadgeText}>
@@ -274,7 +287,7 @@ export function InboxScreen({ navigation }) {
               pressed && styles.headerButtonPressed,
             ]}
           >
-            <Ionicons name="create-outline" size={25} color={COLORS.text} />
+            <Ionicons name="create-outline" size={25} color={theme.colors.text} />
           </Pressable>
         </View>
       ),
@@ -462,7 +475,7 @@ export function InboxScreen({ navigation }) {
       ) : (
         <View style={styles.emptyCard}>
           <View style={styles.emptyIcon}>
-            <Ionicons name="chatbubbles-outline" size={34} color={COLORS.text} />
+            <Ionicons name="chatbubbles-outline" size={34} color={theme.colors.text} />
           </View>
           <Text style={styles.emptyTitle}>Your private conversations</Text>
           <Text style={styles.emptyBody}>
@@ -476,10 +489,11 @@ export function InboxScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   content: {
     width: '100%',
@@ -492,17 +506,17 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   sectionLabel: {
     marginLeft: 16,
     marginBottom: 8,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 11,
     letterSpacing: 0.7,
@@ -516,7 +530,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     padding: 14,
     borderRadius: 14,
-    backgroundColor: '#f2f2f7',
+    backgroundColor: theme.colors.surfaceSoft,
   },
   invitationHeader: {
     flexDirection: 'row',
@@ -527,13 +541,13 @@ const styles = StyleSheet.create({
     marginLeft: 11,
   },
   invitationTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
   },
   invitationSubtitle: {
     marginTop: 2,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 17,
@@ -549,10 +563,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
   primaryButtonText: {
-    color: '#fff',
+    color: theme.colors.onPrimary,
     fontFamily: 'Manrope_700Bold',
   },
   secondaryButton: {
@@ -562,11 +576,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#d1d1d6',
-    backgroundColor: '#fff',
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
   },
   secondaryButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
   },
   pinnedSection: {
@@ -610,8 +624,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: COLORS.bg,
-    backgroundColor: COLORS.primary,
+    borderColor: theme.colors.bg,
+    backgroundColor: theme.circle.accent,
   },
   pinnedUnreadBadge: {
     position: 'absolute',
@@ -628,13 +642,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: COLORS.bg,
-    backgroundColor: '#6f6f73',
+    borderColor: theme.colors.bg,
+    backgroundColor: theme.colors.subtext,
   },
   pinnedLabel: {
     maxWidth: 96,
     marginTop: 5,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
     lineHeight: 16,
@@ -644,7 +658,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   messageList: {
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   row: {
     minHeight: 78,
@@ -653,10 +667,10 @@ const styles = StyleSheet.create({
     paddingLeft: 16,
     paddingRight: 12,
     paddingVertical: 9,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.bg,
   },
   rowPressed: {
-    backgroundColor: '#f2f2f7',
+    backgroundColor: theme.colors.surfaceSoft,
   },
   rowAvatarWrap: {
     position: 'relative',
@@ -675,8 +689,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: COLORS.bg,
-    backgroundColor: COLORS.primary,
+    borderColor: theme.colors.bg,
+    backgroundColor: theme.circle.accent,
   },
   rowCenter: {
     flex: 1,
@@ -689,13 +703,13 @@ const styles = StyleSheet.create({
   },
   rowTitle: {
     flex: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
   },
   rowTime: {
     marginLeft: 8,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
@@ -708,19 +722,19 @@ const styles = StyleSheet.create({
   rowSubtitle: {
     flex: 1,
     marginRight: 8,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 13,
   },
   separator: {
     height: StyleSheet.hairlineWidth,
     marginLeft: 86,
-    backgroundColor: COLORS.border,
+    backgroundColor: theme.colors.border,
   },
   pinHint: {
     marginTop: 13,
     marginHorizontal: 18,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -739,17 +753,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 33,
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.colors.surfaceSoft,
   },
   emptyTitle: {
     marginTop: 16,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
   },
   emptyBody: {
     marginTop: 7,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     lineHeight: 20,
     textAlign: 'center',
@@ -797,10 +811,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 3,
     borderRadius: 8,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
   headerBadgeText: {
-    color: '#fff',
+    color: theme.colors.onPrimary,
     fontFamily: 'Manrope_700Bold',
     fontSize: 9,
   },
@@ -810,4 +824,5 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.7,
   },
-});
+  });
+}

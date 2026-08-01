@@ -1,11 +1,15 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 
+import { useThemeTokens } from '../theme/ThemeProvider';
+
 export function UnreadBadge({ count }) {
+  const theme = useThemeTokens();
+
   return (
     <View
       style={{
-        backgroundColor: '#000',
+        backgroundColor: theme.circle.accent,
         minWidth: 20,
         height: 20,
         borderRadius: 10,
@@ -16,7 +20,7 @@ export function UnreadBadge({ count }) {
     >
       <Text
         style={{
-          color: '#fff',
+          color: theme.colors.onPrimary,
           fontSize: 12,
           fontFamily: 'Manrope_700Bold',
         }}

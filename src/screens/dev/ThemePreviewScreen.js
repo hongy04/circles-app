@@ -237,7 +237,7 @@ export function ThemePreviewScreen({ navigation }) {
             ]}
           >
             <Ionicons name="refresh-outline" size={18} color={theme.colors.text} />
-            <Text style={themedStyles.resetActionText}>Reset to Aqua Daylight</Text>
+            <Text style={themedStyles.resetActionText}>Reset to Default</Text>
           </Pressable>
 
           <View style={themedStyles.noteCard}>

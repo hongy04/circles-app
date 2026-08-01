@@ -4,7 +4,7 @@ import { isKnownTheme } from '../theme/themes';
 
 function normalizeSharedThemeId(themeId) {
   const normalized = String(themeId || '').trim().toLowerCase();
-  if (!normalized || normalized === 'default' || normalized === 'inherit') {
+  if (!normalized || normalized === 'inherit' || normalized === 'global' || normalized === 'use-global') {
     return null;
   }
   return isKnownTheme(normalized) ? normalized : null;

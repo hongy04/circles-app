@@ -229,7 +229,7 @@ export function ThemeProvider({
       if (!shouldHydrate) return;
 
       // Mark the theme unavailable immediately so a post-sign-in portal cannot
-      // flash Aqua Daylight. Supabase work itself is deferred outside the auth
+      // flash the Default theme. Supabase work itself is deferred outside the auth
       // callback to avoid auth-lock reentrancy.
       markThemeReady(false);
       setTimeout(() => {
