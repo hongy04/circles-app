@@ -144,3 +144,14 @@ Migration `068` adds an explicit `default` theme id for both private account pre
 - `conversations.theme_id = null` still means each viewer inherits their own global theme.
 - Feed, Mutuals, Circles, Me, account settings, comments, stories, unread badges, and the bottom navigation now read global theme tokens.
 - Media remains visually neutral so user photos and videos stay central.
+
+## Themed navigation station prototype
+
+The global theme can now choose a navigation treatment through `theme.navigation.tabStation`.
+
+- `standard` keeps the existing clean React Navigation tab bar.
+- `aero-grass` renders the custom Frutiger Aero station.
+
+Aqua Daylight is the first theme using the Aero station. The station is intentionally token-driven so future themes can define their own navigation treatment without changing tab behavior.
+
+The Aero station uses a contained glass-and-grass platform, custom emblem-like tab icons, subtle selected-state lift/glow, and the existing request/notification badges. Default and the other curated themes remain on the standard tab bar until their own station treatments are deliberately designed.

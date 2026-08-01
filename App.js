@@ -7,7 +7,7 @@ import {
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { BottomTabBar, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   useFonts,
@@ -33,6 +33,7 @@ import { Avatar } from './src/components/Avatar';
 import { DevBanner } from './src/components/DevBanner';
 import { LaunchPortal } from './src/components/LaunchPortal';
 import { MonoRingWithRipples } from './src/components/MonoRingWithRipples';
+import { FrutigerAeroTabBar } from './src/components/FrutigerAeroTabBar';
 import { AuthNavigator } from './src/navigation/AuthNavigator';
 import {
   flushPendingPushDestination,
@@ -533,6 +534,18 @@ function AppTabs({ navigation, route }) {
         </Pressable>
       ) : null}
       <Tabs.Navigator
+        tabBar={(props) => (
+          theme.navigation?.tabStation === 'aero-grass' ? (
+            <FrutigerAeroTabBar
+              {...props}
+              theme={theme}
+              mutualsBadgeCount={reqCount}
+              circlesBadgeCount={circleBadgeCount}
+            />
+          ) : (
+            <BottomTabBar {...props} />
+          )
+        )}
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarActiveTintColor: theme.circle.accent,
