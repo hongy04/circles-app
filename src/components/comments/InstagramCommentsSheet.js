@@ -5,7 +5,6 @@ import {
   Animated,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -48,7 +47,7 @@ export function InstagramCommentsSheet({
   const mountedRef = useRef(visible);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardFrame, setKeyboardFrame] = useState({ visible: false, height: 0 });
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(height)).current;
   const listRef = useRef(null);
@@ -103,20 +102,38 @@ export function InstagramCommentsSheet({
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
-    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      const screenY = Number(event?.endCoordinates?.screenY);
+      const reportedHeight = Number(event?.endCoordinates?.height) || 0;
+      const measuredHeight = Number.isFinite(screenY) ? Math.max(0, height - screenY) : reportedHeight;
+      setKeyboardFrame({ visible: true, height: Math.max(reportedHeight, measuredHeight) });
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardFrame({ visible: false, height: 0 });
+    });
     return () => {
       showSubscription.remove();
       hideSubscription.remove();
     };
-  }, []);
+  }, [height]);
 
   const safeBottomInset = Math.max(
     insets.bottom || 0,
     initialWindowMetrics?.insets?.bottom || 0
   );
-  const composerBottomInset = keyboardVisible ? 8 : Math.max(14, safeBottomInset + 6);
+  const composerBottomInset = keyboardFrame.visible ? 8 : Math.max(14, safeBottomInset + 6);
+  const closedSheetHeight = Math.min(Math.max(430, height * 0.82), 760);
+  const keyboardLift = keyboardFrame.visible ? keyboardFrame.height : 0;
+  const availableHeight = Math.max(260, height - keyboardLift - Math.max(8, insets.top + 8));
+  const sheetHeight = keyboardFrame.visible
+    ? Math.min(closedSheetHeight, availableHeight)
+    : closedSheetHeight;
   const normalizedComments = useMemo(() => comments.filter(Boolean), [comments]);
+
+  const closeSheet = () => {
+    Keyboard.dismiss();
+    onClose?.();
+  };
 
   const submit = async () => {
     const body = text.trim();
@@ -125,9 +142,6 @@ export function InstagramCommentsSheet({
     try {
       await onSubmit(body);
       setText('');
-      requestAnimationFrame(() => {
-        listRef.current?.scrollToEnd?.({ animated: true });
-      });
     } catch (submitError) {
       Alert.alert('Comment not posted', submitError?.message || 'Please try again.');
     } finally {
@@ -150,21 +164,18 @@ export function InstagramCommentsSheet({
       presentationStyle="overFullScreen"
       statusBarTranslucent
       navigationBarTranslucent={Platform.OS === 'android'}
-      onRequestClose={onClose}
+      onRequestClose={closeSheet}
     >
-      <KeyboardAvoidingView
-        style={styles.modalRoot}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
-      >
+      <View style={styles.modalRoot}>
         <Animated.View pointerEvents="none" style={[styles.backdrop, { opacity: backdropOpacity }]} />
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
 
         <Animated.View
           style={[
             styles.sheet,
             {
-              height: Math.min(Math.max(430, height * 0.82), 760),
+              height: sheetHeight,
+              bottom: keyboardLift,
               transform: [{ translateY }],
             },
           ]}
@@ -178,7 +189,7 @@ export function InstagramCommentsSheet({
                 {subtitle ? <Text style={styles.headerSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
               </View>
               <Pressable
-                onPress={onClose}
+                onPress={closeSheet}
                 hitSlop={10}
                 style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
               >
@@ -208,8 +219,11 @@ export function InstagramCommentsSheet({
                 ListEmptyComponent={<InstagramCommentsEmpty title={emptyTitle} body={emptyBody} />}
                 style={styles.commentsList}
                 contentContainerStyle={styles.commentsContent}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                keyboardShouldPersistTaps="always"
+                keyboardDismissMode="none"
+                automaticallyAdjustContentInsets={false}
+                automaticallyAdjustKeyboardInsets={false}
+                contentInsetAdjustmentBehavior="never"
                 showsVerticalScrollIndicator={false}
               />
             )}
@@ -224,18 +238,20 @@ export function InstagramCommentsSheet({
             />
           </View>
         </Animated.View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
 
 function createStyles(theme) {
   return StyleSheet.create({
-    modalRoot: { flex: 1, justifyContent: 'flex-end' },
+    modalRoot: { flex: 1 },
     backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(10,18,34,0.34)' },
     sheet: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
       width: '100%',
-      minHeight: 430,
       backgroundColor: theme.colors.surface,
       borderTopLeftRadius: 24,
       borderTopRightRadius: 24,

@@ -209,6 +209,7 @@ export function GuestClaimProfileSetupScreen({ route, navigation }) {
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >

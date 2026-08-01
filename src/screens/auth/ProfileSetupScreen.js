@@ -233,6 +233,7 @@ export function ProfileSetupScreen({ route, navigation }) {
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           contentContainerStyle={authStyles.scrollContent}
         >
           <View style={styles.progressRow}>

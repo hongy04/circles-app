@@ -155,6 +155,7 @@ function EventGuestSettingsContent({ route, navigation }) {
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.contextCard}>

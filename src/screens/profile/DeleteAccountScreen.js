@@ -121,6 +121,7 @@ export function DeleteAccountScreen({ navigation }) {
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           contentContainerStyle={styles.content}
         >
           <View style={styles.warningCard}>

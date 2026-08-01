@@ -32,10 +32,11 @@ import {
 } from '../../services/storyService';
 import { deleteOwnPost } from '../../services/postService';
 import { PostCard } from '../../components/feed/PostCard';
-import { CommentsModal } from '../../components/feed/CommentsModal';
+import { InstagramCommentsSheet } from '../../components/comments/InstagramCommentsSheet';
 import { StoriesRail } from '../../components/stories/StoriesRail';
 import { StoryViewer } from '../../components/stories/StoryViewer';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
+import { timeAgo } from '../../utils/timeAgo';
 
 const PAGE_SIZE = 10;
 
@@ -69,8 +70,6 @@ export function FeedScreen({ navigation }) {
   const [activeComments, setActiveComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState(null);
-  const [commentText, setCommentText] = useState('');
-  const [commentSending, setCommentSending] = useState(false);
   const [managedPost, setManagedPost] = useState(null);
   const [deletingPostId, setDeletingPostId] = useState(null);
 
@@ -395,7 +394,6 @@ export function FeedScreen({ navigation }) {
     (postId) => {
       setOpenPostId(postId);
       setActiveComments([]);
-      setCommentText('');
       loadComments(postId);
     },
     [loadComments]
@@ -405,30 +403,26 @@ export function FeedScreen({ navigation }) {
     setOpenPostId(null);
     setActiveComments([]);
     setCommentsError(null);
-    setCommentText('');
   }, []);
 
-  const submitComment = useCallback(async () => {
-    const text = commentText.trim();
+  const submitComment = useCallback(async (body) => {
+    const text = String(body || '').trim();
     const postId = openPostId;
 
-    if (!text || !postId || commentSending) return;
+    if (!text || !postId) return;
 
     const temporaryId = localCommentId();
     const temporaryComment = {
       id: temporaryId,
+      userId: currentUserId,
       userName: 'You',
       avatarUri: null,
       text,
+      createdAt: new Date().toISOString(),
       pending: true,
     };
 
-    setCommentSending(true);
-    setCommentText('');
-    setActiveComments((comments) => [
-      ...comments,
-      temporaryComment,
-    ]);
+    setActiveComments((comments) => [...comments, temporaryComment]);
 
     try {
       await addPostComment(postId, text);
@@ -447,21 +441,12 @@ export function FeedScreen({ navigation }) {
     } catch (error) {
       if (mountedRef.current) {
         setActiveComments((comments) =>
-          comments.filter(
-            (comment) => comment.id !== temporaryId
-          )
+          comments.filter((comment) => comment.id !== temporaryId)
         );
-        setCommentText(text);
       }
-
-      Alert.alert(
-        'Comment not posted',
-        errorMessage(error, 'Please try again.')
-      );
-    } finally {
-      if (mountedRef.current) setCommentSending(false);
+      throw error;
     }
-  }, [commentSending, commentText, openPostId]);
+  }, [currentUserId, openPostId]);
 
   const retryFeed = useCallback(() => {
     refreshFeed('initial');
@@ -741,16 +726,22 @@ export function FeedScreen({ navigation }) {
         contentContainerStyle={styles.listContent}
       />
 
-      <CommentsModal
+      <InstagramCommentsSheet
         visible={Boolean(openPostId)}
-        comments={activeComments}
+        comments={activeComments.map((comment) => ({
+          id: comment.id,
+          userId: comment.userId || null,
+          name: comment.userName || 'Someone',
+          avatarUri: comment.avatarUri || null,
+          body: comment.text || '',
+          timeLabel: comment.createdAt ? timeAgo(comment.createdAt) : '',
+          pending: comment.pending,
+        }))}
         loading={commentsLoading}
-        error={commentsError}
-        commentText={commentText}
-        sending={commentSending}
-        onChangeText={setCommentText}
+        error={commentsError || ''}
         onSubmit={submitComment}
         onRetry={() => openPostId && loadComments(openPostId)}
+        onOpenProfile={(userId) => navigation.navigate('Profile', { userId })}
         onClose={closeComments}
       />
 

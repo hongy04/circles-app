@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -174,10 +176,16 @@ export function EditCircleScreen({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+        >
         <Pressable
           onPress={pickAvatar}
           disabled={saving}
@@ -276,12 +284,14 @@ export function EditCircleScreen({ route, navigation }) {
               : 'The Circle photo is stored privately and is only available to accepted members.'}
           </Text>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   screen: {
     flex: 1,
     backgroundColor: COLORS.bg,

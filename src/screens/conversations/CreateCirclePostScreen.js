@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -167,7 +169,16 @@ function CreateCirclePostContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+        >
 
         {assets.length ? (
           <View style={[styles.mediaGrid, { gap: tileGap }]}>
@@ -249,7 +260,8 @@ function CreateCirclePostContent({ route, navigation }) {
         >
           {posting ? <ActivityIndicator color="#fff" /> : <Text style={styles.publishButtonText}>Post to Circle</Text>}
         </Pressable>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -265,10 +277,11 @@ export function CreateCirclePostScreen(props) {
 
 function createStyles(theme) {
   return StyleSheet.create({
+    flex: { flex: 1 },
     screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
     content: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 16, paddingBottom: 44 },
     mediaPicker: {
-      minHeight: 250,
+      minHeight: 190,
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: 28,
@@ -278,14 +291,14 @@ function createStyles(theme) {
       borderRadius: 18,
       backgroundColor: theme.colors.surface,
     },
-    pickerIcon: { width: 66, height: 66, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: theme.circle.accentSoft },
+    pickerIcon: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: theme.circle.accentSoft },
     mediaPickerTitle: { marginTop: 14, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 16 },
     mediaPickerBody: { maxWidth: 360, marginTop: 6, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, lineHeight: 18, textAlign: 'center' },
     mediaGrid: { flexDirection: 'row', flexWrap: 'wrap' },
     mediaTile: { width: '100%', height: '100%', borderRadius: 12, backgroundColor: theme.colors.surfaceSoft },
     videoTile: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#1c1c1e' },
     removeButton: { position: 'absolute', top: 6, right: 6, width: 25, height: 25, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.72)' },
-    secondaryButton: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, borderRadius: 11, backgroundColor: theme.colors.surface },
+    secondaryButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, borderRadius: 11, backgroundColor: theme.colors.surface },
     secondaryButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
     captionCard: { marginTop: 18, padding: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, borderRadius: 14, backgroundColor: theme.colors.surface },
     fieldLabel: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },

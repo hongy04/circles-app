@@ -197,10 +197,6 @@ export function PostDetailScreen({ route, navigation }) {
     setComments((current) => [...current, temporaryComment]);
     setCommentCount((current) => current + 1);
 
-    requestAnimationFrame(() => {
-      listRef.current?.scrollToEnd?.({ animated: true });
-    });
-
     try {
       await addPostComment(postId, text);
       const rows = await fetchPostComments(postId);
@@ -228,8 +224,7 @@ export function PostDetailScreen({ route, navigation }) {
 
   const focusCommentComposer = () => {
     requestAnimationFrame(() => {
-      listRef.current?.scrollToEnd?.({ animated: true });
-      setTimeout(() => commentInputRef.current?.focus?.(), 120);
+      commentInputRef.current?.focus?.();
     });
   };
 
@@ -492,8 +487,8 @@ export function PostDetailScreen({ route, navigation }) {
             data={comments}
             keyExtractor={(item) => item.id}
             ListHeaderComponent={postHeader}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            keyboardShouldPersistTaps="always"
+            keyboardDismissMode="none"
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => (
               <InstagramCommentRow

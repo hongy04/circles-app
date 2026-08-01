@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -91,7 +93,16 @@ function EditCirclePostContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+        >
 
         <View style={styles.notice}>
           <Ionicons name="information-circle-outline" size={18} color={theme.colors.text} />
@@ -138,7 +149,8 @@ function EditCirclePostContent({ route, navigation }) {
         >
           {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Caption</Text>}
         </Pressable>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -154,6 +166,7 @@ export function EditCirclePostScreen(props) {
 
 function createStyles(theme) {
   return StyleSheet.create({
+    flex: { flex: 1 },
     screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
     content: { width: '100%', maxWidth: 620, alignSelf: 'center', padding: 16, paddingBottom: 42 },
     notice: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginTop: 14, padding: 12, borderRadius: 12, backgroundColor: theme.circle.accentSoft },

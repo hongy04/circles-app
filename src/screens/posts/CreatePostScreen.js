@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -189,10 +191,16 @@ export function CreatePostScreen({ navigation }) {
         </Pressable>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+        >
         <Pressable
           onPress={pickMedia}
           disabled={posting}
@@ -318,13 +326,15 @@ export function CreatePostScreen({ navigation }) {
             <Text style={styles.postButtonText}>Share post</Text>
           )}
         </Pressable>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 function createStyles(theme) {
   return StyleSheet.create({
+  flex: { flex: 1 },
   root: { flex: 1, backgroundColor: theme.colors.bg },
   header: {
     flexDirection: 'row',

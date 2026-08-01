@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -94,7 +96,16 @@ export function CreateGroupScreen({ navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.privacyCard}>
           <Ionicons name="lock-closed-outline" size={24} color={COLORS.text} />
           <View style={styles.privacyText}>
@@ -196,12 +207,14 @@ export function CreateGroupScreen({ navigation }) {
             </Text>
           )}
         </Pressable>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   screen: {
     flex: 1,
     backgroundColor: '#f7f7f7',

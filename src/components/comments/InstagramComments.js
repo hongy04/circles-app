@@ -1,12 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../Avatar';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 
@@ -120,6 +123,18 @@ export function InstagramCommentComposer({
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const canSubmit = Boolean(value.trim()) && !sending;
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   return (
     <View style={[
@@ -138,6 +153,21 @@ export function InstagramCommentComposer({
         textAlignVertical="center"
         style={styles.input}
       />
+
+      {keyboardVisible ? (
+        <Pressable
+          onPress={Keyboard.dismiss}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Hide keyboard"
+          style={({ pressed }) => [
+            styles.keyboardButton,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons name="chevron-down" size={19} color={theme.colors.subtext} />
+        </Pressable>
+      ) : null}
 
       <Pressable
         onPress={onSubmit}
@@ -276,6 +306,14 @@ function createStyles(theme) {
       color: theme.colors.text,
       fontFamily: 'Manrope_400Regular',
       fontSize: 14,
+      backgroundColor: theme.colors.surfaceSoft,
+    },
+    keyboardButton: {
+      width: 36,
+      height: 38,
+      borderRadius: 19,
+      alignItems: 'center',
+      justifyContent: 'center',
       backgroundColor: theme.colors.surfaceSoft,
     },
     postButton: {

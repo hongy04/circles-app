@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -133,30 +136,41 @@ export function EditPostScreen({ route, navigation }) {
         </Pressable>
       </View>
 
-      <View style={styles.content}>
-        <Text style={styles.label}>Caption</Text>
-        <TextInput
-          value={caption}
-          onChangeText={setCaption}
-          editable={!saving}
-          multiline
-          autoFocus
-          maxLength={CAPTION_LIMIT}
-          placeholder="Write a caption…"
-          placeholderTextColor={theme.colors.subtext}
-          style={styles.input}
-        />
-        <Text style={styles.counter}>{caption.length}/{CAPTION_LIMIT}</Text>
-        <Text style={styles.helper}>
-          Editing the caption keeps the original photos, videos, likes, and comments.
-        </Text>
-      </View>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+        >
+          <Text style={styles.label}>Caption</Text>
+          <TextInput
+            value={caption}
+            onChangeText={setCaption}
+            editable={!saving}
+            multiline
+            autoFocus
+            maxLength={CAPTION_LIMIT}
+            placeholder="Write a caption…"
+            placeholderTextColor={theme.colors.subtext}
+            style={styles.input}
+          />
+          <Text style={styles.counter}>{caption.length}/{CAPTION_LIMIT}</Text>
+          <Text style={styles.helper}>
+            Editing the caption keeps the original photos, videos, likes, and comments.
+          </Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 function createStyles(theme) {
   return StyleSheet.create({
+  flex: { flex: 1 },
   root: { flex: 1, backgroundColor: theme.colors.bg },
   centerRoot: {
     flex: 1,
@@ -208,7 +222,7 @@ function createStyles(theme) {
   },
   saveText: { color: theme.circle.accent, fontFamily: 'Manrope_700Bold' },
   disabledText: { opacity: 0.35 },
-  content: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 16 },
+  content: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 16, paddingBottom: 36 },
   label: { marginBottom: 7, color: theme.colors.text, fontFamily: 'Manrope_700Bold' },
   input: {
     minHeight: 180,
