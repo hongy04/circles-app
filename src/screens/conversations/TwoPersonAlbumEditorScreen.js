@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,8 +13,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   createTwoPersonAlbum,
   getTwoPersonAlbum,
@@ -35,7 +37,7 @@ function normalizeDate(value) {
   return trimmed;
 }
 
-export function TwoPersonAlbumEditorScreen({ route, navigation }) {
+function TwoPersonAlbumEditorContent({ route, navigation }) {
   const {
     albumId,
     conversationId,
@@ -45,6 +47,8 @@ export function TwoPersonAlbumEditorScreen({ route, navigation }) {
     initialNote = '',
     circleName = 'Our Circle',
   } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const editing = Boolean(albumId);
   const scrollRef = useRef(null);
   const fieldRefs = useRef({});
@@ -132,7 +136,7 @@ export function TwoPersonAlbumEditorScreen({ route, navigation }) {
   if (loading) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.center}>
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.circle.accent} />
         <Text style={styles.centerText}>Opening album…</Text>
       </SafeAreaView>
     );
@@ -151,14 +155,16 @@ export function TwoPersonAlbumEditorScreen({ route, navigation }) {
           keyboardDismissMode="interactive"
           contentContainerStyle={styles.content}
         >
-          <Text style={styles.heading}>
-            {editing ? 'Edit Album' : memoryPlanId ? 'Album for This Memory' : 'New Shared Album'}
-          </Text>
-          <Text style={styles.helper}>
-            {memoryPlanId
-              ? 'This new album will be deliberately linked to the completed plan memory after you create it.'
-              : 'Create a deliberate place for photos from one trip, date, celebration, or meaningful stretch of time.'}
-          </Text>
+          {memoryPlanId ? (
+            <View style={styles.memoryCard}>
+              <View style={styles.memoryIcon}>
+                <Ionicons name="sparkles-outline" size={18} color={theme.colors.text} />
+              </View>
+              <Text style={styles.memoryText}>
+                This album will be linked to the completed plan memory after you create it.
+              </Text>
+            </View>
+          ) : null}
 
           <Text style={styles.label}>Title</Text>
           <TextInput
@@ -167,7 +173,7 @@ export function TwoPersonAlbumEditorScreen({ route, navigation }) {
             onChangeText={setTitle}
             onFocus={() => revealField('title')}
             placeholder="Weekend in Monterey"
-            placeholderTextColor="#9b9ba1"
+            placeholderTextColor={theme.colors.subtext}
             maxLength={80}
             style={styles.input}
           />
@@ -179,7 +185,7 @@ export function TwoPersonAlbumEditorScreen({ route, navigation }) {
             onChangeText={setOccurredOn}
             onFocus={() => revealField('date')}
             placeholder="YYYY-MM-DD"
-            placeholderTextColor="#9b9ba1"
+            placeholderTextColor={theme.colors.subtext}
             autoCapitalize="none"
             keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
             maxLength={10}
@@ -193,7 +199,7 @@ export function TwoPersonAlbumEditorScreen({ route, navigation }) {
             onChangeText={setNote}
             onFocus={() => revealField('note')}
             placeholder="What made this time special?"
-            placeholderTextColor="#9b9ba1"
+            placeholderTextColor={theme.colors.subtext}
             multiline
             textAlignVertical="top"
             maxLength={500}
@@ -219,35 +225,83 @@ export function TwoPersonAlbumEditorScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  content: { padding: 20, paddingBottom: 180 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bg },
-  centerText: { marginTop: 10, color: COLORS.subtext, fontFamily: 'Manrope_400Regular' },
-  heading: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 24 },
-  helper: {
-    marginTop: 7, color: COLORS.subtext, fontFamily: 'Manrope_400Regular',
-    fontSize: 14, lineHeight: 20,
-  },
-  label: {
-    marginTop: 22, marginBottom: 7, color: COLORS.text,
-    fontFamily: 'Manrope_700Bold', fontSize: 13,
-  },
-  input: {
-    minHeight: 48, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border, paddingHorizontal: 14, paddingVertical: 12,
-    color: COLORS.text, backgroundColor: '#fff', fontFamily: 'Manrope_400Regular',
-    fontSize: 15,
-  },
-  noteInput: { minHeight: 130 },
-  counter: {
-    marginTop: 5, alignSelf: 'flex-end', color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular', fontSize: 11,
-  },
-  saveButton: {
-    marginTop: 26, minHeight: 48, borderRadius: 15, alignItems: 'center',
-    justifyContent: 'center', backgroundColor: COLORS.text,
-  },
-  saveButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 15 },
-  pressed: { opacity: 0.65 },
-});
+export function TwoPersonAlbumEditorScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <TwoPersonAlbumEditorContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+    content: { padding: 20, paddingBottom: 180 },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.circle.profileBackground },
+    centerText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
+    memoryCard: {
+      padding: 14,
+      borderRadius: 15,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      backgroundColor: theme.colors.surface,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginBottom: 4,
+    },
+    memoryIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      backgroundColor: theme.circle.accentSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    memoryText: {
+      flex: 1,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    label: {
+      marginTop: 22,
+      marginBottom: 7,
+      color: theme.colors.text,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 13,
+    },
+    input: {
+      minHeight: 48,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.border,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      color: theme.colors.text,
+      backgroundColor: theme.colors.surface,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 15,
+    },
+    noteInput: { minHeight: 130 },
+    counter: {
+      marginTop: 5,
+      alignSelf: 'flex-end',
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 11,
+    },
+    saveButton: {
+      marginTop: 26,
+      minHeight: 48,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.welcome.brandInk,
+    },
+    saveButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 15 },
+    pressed: { opacity: 0.65 },
+  });
+}

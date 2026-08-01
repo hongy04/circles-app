@@ -13,7 +13,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   listTwoPersonThoughts,
   subscribeToTwoPersonThoughtChanges,
@@ -34,7 +35,7 @@ function displayTitle(item) {
   return item.title || (item.status === 'draft' ? 'Untitled draft' : 'A shared thought');
 }
 
-function ThoughtCard({ item, onPress }) {
+function ThoughtCard({ item, onPress, styles, theme }) {
   const isDraft = item.status === 'draft';
 
   return (
@@ -45,7 +46,7 @@ function ThoughtCard({ item, onPress }) {
       <View style={styles.cardTopRow}>
         {isDraft ? (
           <View style={styles.draftIcon}>
-            <Ionicons name="lock-closed-outline" size={18} color={COLORS.text} />
+            <Ionicons name="lock-closed-outline" size={18} color={theme.colors.text} />
           </View>
         ) : (
           <Avatar
@@ -62,14 +63,14 @@ function ThoughtCard({ item, onPress }) {
               : `${item.isAuthor ? 'Shared by you' : `Shared by ${item.authorName}`} · ${formatWhen(item.sharedAt)}`}
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
+        <Ionicons name="chevron-forward" size={18} color={theme.colors.subtext} />
       </View>
       <Text style={styles.excerpt} numberOfLines={3}>{item.body}</Text>
     </Pressable>
   );
 }
 
-function SectionHeader({ title, body }) {
+function SectionHeader({ title, body, styles }) {
   return (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -78,8 +79,10 @@ function SectionHeader({ title, body }) {
   );
 }
 
-export function TwoPersonThoughtsScreen({ route, navigation }) {
+function TwoPersonThoughtsContent({ route, navigation }) {
   const { conversationId, circleName = 'Our Circle' } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [thoughts, setThoughts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -132,7 +135,7 @@ export function TwoPersonThoughtsScreen({ route, navigation }) {
   if (loading) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.circle.accent} />
         <Text style={styles.stateText}>Opening thoughts…</Text>
       </SafeAreaView>
     );
@@ -144,15 +147,7 @@ export function TwoPersonThoughtsScreen({ route, navigation }) {
         data={rows}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={(
-          <View style={styles.header}>
-            <View style={styles.lockRow}>
-              <Ionicons name="lock-closed" size={12} color={COLORS.subtext} />
-              <Text style={styles.lockText}>{circleName} · private to the two of you</Text>
-            </View>
-            <Text style={styles.headerTitle}>Write Your Thoughts</Text>
-            <Text style={styles.headerBody}>
-              Write privately, revise at your own pace, and share only when the words feel ready. There are no prompts, streaks, or emotional scores.
-            </Text>
+          <View style={styles.topActions}>
             <Pressable
               onPress={() => navigation.navigate('TwoPersonThoughtEditor', {
                 conversationId,
@@ -168,11 +163,13 @@ export function TwoPersonThoughtsScreen({ route, navigation }) {
         )}
         renderItem={({ item }) => {
           if (item.type === 'header') {
-            return <SectionHeader title={item.title} body={item.body} />;
+            return <SectionHeader title={item.title} body={item.body} styles={styles} />;
           }
           return (
             <ThoughtCard
               item={item.item}
+              styles={styles}
+              theme={theme}
               onPress={() => navigation.navigate(
                 item.item.status === 'draft'
                   ? 'TwoPersonThoughtEditor'
@@ -188,7 +185,7 @@ export function TwoPersonThoughtsScreen({ route, navigation }) {
         }}
         ListEmptyComponent={(
           <View style={styles.emptyState}>
-            <Ionicons name="document-text-outline" size={44} color={COLORS.subtext} />
+            <Ionicons name="document-text-outline" size={44} color={theme.circle.accent} />
             <Text style={styles.emptyTitle}>A quiet place for the words that take time</Text>
             <Text style={styles.emptyBody}>
               Start with a letter, apology, reflection, or anything you want to shape privately before sharing.
@@ -202,7 +199,7 @@ export function TwoPersonThoughtsScreen({ route, navigation }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={COLORS.text}
+            tintColor={theme.colors.text}
           />
         )}
         contentContainerStyle={styles.listContent}
@@ -212,31 +209,80 @@ export function TwoPersonThoughtsScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  listContent: { flexGrow: 1, paddingBottom: 40 },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bg, gap: 10 },
-  stateText: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-  header: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 10 },
-  lockRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  lockText: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
-  headerTitle: { marginTop: 9, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 25 },
-  headerBody: { marginTop: 6, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19 },
-  newButton: { marginTop: 15, minHeight: 44, borderRadius: 11, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  newButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  errorText: { marginTop: 10, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-  sectionHeader: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 7 },
-  sectionTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 16 },
-  sectionBody: { marginTop: 3, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11, lineHeight: 16 },
-  card: { marginHorizontal: 18, marginTop: 9, padding: 14, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fff' },
-  cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  draftIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#f1eff4', alignItems: 'center', justifyContent: 'center' },
-  cardHeading: { flex: 1, minWidth: 0 },
-  cardTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
-  cardMeta: { marginTop: 2, color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
-  excerpt: { marginTop: 11, color: COLORS.text, fontFamily: 'Manrope_400Regular', fontSize: 12.5, lineHeight: 19 },
-  emptyState: { flex: 1, paddingHorizontal: 34, paddingVertical: 68, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { marginTop: 13, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 16, textAlign: 'center' },
-  emptyBody: { marginTop: 7, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, lineHeight: 18, textAlign: 'center' },
-  pressed: { opacity: 0.72 },
-});
+export function TwoPersonThoughtsScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <TwoPersonThoughtsContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+    listContent: { flexGrow: 1, paddingBottom: 40 },
+    centerState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.circle.profileBackground,
+      gap: 10,
+    },
+    stateText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
+    topActions: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 2 },
+    newButton: {
+      minHeight: 44,
+      borderRadius: 11,
+      backgroundColor: theme.welcome.brandInk,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+    },
+    newButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    errorText: { marginTop: 10, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
+    sectionHeader: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 7 },
+    sectionTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 16 },
+    sectionBody: {
+      marginTop: 3,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 11,
+      lineHeight: 16,
+    },
+    card: {
+      marginHorizontal: 14,
+      marginTop: 9,
+      padding: 14,
+      borderRadius: 15,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      backgroundColor: theme.colors.surface,
+    },
+    cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    draftIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: theme.circle.accentSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    cardHeading: { flex: 1, minWidth: 0 },
+    cardTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
+    cardMeta: { marginTop: 2, color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
+    excerpt: { marginTop: 11, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 12.5, lineHeight: 19 },
+    emptyState: { minHeight: 330, paddingHorizontal: 34, alignItems: 'center', justifyContent: 'center' },
+    emptyTitle: { marginTop: 13, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 16, textAlign: 'center' },
+    emptyBody: {
+      marginTop: 7,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 12,
+      lineHeight: 18,
+      textAlign: 'center',
+    },
+    pressed: { opacity: 0.72 },
+  });
+}

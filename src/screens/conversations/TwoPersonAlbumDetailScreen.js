@@ -17,7 +17,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   deleteTwoPersonAlbum,
   deleteTwoPersonAlbumPhoto,
@@ -50,7 +51,7 @@ function formatAddedAt(value) {
   });
 }
 
-function PhotoViewer({ photo, visible, deleting, onClose, onDelete }) {
+function PhotoViewer({ photo, visible, deleting, onClose, onDelete, styles }) {
   if (!photo) return null;
   return (
     <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
@@ -82,8 +83,10 @@ function PhotoViewer({ photo, visible, deleting, onClose, onDelete }) {
   );
 }
 
-export function TwoPersonAlbumDetailScreen({ route, navigation }) {
+function TwoPersonAlbumDetailContent({ route, navigation }) {
   const { albumId, conversationId, circleName = 'Our Circle' } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const [album, setAlbum] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -215,7 +218,7 @@ export function TwoPersonAlbumDetailScreen({ route, navigation }) {
   if (loading && !album) {
     return (
       <SafeAreaView style={styles.centerState}>
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.circle.accent} />
         <Text style={styles.stateText}>Opening album…</Text>
       </SafeAreaView>
     );
@@ -224,7 +227,7 @@ export function TwoPersonAlbumDetailScreen({ route, navigation }) {
   if (error && !album) {
     return (
       <SafeAreaView style={styles.centerState}>
-        <Ionicons name="lock-closed-outline" size={36} color={COLORS.text} />
+        <Ionicons name="lock-closed-outline" size={36} color={theme.circle.accent} />
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -248,7 +251,7 @@ export function TwoPersonAlbumDetailScreen({ route, navigation }) {
           })}
           style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
         >
-          <Ionicons name="create-outline" size={19} color={COLORS.text} />
+          <Ionicons name="create-outline" size={19} color={theme.colors.text} />
         </Pressable>
       </View>
       {album.note ? <Text style={styles.note}>{album.note}</Text> : null}
@@ -268,7 +271,10 @@ export function TwoPersonAlbumDetailScreen({ route, navigation }) {
           <Ionicons name="trash-outline" size={18} color="#c62828" />
         </Pressable>
       </View>
-      <Text style={styles.photoCount}>{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</Text>
+      <View style={styles.photoCountPill}>
+        <Ionicons name="images-outline" size={13} color={theme.colors.text} />
+        <Text style={styles.photoCount}>{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</Text>
+      </View>
     </View>
   ) : null;
 
@@ -295,7 +301,7 @@ export function TwoPersonAlbumDetailScreen({ route, navigation }) {
         )}
         ListEmptyComponent={(
           <View style={styles.emptyState}>
-            <Ionicons name="images-outline" size={42} color={COLORS.subtext} />
+            <Ionicons name="images-outline" size={42} color={theme.circle.accent} />
             <Text style={styles.emptyTitle}>No photos yet</Text>
             <Text style={styles.stateText}>Add the first photos that belong in this album.</Text>
           </View>
@@ -307,52 +313,105 @@ export function TwoPersonAlbumDetailScreen({ route, navigation }) {
         deleting={deletingPhotoId === selectedPhoto?.id}
         onClose={() => setSelectedPhoto(null)}
         onDelete={() => removePhoto(selectedPhoto)}
+        styles={styles}
       />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  content: { paddingHorizontal: 12, paddingBottom: 48, flexGrow: 1 },
-  header: { paddingTop: 16, paddingBottom: 18 },
-  headingRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  headingCopy: { flex: 1 },
-  title: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 24 },
-  date: { marginTop: 4, color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-  note: { marginTop: 12, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 14, lineHeight: 20 },
-  iconButton: {
-    width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fff',
-  },
-  actionRow: { marginTop: 16, flexDirection: 'row', gap: 8 },
-  addButton: {
-    flex: 1, minHeight: 45, borderRadius: 14, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', gap: 7, backgroundColor: COLORS.text,
-  },
-  addButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 14 },
-  deleteButton: {
-    width: 48, minHeight: 45, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth, borderColor: '#efcaca', backgroundColor: '#fff7f7',
-  },
-  photoCount: { marginTop: 14, color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-  tile: { marginBottom: 4, backgroundColor: '#eee', overflow: 'hidden' },
-  tileImage: { width: '100%', height: '100%' },
-  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 70 },
-  emptyTitle: { marginTop: 10, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 17 },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: COLORS.bg },
-  stateText: { marginTop: 9, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13, textAlign: 'center' },
-  errorText: { marginTop: 10, color: COLORS.text, fontFamily: 'Manrope_600SemiBold', fontSize: 13, textAlign: 'center' },
-  retryButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: '#eee' },
-  retryText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  viewerScreen: { flex: 1, backgroundColor: '#000' },
-  viewerHeader: { height: 58, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  viewerIconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  viewerImageWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  viewerImage: { width: '100%', height: '100%' },
-  viewerFooter: { padding: 16, paddingBottom: 22, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  viewerMetaCopy: { flex: 1 },
-  viewerUploader: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  viewerDate: { marginTop: 2, color: '#b8b8bd', fontFamily: 'Manrope_400Regular', fontSize: 11 },
-  pressed: { opacity: 0.65 },
-});
+export function TwoPersonAlbumDetailScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <TwoPersonAlbumDetailContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+    content: { paddingHorizontal: 12, paddingBottom: 48, flexGrow: 1 },
+    header: { paddingTop: 16, paddingBottom: 18 },
+    headingRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+    headingCopy: { flex: 1 },
+    title: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 24 },
+    date: { marginTop: 4, color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
+    note: { marginTop: 12, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 14, lineHeight: 20 },
+    iconButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      backgroundColor: theme.colors.surface,
+    },
+    actionRow: { marginTop: 16, flexDirection: 'row', gap: 8 },
+    addButton: {
+      flex: 1,
+      minHeight: 45,
+      borderRadius: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+      backgroundColor: theme.welcome.brandInk,
+    },
+    addButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 14 },
+    deleteButton: {
+      width: 48,
+      minHeight: 45,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: '#efcaca',
+      backgroundColor: '#fff7f7',
+    },
+    photoCountPill: {
+      marginTop: 14,
+      alignSelf: 'flex-start',
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 999,
+      backgroundColor: theme.circle.accentSoft,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+    },
+    photoCount: { color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
+    tile: { marginBottom: 4, backgroundColor: theme.colors.surfaceSoft, overflow: 'hidden' },
+    tileImage: { width: '100%', height: '100%' },
+    emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 70 },
+    emptyTitle: { marginTop: 10, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 17 },
+    centerState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+      backgroundColor: theme.circle.profileBackground,
+    },
+    stateText: { marginTop: 9, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13, textAlign: 'center' },
+    errorText: { marginTop: 10, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 13, textAlign: 'center' },
+    retryButton: {
+      marginTop: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 12,
+      backgroundColor: theme.circle.accentSoft,
+    },
+    retryText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    viewerScreen: { flex: 1, backgroundColor: '#000' },
+    viewerHeader: { height: 58, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    viewerIconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+    viewerImageWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    viewerImage: { width: '100%', height: '100%' },
+    viewerFooter: { padding: 16, paddingBottom: 22, flexDirection: 'row', alignItems: 'center', gap: 10 },
+    viewerMetaCopy: { flex: 1 },
+    viewerUploader: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    viewerDate: { marginTop: 2, color: '#b8b8bd', fontFamily: 'Manrope_400Regular', fontSize: 11 },
+    pressed: { opacity: 0.65 },
+  });
+}

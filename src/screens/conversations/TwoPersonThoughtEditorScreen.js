@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   createTwoPersonThoughtDraft,
   deleteTwoPersonThought,
@@ -23,7 +24,7 @@ import {
   updateTwoPersonThoughtDraft,
 } from '../../services/twoPersonThoughtService';
 
-function Field({ label, hint, children }) {
+function Field({ label, hint, children, styles }) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -33,12 +34,14 @@ function Field({ label, hint, children }) {
   );
 }
 
-export function TwoPersonThoughtEditorScreen({ route, navigation }) {
+function TwoPersonThoughtEditorContent({ route, navigation }) {
   const {
     conversationId,
     circleName = 'Our Circle',
     thoughtId = null,
   } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [loading, setLoading] = useState(Boolean(thoughtId));
@@ -176,7 +179,7 @@ export function TwoPersonThoughtEditorScreen({ route, navigation }) {
   if (loading) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.circle.accent} />
         <Text style={styles.stateText}>Opening private draft…</Text>
       </SafeAreaView>
     );
@@ -198,7 +201,9 @@ export function TwoPersonThoughtEditorScreen({ route, navigation }) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.privateCard}>
-            <Ionicons name="lock-closed-outline" size={19} color={COLORS.text} />
+            <View style={styles.privateIcon}>
+              <Ionicons name="lock-closed-outline" size={19} color={theme.colors.text} />
+            </View>
             <View style={styles.privateCopy}>
               <Text style={styles.privateTitle}>Private until you share</Text>
               <Text style={styles.privateBody}>
@@ -207,24 +212,24 @@ export function TwoPersonThoughtEditorScreen({ route, navigation }) {
             </View>
           </View>
 
-          <Field label="Title" hint="Optional · a short name for the letter or reflection.">
+          <Field label="Title" hint="Optional · a short name for the letter or reflection." styles={styles}>
             <TextInput
               value={title}
               onChangeText={setTitle}
               placeholder="Something I want to tell you"
-              placeholderTextColor="#9b9b9b"
+              placeholderTextColor={theme.colors.subtext}
               maxLength={120}
               onFocus={keepFieldVisible}
               style={styles.input}
             />
           </Field>
 
-          <Field label="Your thought" hint={`${body.length}/6000 characters`}>
+          <Field label="Your thought" hint={`${body.length}/6000 characters`} styles={styles}>
             <TextInput
               value={body}
               onChangeText={setBody}
               placeholder="Write freely. Nothing is shared until you choose to share it."
-              placeholderTextColor="#9b9b9b"
+              placeholderTextColor={theme.colors.subtext}
               maxLength={6000}
               multiline
               textAlignVertical="top"
@@ -244,7 +249,7 @@ export function TwoPersonThoughtEditorScreen({ route, navigation }) {
               pressed && styles.pressed,
             ]}
           >
-            <Ionicons name="lock-closed-outline" size={17} color={COLORS.text} />
+            <Ionicons name="lock-closed-outline" size={17} color={theme.colors.text} />
             <Text style={styles.secondaryButtonText}>Save Private Draft</Text>
           </Pressable>
 
@@ -278,28 +283,105 @@ export function TwoPersonThoughtEditorScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  keyboardView: { flex: 1 },
-  content: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 160 },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bg, gap: 10 },
-  stateText: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-  privateCard: { padding: 14, borderRadius: 15, backgroundColor: '#f5f3f8', flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  privateCopy: { flex: 1 },
-  privateTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  privateBody: { marginTop: 3, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
-  field: { marginTop: 18 },
-  label: { marginBottom: 7, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  hint: { marginTop: 6, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10.5, lineHeight: 15 },
-  input: { minHeight: 46, paddingHorizontal: 13, paddingVertical: 11, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fafafa', color: COLORS.text, fontFamily: 'Manrope_400Regular', fontSize: 14 },
-  bodyInput: { minHeight: 260, lineHeight: 21 },
-  errorText: { marginTop: 14, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-  secondaryButton: { marginTop: 20, minHeight: 47, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  secondaryButtonText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  primaryButton: { marginTop: 10, minHeight: 48, borderRadius: 12, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  primaryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  removeButton: { marginTop: 12, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  removeButtonText: { color: '#b42318', fontFamily: 'Manrope_700Bold', fontSize: 12.5 },
-  disabled: { opacity: 0.55 },
-  pressed: { opacity: 0.72 },
-});
+export function TwoPersonThoughtEditorScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <TwoPersonThoughtEditorContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+    keyboardView: { flex: 1 },
+    content: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 160 },
+    centerState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.circle.profileBackground,
+      gap: 10,
+    },
+    stateText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
+    privateCard: {
+      padding: 14,
+      borderRadius: 15,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      backgroundColor: theme.colors.surface,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+    },
+    privateIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      backgroundColor: theme.circle.accentSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    privateCopy: { flex: 1 },
+    privateTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    privateBody: {
+      marginTop: 3,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 11.5,
+      lineHeight: 17,
+    },
+    field: { marginTop: 18 },
+    label: { marginBottom: 7, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    hint: {
+      marginTop: 6,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 10.5,
+      lineHeight: 15,
+    },
+    input: {
+      minHeight: 46,
+      paddingHorizontal: 13,
+      paddingVertical: 11,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+      color: theme.colors.text,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 14,
+    },
+    bodyInput: { minHeight: 260, lineHeight: 21 },
+    errorText: { marginTop: 14, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
+    secondaryButton: {
+      marginTop: 20,
+      minHeight: 47,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      backgroundColor: theme.colors.surface,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+    },
+    secondaryButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    primaryButton: {
+      marginTop: 10,
+      minHeight: 48,
+      borderRadius: 12,
+      backgroundColor: theme.welcome.brandInk,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+    },
+    primaryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    removeButton: { marginTop: 12, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+    removeButtonText: { color: '#b42318', fontFamily: 'Manrope_700Bold', fontSize: 12.5 },
+    disabled: { opacity: 0.55 },
+    pressed: { opacity: 0.72 },
+  });
+}

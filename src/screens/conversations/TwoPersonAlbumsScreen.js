@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,7 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   listTwoPersonAlbums,
   subscribeToTwoPersonAlbumChanges,
@@ -30,7 +31,7 @@ function formatDate(value) {
   });
 }
 
-function AlbumCard({ album, onPress }) {
+function AlbumCard({ album, onPress, styles, theme }) {
   return (
     <Pressable
       onPress={onPress}
@@ -40,7 +41,7 @@ function AlbumCard({ album, onPress }) {
         <Image source={{ uri: album.coverUrl }} style={styles.cover} />
       ) : (
         <View style={styles.coverPlaceholder}>
-          <Ionicons name="images-outline" size={34} color={COLORS.subtext} />
+          <Ionicons name="images-outline" size={34} color={theme.colors.text} />
         </View>
       )}
       <View style={styles.cardCopy}>
@@ -53,13 +54,15 @@ function AlbumCard({ album, onPress }) {
           <Text style={styles.cardNote} numberOfLines={2}>{album.note}</Text>
         ) : null}
       </View>
-      <Ionicons name="chevron-forward" size={18} color="#c7c7cc" />
+      <Ionicons name="chevron-forward" size={18} color={theme.colors.subtext} />
     </Pressable>
   );
 }
 
-export function TwoPersonAlbumsScreen({ route, navigation }) {
+function TwoPersonAlbumsContent({ route, navigation }) {
   const { conversationId, circleName = 'Our Circle' } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [albums, setAlbums] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -108,18 +111,11 @@ export function TwoPersonAlbumsScreen({ route, navigation }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={COLORS.text}
+            tintColor={theme.colors.text}
           />
         )}
         ListHeaderComponent={(
-          <View style={styles.header}>
-            <View style={styles.headerIcon}>
-              <Ionicons name="albums-outline" size={24} color={COLORS.text} />
-            </View>
-            <Text style={styles.title}>Shared Albums</Text>
-            <Text style={styles.body}>
-              Keep deliberate photo collections for trips, dates, and moments that belong together.
-            </Text>
+          <View style={styles.topActions}>
             <Pressable
               onPress={createAlbum}
               style={({ pressed }) => [styles.createButton, pressed && styles.pressed]}
@@ -127,11 +123,14 @@ export function TwoPersonAlbumsScreen({ route, navigation }) {
               <Ionicons name="add" size={18} color="#fff" />
               <Text style={styles.createButtonText}>New Album</Text>
             </Pressable>
+            {error && albums.length ? <Text style={styles.inlineError}>{error}</Text> : null}
           </View>
         )}
         renderItem={({ item }) => (
           <AlbumCard
             album={item}
+            styles={styles}
+            theme={theme}
             onPress={() => navigation.navigate('TwoPersonAlbumDetail', {
               albumId: item.id,
               conversationId,
@@ -141,12 +140,12 @@ export function TwoPersonAlbumsScreen({ route, navigation }) {
         )}
         ListEmptyComponent={loading ? (
           <View style={styles.state}>
-            <ActivityIndicator />
+            <ActivityIndicator color={theme.circle.accent} />
             <Text style={styles.stateText}>Opening shared albums…</Text>
           </View>
         ) : error ? (
           <View style={styles.state}>
-            <Ionicons name="alert-circle-outline" size={34} color={COLORS.text} />
+            <Ionicons name="alert-circle-outline" size={34} color={theme.circle.accent} />
             <Text style={styles.errorText}>{error}</Text>
             <Pressable onPress={() => load()} style={styles.retryButton}>
               <Text style={styles.retryText}>Try again</Text>
@@ -154,7 +153,7 @@ export function TwoPersonAlbumsScreen({ route, navigation }) {
           </View>
         ) : (
           <View style={styles.state}>
-            <Ionicons name="images-outline" size={40} color={COLORS.subtext} />
+            <Ionicons name="images-outline" size={40} color={theme.circle.accent} />
             <Text style={styles.emptyTitle}>No shared albums yet</Text>
             <Text style={styles.stateText}>
               Create one when a set of photos deserves its own place.
@@ -166,62 +165,93 @@ export function TwoPersonAlbumsScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  content: { padding: 18, paddingBottom: 48, flexGrow: 1 },
-  header: { alignItems: 'center', marginBottom: 20 },
-  headerIcon: {
-    width: 52, height: 52, borderRadius: 18, alignItems: 'center',
-    justifyContent: 'center', backgroundColor: '#f2f2f5',
-  },
-  title: {
-    marginTop: 12, color: COLORS.text, fontFamily: 'Manrope_700Bold',
-    fontSize: 24,
-  },
-  body: {
-    marginTop: 7, maxWidth: 440, color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular', fontSize: 14, lineHeight: 20,
-    textAlign: 'center',
-  },
-  createButton: {
-    marginTop: 16, minHeight: 44, paddingHorizontal: 18, borderRadius: 14,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
-    backgroundColor: COLORS.text,
-  },
-  createButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 14 },
-  card: {
-    minHeight: 106, marginBottom: 12, padding: 10, borderRadius: 18,
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border,
-    backgroundColor: '#fff',
-  },
-  cover: { width: 86, height: 86, borderRadius: 14, backgroundColor: '#eee' },
-  coverPlaceholder: {
-    width: 86, height: 86, borderRadius: 14, alignItems: 'center',
-    justifyContent: 'center', backgroundColor: '#f1f1f4',
-  },
-  cardCopy: { flex: 1 },
-  cardTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 16 },
-  cardMeta: {
-    marginTop: 4, color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11,
-  },
-  cardNote: {
-    marginTop: 6, color: COLORS.subtext, fontFamily: 'Manrope_400Regular',
-    fontSize: 12, lineHeight: 17,
-  },
-  state: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 54 },
-  stateText: {
-    marginTop: 9, maxWidth: 340, color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19, textAlign: 'center',
-  },
-  emptyTitle: {
-    marginTop: 10, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 17,
-  },
-  errorText: {
-    marginTop: 10, color: COLORS.text, fontFamily: 'Manrope_600SemiBold',
-    fontSize: 13, textAlign: 'center',
-  },
-  retryButton: { marginTop: 14, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: '#eee' },
-  retryText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  pressed: { opacity: 0.65 },
-});
+export function TwoPersonAlbumsScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <TwoPersonAlbumsContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+    content: { paddingHorizontal: 14, paddingBottom: 48, flexGrow: 1 },
+    topActions: { paddingTop: 14, paddingBottom: 12 },
+    createButton: {
+      minHeight: 44,
+      borderRadius: 11,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 7,
+      backgroundColor: theme.welcome.brandInk,
+    },
+    createButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    inlineError: { marginTop: 10, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
+    card: {
+      minHeight: 106,
+      marginBottom: 12,
+      padding: 10,
+      borderRadius: 18,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      backgroundColor: theme.colors.surface,
+    },
+    cover: { width: 86, height: 86, borderRadius: 14, backgroundColor: theme.colors.surfaceSoft },
+    coverPlaceholder: {
+      width: 86,
+      height: 86,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.circle.accentSoft,
+    },
+    cardCopy: { flex: 1 },
+    cardTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 16 },
+    cardMeta: {
+      marginTop: 4,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_600SemiBold',
+      fontSize: 11,
+    },
+    cardNote: {
+      marginTop: 6,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 12,
+      lineHeight: 17,
+    },
+    state: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 54, paddingHorizontal: 20 },
+    stateText: {
+      marginTop: 9,
+      maxWidth: 340,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 13,
+      lineHeight: 19,
+      textAlign: 'center',
+    },
+    emptyTitle: { marginTop: 10, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 17 },
+    errorText: {
+      marginTop: 10,
+      color: theme.colors.text,
+      fontFamily: 'Manrope_600SemiBold',
+      fontSize: 13,
+      textAlign: 'center',
+    },
+    retryButton: {
+      marginTop: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 12,
+      backgroundColor: theme.circle.accentSoft,
+    },
+    retryText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    pressed: { opacity: 0.65 },
+  });
+}

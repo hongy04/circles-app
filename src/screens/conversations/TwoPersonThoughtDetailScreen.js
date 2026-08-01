@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   deleteTwoPersonThought,
   getTwoPersonThought,
@@ -33,12 +34,14 @@ function formatSharedAt(value) {
   });
 }
 
-export function TwoPersonThoughtDetailScreen({ route, navigation }) {
+function TwoPersonThoughtDetailContent({ route, navigation }) {
   const {
     thoughtId,
     conversationId,
     circleName = 'Our Circle',
   } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [thought, setThought] = useState(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -96,7 +99,7 @@ export function TwoPersonThoughtDetailScreen({ route, navigation }) {
   if (loading) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.circle.accent} />
         <Text style={styles.stateText}>Opening thought…</Text>
       </SafeAreaView>
     );
@@ -105,7 +108,7 @@ export function TwoPersonThoughtDetailScreen({ route, navigation }) {
   if (!thought) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="alert-circle-outline" size={38} color={COLORS.subtext} />
+        <Ionicons name="alert-circle-outline" size={38} color={theme.circle.accent} />
         <Text style={styles.errorState}>{error || 'This thought is unavailable.'}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryButtonText}>Try again</Text>
@@ -118,7 +121,7 @@ export function TwoPersonThoughtDetailScreen({ route, navigation }) {
     <SafeAreaView edges={['bottom']} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.contextRow}>
-          <Ionicons name="lock-closed" size={11} color={COLORS.subtext} />
+          <Ionicons name="lock-closed" size={11} color={theme.colors.subtext} />
           <Text style={styles.contextText}>{circleName} · shared only with each other</Text>
         </View>
 
@@ -136,7 +139,9 @@ export function TwoPersonThoughtDetailScreen({ route, navigation }) {
         <Text style={styles.body}>{thought.body}</Text>
 
         <View style={styles.readOnlyCard}>
-          <Ionicons name="shield-checkmark-outline" size={19} color={COLORS.text} />
+          <View style={styles.readOnlyIcon}>
+            <Ionicons name="shield-checkmark-outline" size={19} color={theme.colors.text} />
+          </View>
           <View style={styles.readOnlyCopy}>
             <Text style={styles.readOnlyTitle}>Shared as written</Text>
             <Text style={styles.readOnlyBody}>
@@ -161,28 +166,76 @@ export function TwoPersonThoughtDetailScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  content: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 70 },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bg, paddingHorizontal: 28, gap: 10 },
-  stateText: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-  errorState: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 13, textAlign: 'center' },
-  retryButton: { marginTop: 4, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: COLORS.primary },
-  retryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 12 },
-  contextRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  contextText: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
-  authorRow: { marginTop: 21, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  authorCopy: { flex: 1 },
-  authorName: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  sharedAt: { marginTop: 2, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10.5 },
-  title: { marginTop: 25, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 26, lineHeight: 34 },
-  body: { marginTop: 16, color: COLORS.text, fontFamily: 'Manrope_400Regular', fontSize: 15, lineHeight: 25 },
-  readOnlyCard: { marginTop: 30, padding: 14, borderRadius: 15, backgroundColor: '#f5f3f8', flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  readOnlyCopy: { flex: 1 },
-  readOnlyTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 12.5 },
-  readOnlyBody: { marginTop: 3, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11, lineHeight: 16 },
-  errorText: { marginTop: 14, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-  removeButton: { marginTop: 22, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  removeButtonText: { color: '#b42318', fontFamily: 'Manrope_700Bold', fontSize: 12.5 },
-  pressed: { opacity: 0.72 },
-});
+export function TwoPersonThoughtDetailScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <TwoPersonThoughtDetailContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+    content: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 70 },
+    centerState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.circle.profileBackground,
+      paddingHorizontal: 28,
+      gap: 10,
+    },
+    stateText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
+    errorState: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 13, textAlign: 'center' },
+    retryButton: {
+      marginTop: 4,
+      paddingHorizontal: 16,
+      paddingVertical: 9,
+      borderRadius: 10,
+      backgroundColor: theme.welcome.brandInk,
+    },
+    retryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 12 },
+    contextRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    contextText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
+    authorRow: { marginTop: 21, flexDirection: 'row', alignItems: 'center', gap: 11 },
+    authorCopy: { flex: 1 },
+    authorName: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    sharedAt: { marginTop: 2, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10.5 },
+    title: { marginTop: 25, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 26, lineHeight: 34 },
+    body: { marginTop: 16, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 15, lineHeight: 25 },
+    readOnlyCard: {
+      marginTop: 30,
+      padding: 14,
+      borderRadius: 15,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      backgroundColor: theme.colors.surface,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+    },
+    readOnlyIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      backgroundColor: theme.circle.accentSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    readOnlyCopy: { flex: 1 },
+    readOnlyTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12.5 },
+    readOnlyBody: {
+      marginTop: 3,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 11,
+      lineHeight: 16,
+    },
+    errorText: { marginTop: 14, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
+    removeButton: { marginTop: 22, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+    removeButtonText: { color: '#b42318', fontFamily: 'Manrope_700Bold', fontSize: 12.5 },
+    pressed: { opacity: 0.72 },
+  });
+}

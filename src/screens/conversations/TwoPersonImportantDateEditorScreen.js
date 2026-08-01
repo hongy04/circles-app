@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,7 +15,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   createTwoPersonImportantDate,
   deleteTwoPersonImportantDate,
@@ -53,7 +54,7 @@ function parseDateInput(value) {
   return formatDateInput(date);
 }
 
-function Field({ label, hint, children }) {
+function Field({ label, hint, children, styles }) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -63,12 +64,14 @@ function Field({ label, hint, children }) {
   );
 }
 
-export function TwoPersonImportantDateEditorScreen({ route, navigation }) {
+function TwoPersonImportantDateEditorContent({ route, navigation }) {
   const {
     conversationId,
     circleName = 'Our Circle',
     importantDateId = null,
   } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const nextMonth = new Date();
   nextMonth.setMonth(nextMonth.getMonth() + 1);
@@ -189,7 +192,7 @@ export function TwoPersonImportantDateEditorScreen({ route, navigation }) {
   if (loading) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.circle.accent} />
         <Text style={styles.stateText}>Opening important date…</Text>
       </SafeAreaView>
     );
@@ -211,7 +214,9 @@ export function TwoPersonImportantDateEditorScreen({ route, navigation }) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.contextCard}>
-            <Ionicons name="calendar-outline" size={18} color={COLORS.text} />
+            <View style={styles.contextIcon}>
+              <Ionicons name="calendar-outline" size={18} color={theme.colors.text} />
+            </View>
             <View style={styles.contextCopy}>
               <Text style={styles.contextTitle}>{circleName}</Text>
               <Text style={styles.contextBody}>
@@ -220,19 +225,19 @@ export function TwoPersonImportantDateEditorScreen({ route, navigation }) {
             </View>
           </View>
 
-          <Field label="What date matters?">
+          <Field label="What date matters?" styles={styles}>
             <TextInput
               value={title}
               onChangeText={setTitle}
               placeholder="Our anniversary"
-              placeholderTextColor="#9b9b9b"
+              placeholderTextColor={theme.colors.subtext}
               maxLength={100}
               onFocus={keepFieldVisible}
               style={styles.input}
             />
           </Field>
 
-          <Field label="Type">
+          <Field label="Type" styles={styles}>
             <View style={styles.categoryGrid}>
               {CATEGORIES.map((item) => {
                 const selected = category === item.key;
@@ -249,7 +254,7 @@ export function TwoPersonImportantDateEditorScreen({ route, navigation }) {
                     <Ionicons
                       name={item.icon}
                       size={15}
-                      color={selected ? '#fff' : COLORS.text}
+                      color={selected ? '#fff' : theme.colors.text}
                     />
                     <Text style={[
                       styles.categoryText,
@@ -263,12 +268,12 @@ export function TwoPersonImportantDateEditorScreen({ route, navigation }) {
             </View>
           </Field>
 
-          <Field label="Date" hint="Use YYYY-MM-DD, for example 2026-08-14.">
+          <Field label="Date" hint="Use YYYY-MM-DD, for example 2026-08-14." styles={styles}>
             <TextInput
               value={dateInput}
               onChangeText={setDateInput}
               placeholder="2026-08-14"
-              placeholderTextColor="#9b9b9b"
+              placeholderTextColor={theme.colors.subtext}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
@@ -288,16 +293,16 @@ export function TwoPersonImportantDateEditorScreen({ route, navigation }) {
             <Switch
               value={recursYearly}
               onValueChange={setRecursYearly}
-              trackColor={{ false: '#d8d8d8', true: COLORS.primary }}
+              trackColor={{ false: theme.colors.border, true: theme.circle.accent }}
             />
           </View>
 
-          <Field label="Why it matters" hint="Optional · a private note shared only in this Circle.">
+          <Field label="Why it matters" hint="Optional · a private note shared only in this Circle." styles={styles}>
             <TextInput
               value={note}
               onChangeText={setNote}
               placeholder="A small note about the meaning behind this date"
-              placeholderTextColor="#9b9b9b"
+              placeholderTextColor={theme.colors.subtext}
               maxLength={800}
               multiline
               textAlignVertical="top"
@@ -338,35 +343,127 @@ export function TwoPersonImportantDateEditorScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  keyboardView: { flex: 1 },
-  content: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 150 },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.bg, gap: 10 },
-  stateText: { color: COLORS.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-  contextCard: { padding: 14, borderRadius: 15, backgroundColor: '#f5f3f8', flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  contextCopy: { flex: 1 },
-  contextTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  contextBody: { marginTop: 3, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
-  field: { marginTop: 18 },
-  label: { marginBottom: 7, color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  hint: { marginTop: 6, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10.5, lineHeight: 15 },
-  input: { minHeight: 46, paddingHorizontal: 13, paddingVertical: 11, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fafafa', color: COLORS.text, fontFamily: 'Manrope_400Regular', fontSize: 14 },
-  textArea: { minHeight: 110 },
-  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  categoryChip: { minHeight: 38, paddingHorizontal: 11, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fafafa', flexDirection: 'row', alignItems: 'center', gap: 6 },
-  categoryChipSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  categoryText: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 11 },
-  categoryTextSelected: { color: '#fff' },
-  toggleRow: { marginTop: 18, padding: 14, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, backgroundColor: '#fafafa', flexDirection: 'row', alignItems: 'center', gap: 12 },
-  toggleCopy: { flex: 1 },
-  toggleTitle: { color: COLORS.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  toggleBody: { marginTop: 3, color: COLORS.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10.5, lineHeight: 15 },
-  errorText: { marginTop: 14, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-  primaryButton: { marginTop: 20, minHeight: 48, borderRadius: 12, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  primaryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  removeButton: { marginTop: 10, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  removeButtonText: { color: '#b42318', fontFamily: 'Manrope_700Bold', fontSize: 12.5 },
-  disabled: { opacity: 0.55 },
-  pressed: { opacity: 0.72 },
-});
+export function TwoPersonImportantDateEditorScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <TwoPersonImportantDateEditorContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+    keyboardView: { flex: 1 },
+    content: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 150 },
+    centerState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.circle.profileBackground,
+      gap: 10,
+    },
+    stateText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
+    contextCard: {
+      padding: 14,
+      borderRadius: 15,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      backgroundColor: theme.colors.surface,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+    },
+    contextIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      backgroundColor: theme.circle.accentSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    contextCopy: { flex: 1 },
+    contextTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    contextBody: {
+      marginTop: 3,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 11.5,
+      lineHeight: 17,
+    },
+    field: { marginTop: 18 },
+    label: { marginBottom: 7, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    hint: {
+      marginTop: 6,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 10.5,
+      lineHeight: 15,
+    },
+    input: {
+      minHeight: 46,
+      paddingHorizontal: 13,
+      paddingVertical: 11,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+      color: theme.colors.text,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 14,
+    },
+    textArea: { minHeight: 110 },
+    categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    categoryChip: {
+      minHeight: 38,
+      paddingHorizontal: 11,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    categoryChipSelected: { backgroundColor: theme.welcome.brandInk, borderColor: theme.welcome.brandInk },
+    categoryText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 11 },
+    categoryTextSelected: { color: '#fff' },
+    toggleRow: {
+      marginTop: 18,
+      padding: 14,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      backgroundColor: theme.colors.surface,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    toggleCopy: { flex: 1 },
+    toggleTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    toggleBody: {
+      marginTop: 3,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 10.5,
+      lineHeight: 15,
+    },
+    errorText: { marginTop: 14, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
+    primaryButton: {
+      marginTop: 20,
+      minHeight: 48,
+      borderRadius: 12,
+      backgroundColor: theme.welcome.brandInk,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    primaryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
+    removeButton: { marginTop: 10, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    removeButtonText: { color: '#b42318', fontFamily: 'Manrope_700Bold', fontSize: 12.5 },
+    disabled: { opacity: 0.55 },
+    pressed: { opacity: 0.72 },
+  });
+}

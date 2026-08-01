@@ -92,7 +92,7 @@ A Circle with no explicit shared theme can omit `themeId` and inherit the user's
 4. Circle/Our Circle shared theme selection
 5. Planning, events, polls, RSVP, and completed-memory surfaces
 6. Circle posts, Timeline, comments, and post editors
-7. Invitations and remaining Our Circle depth features
+7. Remaining invitations and member-management surfaces
 8. Feed and remaining core screens
 9. Theme-specific navigation stations and icon families
 
@@ -125,5 +125,6 @@ Theme-aware Circle surfaces now include:
 3. Regular Circle events, polls, RSVP, attendance review, photo galleries, and repeat-event surfaces
 4. Our Circle shared plans, editors, details, completed memories, and plan-to-memory linking
 5. Circle posts, post details, private comments, post editors, and the automatic Chat Timeline
+6. Our Circle Important Dates, private/shared Thoughts, Shared Albums, and photo-detail/editor flows
 
-Each feature route is wrapped in `CircleThemeBoundary` rather than reading `conversations.theme_id` independently. This preserves one permission-aware theme source and keeps the shared theme scoped away from global tabs, welcome, and unrelated Circles.
+Feature screens rely on the native navigation title and avoid redundant decorative title headers. Each feature route is wrapped in `CircleThemeBoundary` rather than reading `conversations.theme_id` independently. This preserves one permission-aware theme source and keeps the shared theme scoped away from global tabs, welcome, and unrelated Circles.
