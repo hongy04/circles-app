@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,27 +16,36 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   getEventDetails,
   getEventGuestAttendeeVisibility,
   updateEventGuestSettings,
 } from '../../services/eventService';
 
-function SettingRow({ title, body, value, onValueChange, disabled = false }) {
+function SettingRow({ title, body, value, onValueChange, disabled = false, styles, theme }) {
   return (
     <View style={styles.settingRow}>
       <View style={styles.settingCopy}>
         <Text style={styles.settingTitle}>{title}</Text>
         <Text style={styles.settingBody}>{body}</Text>
       </View>
-      <Switch value={value} onValueChange={onValueChange} disabled={disabled} />
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        disabled={disabled}
+        trackColor={{ false: theme.colors.divider, true: theme.circle.accentSoft }}
+        thumbColor={value ? theme.circle.accent : '#FFFFFF'}
+      />
     </View>
   );
 }
 
-export function EventGuestSettingsScreen({ route, navigation }) {
+function EventGuestSettingsContent({ route, navigation }) {
   const { eventId } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [guestCount, setGuestCount] = useState(0);
@@ -124,7 +133,7 @@ export function EventGuestSettingsScreen({ route, navigation }) {
   if (error) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="people-outline" size={38} color={COLORS.text} />
+        <Ionicons name="people-outline" size={38} color={theme.colors.text} />
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={load} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -150,7 +159,7 @@ export function EventGuestSettingsScreen({ route, navigation }) {
         >
           <View style={styles.contextCard}>
             <View style={styles.contextIcon}>
-              <Ionicons name="shield-checkmark-outline" size={23} color={COLORS.text} />
+              <Ionicons name="shield-checkmark-outline" size={23} color={theme.colors.text} />
             </View>
             <View style={styles.contextCopy}>
               <Text style={styles.contextTitle}>Host-controlled guest access</Text>
@@ -179,6 +188,8 @@ export function EventGuestSettingsScreen({ route, navigation }) {
               value={membersCanInviteGuests}
               onValueChange={setMembersCanInviteGuests}
               disabled={!guestsEnabled}
+              styles={styles}
+              theme={theme}
             />
             <View style={styles.divider} />
             <SettingRow
@@ -187,6 +198,8 @@ export function EventGuestSettingsScreen({ route, navigation }) {
               value={allowPlusOnes}
               onValueChange={setAllowPlusOnes}
               disabled={!guestsEnabled}
+              styles={styles}
+              theme={theme}
             />
             <View style={styles.divider} />
             <SettingRow
@@ -195,6 +208,8 @@ export function EventGuestSettingsScreen({ route, navigation }) {
               value={showAttendeeListToGuests}
               onValueChange={setShowAttendeeListToGuests}
               disabled={!guestsEnabled}
+              styles={styles}
+              theme={theme}
             />
           </View>
 
@@ -218,8 +233,18 @@ export function EventGuestSettingsScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f7f7' },
+export function EventGuestSettingsScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <EventGuestSettingsContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   keyboardView: { flex: 1 },
   content: {
     width: '100%',
@@ -235,8 +260,8 @@ const styles = StyleSheet.create({
     marginBottom: 22,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   contextIcon: {
     width: 44,
@@ -244,24 +269,24 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   contextCopy: { flex: 1 },
   contextTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
   },
   contextBody: {
     marginTop: 4,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 17,
   },
   label: {
     marginBottom: 8,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
@@ -270,15 +295,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
-    color: COLORS.text,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 15,
   },
   hint: {
     marginTop: 7,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
     lineHeight: 15,
@@ -288,8 +313,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   settingRow: {
     flexDirection: 'row',
@@ -298,13 +323,13 @@ const styles = StyleSheet.create({
   },
   settingCopy: { flex: 1 },
   settingTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   settingBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -312,7 +337,7 @@ const styles = StyleSheet.create({
   divider: {
     height: StyleSheet.hairlineWidth,
     marginVertical: 16,
-    backgroundColor: COLORS.border,
+    backgroundColor: theme.colors.divider,
   },
   saveButton: {
     minHeight: 50,
@@ -320,7 +345,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   saveText: {
     color: '#fff',
@@ -332,17 +357,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 30,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   errorText: {
     maxWidth: 420,
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
@@ -351,8 +376,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
   pressed: { opacity: 0.72 },
-});
+  });
+}

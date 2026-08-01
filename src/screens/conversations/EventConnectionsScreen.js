@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,7 +15,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
 import { EventRepeatCard } from '../../components/events/EventRepeatCard';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   getEventRepeatSummary,
   listEventConnectionCandidates,
@@ -51,6 +52,8 @@ function CandidateRow({
   busy,
   onOpen,
   onConnect,
+  styles,
+  theme,
 }) {
   const action = actionCopy(candidate.relationshipStatus, viewerAttended);
   const canOpen = Boolean(candidate.canOpenProfile);
@@ -111,7 +114,7 @@ function CandidateRow({
         {busy ? (
           <ActivityIndicator
             size="small"
-            color={action.kind === 'primary' ? '#fff' : COLORS.text}
+            color={action.kind === 'primary' ? '#fff' : theme.colors.text}
           />
         ) : (
           <Text style={[
@@ -126,8 +129,10 @@ function CandidateRow({
   );
 }
 
-export function EventConnectionsScreen({ navigation, route }) {
+function EventConnectionsContent({ navigation, route }) {
   const eventId = route?.params?.eventId;
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const fallbackTitle = route?.params?.eventTitle || 'this event';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -219,7 +224,7 @@ export function EventConnectionsScreen({ navigation, route }) {
   if (error && !data) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="people-outline" size={38} color={COLORS.text} />
+        <Ionicons name="people-outline" size={38} color={theme.colors.text} />
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -234,38 +239,28 @@ export function EventConnectionsScreen({ navigation, route }) {
 
   const header = (
     <View>
-      <View style={styles.heroCard}>
-        <View style={styles.heroIcon}>
-          <Ionicons name="people-outline" size={25} color={COLORS.text} />
+      <View style={styles.contextCard}>
+        <View style={styles.contextIcon}>
+          <Ionicons
+            name={viewerAttended ? 'checkmark-circle-outline' : 'shield-outline'}
+            size={22}
+            color={theme.colors.text}
+          />
         </View>
-        <Text style={styles.eyebrow}>SHARED EVENT</Text>
-        <Text style={styles.title}>People from {title}</Text>
-        <Text style={styles.body}>
-          Attendance creates context, not access. Profiles remain private and every connection still requires a request and acceptance.
-        </Text>
+        <View style={styles.contextCopy}>
+          <Text style={styles.contextEyebrow} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={styles.contextTitle}>
+            {viewerAttended ? 'You were both there' : 'Historical view only'}
+          </Text>
+          <Text style={styles.contextBody}>
+            {viewerAttended
+              ? 'Shared attendance gives limited profile context. Every connection still requires a request and acceptance.'
+              : 'You were not marked as attended, so this event cannot be used to open profiles or send connection requests.'}
+          </Text>
+        </View>
       </View>
-
-      {!viewerAttended ? (
-        <View style={styles.noticeCard}>
-          <Ionicons name="shield-outline" size={22} color={COLORS.text} />
-          <View style={styles.noticeCopy}>
-            <Text style={styles.noticeTitle}>Historical view only</Text>
-            <Text style={styles.noticeBody}>
-              You were not marked as attended, so this event cannot be used to open new profiles or send connection requests.
-            </Text>
-          </View>
-        </View>
-      ) : (
-        <View style={styles.noticeCard}>
-          <Ionicons name="checkmark-circle-outline" size={22} color={COLORS.text} />
-          <View style={styles.noticeCopy}>
-            <Text style={styles.noticeTitle}>You were both there</Text>
-            <Text style={styles.noticeBody}>
-              You may view each confirmed attendee’s limited profile shell and choose whether to connect.
-            </Text>
-          </View>
-        </View>
-      )}
 
       {repeatSummary?.available ? (
         <EventRepeatCard
@@ -295,11 +290,13 @@ export function EventConnectionsScreen({ navigation, route }) {
             busy={sendingUserId === item.userId}
             onOpen={openProfile}
             onConnect={connect}
+            styles={styles}
+            theme={theme}
           />
         )}
         ListEmptyComponent={(
           <View style={styles.emptyCard}>
-            <Ionicons name="person-outline" size={30} color={COLORS.subtext} />
+            <Ionicons name="person-outline" size={30} color={theme.colors.subtext} />
             <Text style={styles.emptyTitle}>No other app attendees</Text>
             <Text style={styles.emptyBody}>
               Outside guests remain in the event history. They appear here only after joining Circles and claiming reviewed attendance.
@@ -313,7 +310,7 @@ export function EventConnectionsScreen({ navigation, route }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={COLORS.text}
+            tintColor={theme.colors.text}
           />
         )}
         contentContainerStyle={styles.content}
@@ -323,8 +320,18 @@ export function EventConnectionsScreen({ navigation, route }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f7f7' },
+export function EventConnectionsScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <EventConnectionsContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   content: {
     width: '100%',
     maxWidth: 720,
@@ -332,61 +339,41 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 44,
   },
-  heroCard: {
-    padding: 19,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
-  },
-  heroIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
-  },
-  eyebrow: {
-    marginTop: 16,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 10,
-    letterSpacing: 0.8,
-  },
-  title: {
-    marginTop: 5,
-    color: COLORS.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 23,
-    lineHeight: 29,
-  },
-  body: {
-    marginTop: 8,
-    color: COLORS.subtext,
-    fontFamily: 'Manrope_400Regular',
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  noticeCard: {
-    marginTop: 12,
+  contextCard: {
     padding: 15,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: 11,
   },
-  noticeCopy: { flex: 1 },
-  noticeTitle: {
-    color: COLORS.text,
+  contextIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.circle.accentSoft,
+  },
+  contextCopy: { flex: 1 },
+  contextEyebrow: {
+    color: theme.circle.accent,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 10,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  contextTitle: {
+    marginTop: 3,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
-  noticeBody: {
+  contextBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 17,
@@ -399,12 +386,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   sectionTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
   },
   sectionCount: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
   },
@@ -414,8 +401,8 @@ const styles = StyleSheet.create({
     padding: 11,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -431,7 +418,7 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   personName: {
     flexShrink: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
@@ -439,16 +426,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: '#eeeeee',
+    backgroundColor: theme.circle.accentSoft,
   },
   hostBadgeText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 9,
   },
   contextText: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
@@ -460,15 +447,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionButtonPrimary: { backgroundColor: COLORS.primary },
+  actionButtonPrimary: { backgroundColor: theme.welcome.brandInk },
   actionButtonSecondary: {
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
-  actionButtonQuiet: { backgroundColor: '#f1f1f1' },
+  actionButtonQuiet: { backgroundColor: theme.circle.accentSoft },
   actionText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
   },
@@ -477,19 +464,19 @@ const styles = StyleSheet.create({
     padding: 24,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     alignItems: 'center',
   },
   emptyTitle: {
     marginTop: 10,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
   },
   emptyBody: {
     marginTop: 5,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
@@ -500,16 +487,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
-    backgroundColor: '#f7f7f7',
+    backgroundColor: theme.circle.profileBackground,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
   },
   errorText: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
@@ -520,8 +507,9 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
   pressed: { opacity: 0.68 },
-});
+  });
+}

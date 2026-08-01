@@ -17,15 +17,18 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   invitePeopleToCircle,
   listCircleInviteCandidates,
 } from '../../services/circlePeopleService';
 import { createCircleInvite, shareInvite } from '../../services/inviteService';
 
-export function InviteCirclePeopleScreen({ route, navigation }) {
+function InviteCirclePeopleContent({ route, navigation }) {
   const { conversationId, circleName = 'Circle' } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [people, setPeople] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [query, setQuery] = useState('');
@@ -135,7 +138,7 @@ export function InviteCirclePeopleScreen({ route, navigation }) {
   if (error) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="person-add-outline" size={38} color={COLORS.text} />
+        <Ionicons name="person-add-outline" size={38} color={theme.colors.text} />
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={load} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -153,7 +156,7 @@ export function InviteCirclePeopleScreen({ route, navigation }) {
       >
         <View style={styles.topArea}>
           <View style={styles.privacyCard}>
-            <Ionicons name="lock-closed-outline" size={21} color={COLORS.text} />
+            <Ionicons name="lock-closed-outline" size={21} color={theme.colors.text} />
             <Text style={styles.privacyText}>
               Only your accepted connections appear here. Everyone must accept
               before they can view the Circle or its history.
@@ -185,12 +188,12 @@ export function InviteCirclePeopleScreen({ route, navigation }) {
           </View>
 
           <View style={styles.searchBox}>
-            <Ionicons name="search" size={18} color={COLORS.subtext} />
+            <Ionicons name="search" size={18} color={theme.colors.subtext} />
             <TextInput
               value={query}
               onChangeText={setQuery}
               placeholder="Search connections"
-              placeholderTextColor="#8e8e93"
+              placeholderTextColor={theme.colors.subtext}
               autoCorrect={false}
               returnKeyType="search"
               onSubmitEditing={Keyboard.dismiss}
@@ -198,7 +201,7 @@ export function InviteCirclePeopleScreen({ route, navigation }) {
             />
             {query ? (
               <Pressable onPress={() => setQuery('')} hitSlop={8}>
-                <Ionicons name="close-circle" size={18} color="#a3a3a3" />
+                <Ionicons name="close-circle" size={18} color={theme.colors.subtext} />
               </Pressable>
             ) : null}
           </View>
@@ -245,7 +248,7 @@ export function InviteCirclePeopleScreen({ route, navigation }) {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={(
             <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={38} color={COLORS.subtext} />
+              <Ionicons name="people-outline" size={38} color={theme.colors.subtext} />
               <Text style={styles.emptyTitle}>
                 {query ? 'No matching connections' : 'No one else to invite'}
               </Text>
@@ -322,10 +325,20 @@ export function InviteCirclePeopleScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+export function InviteCirclePeopleScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <InviteCirclePeopleContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f7f7f7',
+    backgroundColor: theme.circle.profileBackground,
   },
   keyboardView: {
     flex: 1,
@@ -335,16 +348,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 28,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   errorText: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
@@ -353,7 +366,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   retryText: {
     color: '#fff',
@@ -372,11 +385,13 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 13,
     borderRadius: 14,
-    backgroundColor: '#eeeeee',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   privacyText: {
     flex: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 17,
@@ -386,8 +401,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     padding: 13,
     marginTop: 10,
     marginBottom: 10,
@@ -397,12 +412,12 @@ const styles = StyleSheet.create({
     paddingRight: 12,
   },
   linkInviteTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
   },
   linkInviteBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 17,
@@ -411,7 +426,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -424,12 +439,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   searchInput: {
     flex: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 14,
   },
@@ -445,7 +460,7 @@ const styles = StyleSheet.create({
   selectedName: {
     width: 64,
     marginTop: 4,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 9,
     textAlign: 'center',
@@ -460,8 +475,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 9,
     borderWidth: 2,
-    borderColor: '#f7f7f7',
-    backgroundColor: '#707070',
+    borderColor: theme.circle.profileBackground,
+    backgroundColor: theme.welcome.brandInk,
   },
   listContent: {
     width: '100%',
@@ -476,8 +491,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   firstRow: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -501,13 +516,13 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   personName: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   personSubtitle: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
@@ -518,17 +533,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 13,
     borderWidth: 1,
-    borderColor: '#bdbdbd',
-    backgroundColor: COLORS.bg,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
   },
   checkboxSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primary,
+    borderColor: theme.circle.accent,
+    backgroundColor: theme.circle.accent,
   },
   separator: {
     height: StyleSheet.hairlineWidth,
     marginLeft: 74,
-    backgroundColor: COLORS.border,
+    backgroundColor: theme.colors.divider,
   },
   emptyState: {
     flex: 1,
@@ -539,13 +554,13 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     marginTop: 10,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 16,
   },
   emptyBody: {
     marginTop: 5,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 18,
@@ -559,18 +574,18 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderTopColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
   },
   sendButton: {
     minHeight: 47,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 12,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   sendButtonDisabled: {
-    backgroundColor: '#c9c9c9',
+    backgroundColor: theme.colors.divider,
   },
   sendText: {
     color: '#fff',
@@ -580,4 +595,5 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.68,
   },
-});
+  });
+}

@@ -15,7 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { subscribeToConversationChanges } from '../../services/conversationService';
 import {
   cancelCircleInvitation,
@@ -42,7 +43,7 @@ function formatInviteDate(value) {
   })}`;
 }
 
-function RolePill({ role }) {
+function RolePill({ role, styles }) {
   const label = roleLabel(role);
   if (!label) return null;
 
@@ -56,18 +57,20 @@ function RolePill({ role }) {
   );
 }
 
-function EmptySection({ icon, title, body }) {
+function EmptySection({ icon, title, body, styles, theme }) {
   return (
     <View style={styles.emptySection}>
-      <Ionicons name={icon} size={31} color={COLORS.subtext} />
+      <Ionicons name={icon} size={31} color={theme.colors.subtext} />
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptyBody}>{body}</Text>
     </View>
   );
 }
 
-export function CirclePeopleScreen({ route, navigation }) {
+function CirclePeopleContent({ route, navigation }) {
   const { conversationId, circleName = 'Circle' } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -286,7 +289,7 @@ export function CirclePeopleScreen({ route, navigation }) {
   if (error && !data) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="people-outline" size={38} color={COLORS.text} />
+        <Ionicons name="people-outline" size={38} color={theme.colors.text} />
         <Text style={styles.errorText}>{error}</Text>
         <Pressable onPress={() => load()} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -310,7 +313,7 @@ export function CirclePeopleScreen({ route, navigation }) {
         <View style={styles.summaryText}>
           <Text style={styles.circleTitle} numberOfLines={1}>{title}</Text>
           <View style={styles.privateLine}>
-            <Ionicons name="lock-closed" size={12} color={COLORS.subtext} />
+            <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
             <Text style={styles.privateText}>
               {members.length} member{members.length === 1 ? '' : 's'}
               {invitations.length
@@ -341,7 +344,7 @@ export function CirclePeopleScreen({ route, navigation }) {
               Add accepted connections through a private invitation.
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={COLORS.subtext} />
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.subtext} />
         </Pressable>
       ) : null}
 
@@ -409,11 +412,13 @@ export function CirclePeopleScreen({ route, navigation }) {
           icon="mail-open-outline"
           title="No pending invitations"
           body="Everyone invited to this Circle has responded."
+          styles={styles}
+          theme={theme}
         />
       )}
 
       <View style={styles.historyCard}>
-        <Ionicons name="time-outline" size={21} color={COLORS.text} />
+        <Ionicons name="time-outline" size={21} color={theme.colors.text} />
         <Text style={styles.historyText}>
           Leaving or removing someone ends their access immediately, but it
           does not rewrite the Circle’s shared history. Past messages, posts,
@@ -461,7 +466,7 @@ export function CirclePeopleScreen({ route, navigation }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={COLORS.text}
+            tintColor={theme.colors.text}
           />
         )}
         renderItem={({ item, index }) => {
@@ -494,7 +499,7 @@ export function CirclePeopleScreen({ route, navigation }) {
                       <Text style={styles.personName} numberOfLines={1}>
                         {item.isMe ? 'You' : item.displayName}
                       </Text>
-                      <RolePill role={item.role} />
+                      <RolePill role={item.role} styles={styles} />
                     </View>
                     <Text style={styles.personSubtitle} numberOfLines={1}>
                       {item.role === 'owner'
@@ -520,7 +525,7 @@ export function CirclePeopleScreen({ route, navigation }) {
                     <Ionicons
                       name="ellipsis-horizontal"
                       size={21}
-                      color={COLORS.text}
+                      color={theme.colors.text}
                     />
                   </Pressable>
                 ) : null}
@@ -535,10 +540,20 @@ export function CirclePeopleScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+export function CirclePeopleScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <CirclePeopleContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f7f7f7',
+    backgroundColor: theme.circle.profileBackground,
   },
   content: {
     width: '100%',
@@ -552,16 +567,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 28,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
   },
   stateText: {
     marginTop: 10,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
   errorText: {
     marginTop: 12,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
@@ -570,7 +585,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
   },
   retryText: {
     color: '#fff',
@@ -587,7 +602,7 @@ const styles = StyleSheet.create({
     marginLeft: 14,
   },
   circleTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 21,
   },
@@ -598,7 +613,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   privateText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 12,
   },
@@ -608,8 +623,8 @@ const styles = StyleSheet.create({
     padding: 13,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   inviteIcon: {
     width: 38,
@@ -617,20 +632,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 19,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.circle.accent,
   },
   inviteCopy: {
     flex: 1,
     marginHorizontal: 11,
   },
   inviteTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   inviteBody: {
     marginTop: 2,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
   },
@@ -643,13 +658,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   sectionTitle: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 11,
     letterSpacing: 0.6,
   },
   sectionCount: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 11,
   },
@@ -657,16 +672,16 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   cardRowWrap: {
     overflow: 'hidden',
     marginHorizontal: 0,
-    backgroundColor: COLORS.bg,
+    backgroundColor: theme.colors.surface,
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
+    borderColor: theme.circle.accentSoft,
   },
   firstMemberRow: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -701,13 +716,13 @@ const styles = StyleSheet.create({
   },
   personName: {
     flexShrink: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
   },
   personSubtitle: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 15,
@@ -716,13 +731,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 8,
-    backgroundColor: '#ececec',
+    backgroundColor: theme.circle.accentSoft,
   },
   ownerPill: {
-    backgroundColor: '#dedede',
+    backgroundColor: theme.circle.accentSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.circle.accent,
   },
   rolePillText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 9,
   },
@@ -736,7 +753,7 @@ const styles = StyleSheet.create({
   separator: {
     height: StyleSheet.hairlineWidth,
     marginLeft: 74,
-    backgroundColor: COLORS.border,
+    backgroundColor: theme.colors.divider,
   },
   cancelInviteButton: {
     minWidth: 65,
@@ -746,8 +763,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 9,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: '#f4f4f4',
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surfaceSoft,
   },
   cancelInviteText: {
     color: '#b3261e',
@@ -758,10 +775,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 5,
     borderRadius: 9,
-    backgroundColor: '#eeeeee',
+    backgroundColor: theme.circle.accentSoft,
   },
   pendingText: {
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 10,
   },
@@ -771,18 +788,18 @@ const styles = StyleSheet.create({
     paddingVertical: 25,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   emptyTitle: {
     marginTop: 9,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
   },
   emptyBody: {
     marginTop: 4,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 17,
@@ -795,11 +812,11 @@ const styles = StyleSheet.create({
     marginTop: 22,
     padding: 14,
     borderRadius: 14,
-    backgroundColor: '#eeeeee',
+    backgroundColor: theme.circle.accentSoft,
   },
   historyText: {
     flex: 1,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 17,
@@ -809,17 +826,17 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   ownerNoticeTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
   ownerNoticeBody: {
     marginTop: 3,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
@@ -831,8 +848,8 @@ const styles = StyleSheet.create({
     marginTop: 16,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#d9a4a0',
-    backgroundColor: COLORS.bg,
+    borderColor: theme.colors.danger,
+    backgroundColor: theme.colors.surface,
   },
   leaveText: {
     color: '#c62828',
@@ -841,4 +858,5 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.67,
   },
-});
+  });
+}

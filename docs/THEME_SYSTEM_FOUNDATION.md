@@ -126,5 +126,6 @@ Theme-aware Circle surfaces now include:
 4. Our Circle shared plans, editors, details, completed memories, and plan-to-memory linking
 5. Circle posts, post details, private comments, post editors, and the automatic Chat Timeline
 6. Our Circle Important Dates, private/shared Thoughts, Shared Albums, and photo-detail/editor flows
+7. Circle People, member roles, pending invitations, Circle invite selection, event-attendee connections, and controlled guest-management flows
 
 Feature screens rely on the native navigation title and avoid redundant decorative title headers. Each feature route is wrapped in `CircleThemeBoundary` rather than reading `conversations.theme_id` independently. This preserves one permission-aware theme source and keeps the shared theme scoped away from global tabs, welcome, and unrelated Circles.

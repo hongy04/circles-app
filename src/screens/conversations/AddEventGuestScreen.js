@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { COLORS } from '../../theme/colors';
+import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
+import { useThemeTokens } from '../../theme/ThemeProvider';
 import { addEventGuest } from '../../services/eventService';
 import {
   createEventGuestInvitation,
@@ -28,7 +29,7 @@ const RESPONSE_OPTIONS = [
   { value: 'not_going', label: 'Can’t go' },
 ];
 
-function ChoiceButton({ selected, label, icon, onPress, disabled = false }) {
+function ChoiceButton({ selected, label, icon, onPress, disabled = false, styles, theme }) {
   return (
     <Pressable
       onPress={onPress}
@@ -43,7 +44,7 @@ function ChoiceButton({ selected, label, icon, onPress, disabled = false }) {
       <Ionicons
         name={icon}
         size={18}
-        color={selected ? '#fff' : disabled ? '#b8b8b8' : COLORS.text}
+        color={selected ? '#fff' : disabled ? theme.colors.legal : theme.colors.text}
       />
       <Text style={[
         styles.choiceButtonText,
@@ -56,7 +57,7 @@ function ChoiceButton({ selected, label, icon, onPress, disabled = false }) {
   );
 }
 
-export function AddEventGuestScreen({ route, navigation }) {
+function AddEventGuestContent({ route, navigation }) {
   const {
     eventId,
     eventTitle = 'an event',
@@ -64,6 +65,8 @@ export function AddEventGuestScreen({ route, navigation }) {
     remainingGuestSlots = 0,
     guestInviteLinksEnabled = true,
   } = route.params || {};
+  const theme = useThemeTokens();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [mode, setMode] = useState(guestInviteLinksEnabled ? 'invite' : 'manual');
   const [displayName, setDisplayName] = useState('');
   const [guestType, setGuestType] = useState('guest');
@@ -139,7 +142,7 @@ export function AddEventGuestScreen({ route, navigation }) {
         >
           <View style={styles.contextCard}>
             <View style={styles.contextIcon}>
-              <Ionicons name="link-outline" size={22} color={COLORS.text} />
+              <Ionicons name="link-outline" size={22} color={theme.colors.text} />
             </View>
             <View style={styles.contextCopy}>
               <Text style={styles.contextTitle}>
@@ -161,6 +164,8 @@ export function AddEventGuestScreen({ route, navigation }) {
               label="Guest"
               icon="person-outline"
               onPress={() => setGuestType('guest')}
+              styles={styles}
+              theme={theme}
             />
             <ChoiceButton
               selected={guestType === 'plus_one'}
@@ -168,6 +173,8 @@ export function AddEventGuestScreen({ route, navigation }) {
               icon="people-outline"
               onPress={() => setGuestType('plus_one')}
               disabled={!allowPlusOnes}
+              styles={styles}
+              theme={theme}
             />
           </View>
           {!allowPlusOnes ? (
@@ -177,7 +184,7 @@ export function AddEventGuestScreen({ route, navigation }) {
           {mode === 'invite' ? (
             <>
               <View style={styles.explainerCard}>
-                <Ionicons name="shield-checkmark-outline" size={20} color={COLORS.text} />
+                <Ionicons name="shield-checkmark-outline" size={20} color={theme.colors.text} />
                 <Text style={styles.explainerText}>
                   This reserves one guest spot. The private link reveals only the event information needed to RSVP—not private Circles, profiles, posts, or messages.
                 </Text>
@@ -216,7 +223,7 @@ export function AddEventGuestScreen({ route, navigation }) {
                 value={displayName}
                 onChangeText={setDisplayName}
                 placeholder="Maya Chen"
-                placeholderTextColor="#a4a4a4"
+                placeholderTextColor={theme.colors.subtext}
                 autoCapitalize="words"
                 autoCorrect={false}
                 maxLength={80}
@@ -278,8 +285,18 @@ export function AddEventGuestScreen({ route, navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f7f7f7' },
+export function AddEventGuestScreen(props) {
+  const conversationId = props.route?.params?.conversationId;
+  return (
+    <CircleThemeBoundary conversationId={conversationId}>
+      <AddEventGuestContent {...props} />
+    </CircleThemeBoundary>
+  );
+}
+
+function createStyles(theme) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   keyboardView: { flex: 1 },
   content: {
     width: '100%',
@@ -295,8 +312,8 @@ const styles = StyleSheet.create({
     marginBottom: 22,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
   },
   contextIcon: {
     width: 44,
@@ -304,24 +321,24 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.circle.accentSoft,
   },
   contextCopy: { flex: 1 },
   contextTitle: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 15,
   },
   contextBody: {
     marginTop: 4,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 12,
     lineHeight: 17,
   },
   label: {
     marginBottom: 8,
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
@@ -331,9 +348,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
-    color: COLORS.text,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
+    color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 15,
   },
@@ -343,20 +360,20 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
   choiceButtonSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primary,
+    borderColor: theme.circle.accent,
+    backgroundColor: theme.circle.accent,
   },
-  choiceButtonDisabled: { backgroundColor: '#f3f3f3' },
+  choiceButtonDisabled: { backgroundColor: theme.colors.surfaceSoft },
   choiceButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
   },
@@ -367,15 +384,15 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 13,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
   },
   explainerText: {
     flex: 1,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 17,
@@ -390,24 +407,24 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: 11,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   responseButtonSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primary,
+    borderColor: theme.circle.accent,
+    backgroundColor: theme.circle.accent,
   },
   responseButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
   },
   responseButtonTextSelected: { color: '#fff' },
   hint: {
     marginTop: 7,
-    color: COLORS.subtext,
+    color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
     lineHeight: 15,
@@ -416,7 +433,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
     marginTop: 28,
     borderRadius: 12,
-    backgroundColor: COLORS.primary,
+    backgroundColor: theme.welcome.brandInk,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -434,10 +451,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modeButtonText: {
-    color: COLORS.text,
+    color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
     textDecorationLine: 'underline',
   },
   pressed: { opacity: 0.72 },
-});
+  });
+}
