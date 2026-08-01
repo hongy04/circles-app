@@ -108,6 +108,166 @@ function PaletteSwatches({ themeId, selected }) {
   );
 }
 
+
+function ThemeVisualPreview({ themeId, large = false }) {
+  const optionTheme = getTheme(themeId);
+  const tokens = optionTheme.navigation?.aero || {};
+  const isAero = optionTheme.navigation?.tabStation === 'aero-grass';
+  const sway = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!isAero) return undefined;
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(sway, {
+          toValue: 1,
+          duration: 2300,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(sway, {
+          toValue: 0,
+          duration: 2700,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isAero, sway]);
+
+  const field = useMemo(
+    () => Array.from({ length: large ? 54 : 34 }, (_, index) => ({
+      left: `${4 + ((index * 17) % 93)}%`,
+      bottom: 5 + ((index * 7) % (large ? 16 : 12)),
+      size: 1.1 + ((index * 5) % 3) * 0.35,
+      opacity: 0.3 + ((index * 11) % 4) * 0.08,
+      group: index % 3,
+    })),
+    [large]
+  );
+
+  const fieldColors = [
+    tokens.grassLight || optionTheme.circle.decalPalette[1] || '#DDF6AF',
+    tokens.grassMid || optionTheme.circle.decalPalette[0] || '#A6E17B',
+    tokens.grassDark || optionTheme.circle.accent || '#70BE64',
+  ];
+  const swayX = sway.interpolate({ inputRange: [0, 1], outputRange: [-1.4, 1.4] });
+
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        styles.themePreview,
+        large && styles.themePreviewLarge,
+        {
+          backgroundColor: optionTheme.welcome?.portalBackground?.[0] || optionTheme.colors.bg,
+          borderColor: optionTheme.colors.border,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.previewOrb,
+          styles.previewOrbOne,
+          { backgroundColor: `${optionTheme.circle.decalPalette[0]}55` },
+        ]}
+      />
+      <View
+        style={[
+          styles.previewOrb,
+          styles.previewOrbTwo,
+          { backgroundColor: `${optionTheme.circle.decalPalette[2]}46` },
+        ]}
+      />
+      <View
+        style={[
+          styles.previewOrb,
+          styles.previewOrbThree,
+          { backgroundColor: `${optionTheme.circle.decalPalette[3]}42` },
+        ]}
+      />
+
+      <View
+        style={[
+          styles.miniStation,
+          large && styles.miniStationLarge,
+          {
+            backgroundColor: isAero
+              ? tokens.stationBottom || optionTheme.circle.accentSoft
+              : optionTheme.colors.surface,
+            borderColor: isAero
+              ? tokens.stationBorder || optionTheme.colors.border
+              : optionTheme.colors.border,
+          },
+        ]}
+      >
+        {isAero ? (
+          <View style={styles.miniField}>
+            {field.map((particle, index) => (
+              <Animated.View
+                key={`${themeId}-field-${index}`}
+                style={[
+                  styles.miniFieldParticle,
+                  {
+                    left: particle.left,
+                    bottom: particle.bottom,
+                    width: particle.size,
+                    height: particle.size * 2.4,
+                    opacity: particle.opacity,
+                    backgroundColor: fieldColors[particle.group],
+                    transform: [
+                      {
+                        translateX: particle.group === 1
+                          ? Animated.multiply(swayX, -0.7)
+                          : swayX,
+                      },
+                    ],
+                  },
+                ]}
+              />
+            ))}
+          </View>
+        ) : null}
+
+        <View style={styles.miniTabs}>
+          {[0, 1, 2, 3].map((index) => (
+            <View
+              key={`${themeId}-tab-${index}`}
+              style={[
+                styles.miniTabOrb,
+                large && styles.miniTabOrbLarge,
+                {
+                  backgroundColor: index === 0
+                    ? optionTheme.circle.accentSoft
+                    : optionTheme.colors.surface,
+                  borderColor: index === 0
+                    ? optionTheme.circle.accent
+                    : optionTheme.colors.border,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.miniTabCore,
+                  large && styles.miniTabCoreLarge,
+                  {
+                    backgroundColor: index === 0
+                      ? optionTheme.circle.accent
+                      : optionTheme.colors.subtext,
+                  },
+                ]}
+              />
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export function AppearanceScreen({ navigation }) {
   const theme = useThemeTokens();
   const {
@@ -180,10 +340,30 @@ export function AppearanceScreen({ navigation }) {
         >
           <Text style={themedStyles.title}>Make Circles feel like yours.</Text>
           <Text style={themedStyles.subtitle}>
-            Choose a global atmosphere for the welcome experience and every
-            theme-aware surface. Individual Circles can still keep their own
-            shared look without changing this preference.
+            Your global theme shapes your personal Circles experience. Shared
+            Circles can still choose their own look without changing yours.
           </Text>
+
+          <View style={themedStyles.scopeRow}>
+            <View style={themedStyles.scopeCard}>
+              <View style={themedStyles.scopeIcon}>
+                <Ionicons name="phone-portrait-outline" size={17} color={theme.circle.accent} />
+              </View>
+              <View style={themedStyles.scopeTextWrap}>
+                <Text style={themedStyles.scopeTitle}>Your app</Text>
+                <Text style={themedStyles.scopeBody}>Welcome, tabs, Feed, Mutuals, Circles, and Me.</Text>
+              </View>
+            </View>
+            <View style={themedStyles.scopeCard}>
+              <View style={themedStyles.scopeIcon}>
+                <Ionicons name="people-circle-outline" size={18} color={theme.circle.accent} />
+              </View>
+              <View style={themedStyles.scopeTextWrap}>
+                <Text style={themedStyles.scopeTitle}>Shared Circles</Text>
+                <Text style={themedStyles.scopeBody}>Can inherit yours or use a shared Circle theme.</Text>
+              </View>
+            </View>
+          </View>
 
           <View style={themedStyles.heroCard}>
             <View style={themedStyles.heroGlow} />
@@ -192,6 +372,7 @@ export function AppearanceScreen({ navigation }) {
             <Text style={themedStyles.heroThemeDescription}>
               {theme.description}
             </Text>
+            <ThemeVisualPreview themeId={selectedThemeId} large />
             <Text style={themedStyles.heroHint}>Tap the Circle to test the water.</Text>
           </View>
 
@@ -228,22 +409,7 @@ export function AppearanceScreen({ navigation }) {
                       pressed && themedStyles.pressed,
                     ]}
                   >
-                    <View
-                      style={[
-                        themedStyles.themeMark,
-                        {
-                          backgroundColor: optionTheme.circle.accentSoft,
-                          borderColor: optionTheme.circle.accent,
-                        },
-                      ]}
-                    >
-                      <View
-                        style={[
-                          themedStyles.themeMarkCore,
-                          { backgroundColor: optionTheme.circle.accent },
-                        ]}
-                      />
-                    </View>
+                    <ThemeVisualPreview themeId={option.id} />
 
                     <View style={themedStyles.themeText}>
                       <View style={themedStyles.themeTitleRow}>
@@ -258,6 +424,11 @@ export function AppearanceScreen({ navigation }) {
                         {option.description}
                       </Text>
                       <PaletteSwatches themeId={option.id} selected={selected} />
+                      <Text style={themedStyles.themeMode}>
+                        {optionTheme.navigation?.tabStation === 'aero-grass'
+                          ? 'Living particle tab station'
+                          : 'Clean standard tab bar'}
+                      </Text>
                     </View>
 
                     <Ionicons
@@ -314,9 +485,9 @@ export function AppearanceScreen({ navigation }) {
               color={theme.colors.text}
             />
             <Text style={themedStyles.noteText}>
-              Your global theme follows your Circles account and is restored
-              before the welcome portal appears. Leaving without applying
-              returns to your saved theme.
+              Your global theme follows your account and restores before the
+              welcome portal appears. Circle-specific themes stay scoped to that
+              shared space, so they never overwrite this preference.
             </Text>
           </View>
         </ScrollView>
@@ -389,6 +560,46 @@ function createThemedStyles(theme) {
       fontSize: 14,
       lineHeight: 21,
     },
+    scopeRow: {
+      marginTop: 16,
+      flexDirection: 'row',
+      gap: 10,
+    },
+    scopeCard: {
+      flex: 1,
+      minHeight: 76,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 9,
+      padding: 12,
+      borderRadius: theme.radii.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+    },
+    scopeIcon: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.circle.accentSoft,
+    },
+    scopeTextWrap: {
+      flex: 1,
+    },
+    scopeTitle: {
+      color: theme.colors.text,
+      fontFamily: theme.typography.bold,
+      fontSize: 12.5,
+    },
+    scopeBody: {
+      marginTop: 2,
+      color: theme.colors.subtext,
+      fontFamily: theme.typography.regular,
+      fontSize: 10.5,
+      lineHeight: 15,
+    },
     heroCard: {
       marginTop: 22,
       alignItems: 'center',
@@ -432,7 +643,7 @@ function createThemedStyles(theme) {
       lineHeight: 19,
     },
     heroHint: {
-      marginTop: 12,
+      marginTop: 10,
       color: theme.circle.accent,
       fontFamily: theme.typography.semibold,
       fontSize: 12,
@@ -471,30 +682,16 @@ function createThemedStyles(theme) {
       backgroundColor: theme.colors.surface,
     },
     themeRow: {
-      minHeight: 112,
+      minHeight: 126,
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: 14,
-      paddingVertical: 14,
-    },
-    themeMark: {
-      width: 48,
-      height: 48,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: 24,
-      borderWidth: 1.5,
-      marginRight: 13,
-    },
-    themeMarkCore: {
-      width: 18,
-      height: 18,
-      borderRadius: 9,
-      opacity: 0.8,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
     },
     themeText: {
       flex: 1,
-      paddingRight: 12,
+      paddingLeft: 12,
+      paddingRight: 10,
     },
     themeTitleRow: {
       flexDirection: 'row',
@@ -526,9 +723,16 @@ function createThemedStyles(theme) {
       fontSize: 12,
       lineHeight: 17,
     },
+    themeMode: {
+      marginTop: 7,
+      color: theme.circle.accent,
+      fontFamily: theme.typography.semibold,
+      fontSize: 10.5,
+      lineHeight: 14,
+    },
     separator: {
       height: StyleSheet.hairlineWidth,
-      marginLeft: 75,
+      marginLeft: 116,
       backgroundColor: theme.colors.border,
     },
     resetAction: {
@@ -604,5 +808,98 @@ const styles = StyleSheet.create({
     height: 17,
     borderRadius: 8.5,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  themePreview: {
+    width: 94,
+    height: 82,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  themePreviewLarge: {
+    width: 230,
+    height: 94,
+    marginTop: 16,
+    borderRadius: 22,
+  },
+  previewOrb: {
+    position: 'absolute',
+    borderRadius: 999,
+  },
+  previewOrbOne: {
+    width: 34,
+    height: 34,
+    top: 7,
+    left: 8,
+  },
+  previewOrbTwo: {
+    width: 26,
+    height: 26,
+    top: 12,
+    right: 9,
+  },
+  previewOrbThree: {
+    width: 18,
+    height: 18,
+    top: 34,
+    left: '46%',
+  },
+  miniStation: {
+    position: 'absolute',
+    left: 5,
+    right: 5,
+    bottom: 5,
+    height: 31,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  miniStationLarge: {
+    left: 9,
+    right: 9,
+    bottom: 8,
+    height: 36,
+    borderRadius: 17,
+  },
+  miniField: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  miniFieldParticle: {
+    position: 'absolute',
+    borderRadius: 2,
+  },
+  miniTabs: {
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    height: '100%',
+    paddingHorizontal: 5,
+  },
+  miniTabOrb: {
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniTabOrbLarge: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+  },
+  miniTabCore: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    opacity: 0.78,
+  },
+  miniTabCoreLarge: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
   },
 });

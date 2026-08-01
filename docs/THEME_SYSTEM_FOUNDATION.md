@@ -155,3 +155,5 @@ The global theme can now choose a navigation treatment through `theme.navigation
 Aqua Daylight is the first theme using the Aero station. The station is intentionally token-driven so future themes can define their own navigation treatment without changing tab behavior.
 
 The Aero station uses a contained glass-and-grass platform, custom emblem-like tab icons, subtle selected-state lift/glow, and the existing request/notification badges. Default and the other curated themes remain on the standard tab bar until their own station treatments are deliberately designed.
+
+- Appearance now includes compact live theme previews showing atmosphere and navigation-station behavior, plus clear global-vs-shared-Circle scope guidance.
