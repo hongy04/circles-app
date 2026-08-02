@@ -327,9 +327,18 @@ function CircleMoreContent({ route, navigation }) {
               <View style={styles.section}>
                 <FeatureRow
                   icon="color-palette-outline"
-                  title="Customize Circle"
+                  title="Circle Theme"
                   subtitle={themeSubtitle}
                   onPress={() => open('CustomizeCircle')}
+                  styles={styles}
+                  theme={theme}
+                />
+                <Separator styles={styles} />
+                <FeatureRow
+                  icon="image-outline"
+                  title={isTwoPersonCircle ? 'Our Circle Header & Background' : 'Header & Background'}
+                  subtitle="Add a shared header photo or background that stays visible around your Circle content."
+                  onPress={() => open('CustomizeCircleDecorations')}
                   styles={styles}
                   theme={theme}
                 />

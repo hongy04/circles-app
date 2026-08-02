@@ -3,7 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  Platform,
+  ImageBackground,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -11,10 +11,9 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Avatar } from '../../components/Avatar';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
@@ -39,6 +38,17 @@ import {
   listTwoPersonAlbums,
   subscribeToTwoPersonAlbumChanges,
 } from '../../services/twoPersonAlbumService';
+import { fetchCircleDecoration } from '../../services/circleDecorationService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(255,255,255,${alpha})`;
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function Stat({ value, label, onPress, styles }) {
   const content = (
@@ -115,48 +125,51 @@ function PlanMemoryTile({ item, size, onPress, styles, theme }) {
   );
 }
 
-function PostTile({ post, size, onPress, styles }) {
+function PostTile({ post, size, slotSize, onPress, styles }) {
   const firstMedia = post.media?.[0];
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.gridTile,
-        { width: size, height: size },
-        pressed && styles.pressed,
-      ]}
-    >
-      {firstMedia?.mediaType === 'image' ? (
-        <Image source={{ uri: firstMedia.url }} style={styles.tileMedia} />
-      ) : (
-        <View style={styles.videoTile}>
-          <Ionicons
-            name={firstMedia ? 'play' : 'image-outline'}
-            size={28}
-            color="#fff"
-          />
-        </View>
-      )}
+    <View style={[styles.postTileSlot, { width: slotSize, height: slotSize }]}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.postCircleTile,
+          { width: size, height: size, borderRadius: size / 2 },
+          pressed && styles.pressedCircle,
+        ]}
+      >
+        {firstMedia?.mediaType === 'image' ? (
+          <Image source={{ uri: firstMedia.url }} style={styles.tileMedia} resizeMode="cover" />
+        ) : (
+          <View style={styles.videoTile}>
+            <Ionicons
+              name={firstMedia ? 'play' : 'image-outline'}
+              size={28}
+              color="#fff"
+            />
+          </View>
+        )}
 
-      {firstMedia?.mediaType === 'video' ? (
-        <View style={styles.mediaBadge}>
-          <Ionicons name="videocam" size={13} color="#fff" />
-        </View>
-      ) : null}
+        {firstMedia?.mediaType === 'video' ? (
+          <View style={styles.mediaBadge}>
+            <Ionicons name="play" size={12} color="#fff" />
+          </View>
+        ) : null}
 
-      {post.media?.length > 1 ? (
-        <View style={styles.multiBadge}>
-          <Ionicons name="copy-outline" size={14} color="#fff" />
-        </View>
-      ) : null}
-    </Pressable>
+        {post.media?.length > 1 ? (
+          <View style={styles.multiBadge}>
+            <Ionicons name="copy-outline" size={12} color="#fff" />
+          </View>
+        ) : null}
+      </Pressable>
+    </View>
   );
 }
 
 function CircleProfileContent({ route, navigation }) {
   const { conversationId, initialTab = 'posts' } = route.params || {};
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [details, setDetails] = useState(null);
@@ -165,6 +178,7 @@ function CircleProfileContent({ route, navigation }) {
   const [plans, setPlans] = useState([]);
   const [importantDates, setImportantDates] = useState([]);
   const [albums, setAlbums] = useState([]);
+  const [decoration, setDecoration] = useState(null);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -202,13 +216,17 @@ function CircleProfileContent({ route, navigation }) {
         setPlans([]);
         setImportantDates([]);
         setAlbums([]);
+        setDecoration(null);
         return;
       }
 
-      const [timelineRows, postRows] = await Promise.all([
+      const [timelineRows, postRows, decorationRows] = await Promise.all([
         listConversationTimeline(conversationId),
         listCirclePosts(conversationId),
+        fetchCircleDecoration(conversationId).catch(() => null),
       ]);
+
+      setDecoration(decorationRows);
 
       let planRows = [];
       let importantDateRows = [];
@@ -310,8 +328,15 @@ function CircleProfileContent({ route, navigation }) {
   const isTwoPersonCircle = conversation?.kind === 'direct';
   const circleLocked = isTwoPersonCircle
     && !conversation?.circle_access_active;
+  const decorationActive = Boolean(
+    decoration?.circle_header_url
+    || decoration?.circle_background_url
+    || decoration?.circle_background_color
+  );
+  const hasHeaderPhoto = Boolean(decoration?.circle_header_url);
   const gridWidth = Math.min(width, 720);
   const tileSize = Math.floor(gridWidth / 3);
+  const postCircleSize = Math.max(72, tileSize - 14);
   const completedPlans = plans.filter((plan) => plan.status === 'completed');
   const timelineItems = [
     ...timeline.map((item) => ({ ...item, kind: 'media' })),
@@ -376,31 +401,37 @@ function CircleProfileContent({ route, navigation }) {
 
   const header = conversation ? (
     <>
-      <LinearGradient
-        colors={theme.circle.headerGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.profileHeader}
-      >
-        <View style={[styles.decal, styles.decalOne, { backgroundColor: theme.circle.decalPalette[1] }]} />
-        <View style={[styles.decal, styles.decalTwo, { backgroundColor: theme.circle.decalPalette[3] }]} />
-        <View style={[styles.decal, styles.decalThree, { backgroundColor: theme.circle.decalPalette[4] }]} />
-        <Avatar
-          size={92}
-          name={conversation.title}
-          uri={conversation.avatar_url}
-        />
+      <View style={[
+        styles.profileHeader,
+        decorationActive && styles.decoratedProfileHeader,
+      ]}>
+        {hasHeaderPhoto ? (
+          <View
+            style={[
+              styles.sharedHeaderPhotoWrap,
+              { height: 108 + insets.top },
+            ]}
+          >
+            <Image
+              source={{ uri: decoration.circle_header_url }}
+              resizeMode="cover"
+              style={styles.sharedHeaderPhoto}
+            />
+            <View style={styles.sharedHeaderPhotoTint} />
+          </View>
+        ) : (
+          <View style={{ height: insets.top + 42 }} />
+        )}
+
+        <View style={[styles.avatarOverlap, hasHeaderPhoto && styles.avatarWithHeader]}>
+          <Avatar
+            size={84}
+            name={conversation.title}
+            uri={conversation.avatar_url}
+          />
+        </View>
 
         <Text style={styles.title}>{conversation.title}</Text>
-
-        <View style={styles.privacyRow}>
-          <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
-          <Text style={styles.privacyText}>
-            {conversation.kind === 'group'
-              ? 'Invitation-only Circle'
-              : 'Mutually created two-person Circle'}
-          </Text>
-        </View>
 
         {isTwoPersonCircle ? (
           conversation.silent_message ? (
@@ -415,16 +446,12 @@ function CircleProfileContent({ route, navigation }) {
                 {conversation.silent_message}
               </Text>
             </View>
-          ) : (
-            <Text style={styles.bio}>
-              A private shared space chosen by the two of you.
-            </Text>
-          )
-        ) : (
-          <Text style={styles.bio}>
-            {conversation.bio || 'A private shared profile for this Circle.'}
+          ) : null
+        ) : conversation.bio ? (
+          <Text style={styles.bio} numberOfLines={2}>
+            {conversation.bio}
           </Text>
-        )}
+        ) : null}
 
         <View style={styles.statsRow}>
           <Stat
@@ -509,7 +536,7 @@ function CircleProfileContent({ route, navigation }) {
             <Text style={styles.secondaryActionText}>More</Text>
           </Pressable>
         </View>
-      </LinearGradient>
+      </View>
 
       {!isTwoPersonCircle ? (
         <View style={styles.membersStrip}>
@@ -540,7 +567,7 @@ function CircleProfileContent({ route, navigation }) {
                 ]}
               >
                 <Avatar
-                  size={52}
+                  size={48}
                   name={item.display_name || 'Member'}
                   uri={item.avatar_url}
                 />
@@ -556,10 +583,7 @@ function CircleProfileContent({ route, navigation }) {
       <View style={styles.tabs}>
         <Pressable
           onPress={() => setActiveTab('posts')}
-          style={[
-            styles.tab,
-            activeTab === 'posts' && styles.activeTab,
-          ]}
+          style={styles.tab}
         >
           <Ionicons
             name="grid-outline"
@@ -576,10 +600,7 @@ function CircleProfileContent({ route, navigation }) {
 
         <Pressable
           onPress={() => setActiveTab('timeline')}
-          style={[
-            styles.tab,
-            activeTab === 'timeline' && styles.activeTab,
-          ]}
+          style={styles.tab}
         >
           <Ionicons
             name="time-outline"
@@ -644,7 +665,43 @@ function CircleProfileContent({ route, navigation }) {
   const gridData = activeTab === 'timeline' ? timelineItems : posts;
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.screen}>
+    <SafeAreaView
+      edges={['bottom']}
+      style={[styles.screen, decorationActive && styles.decoratedScreen]}
+    >
+      {decoration?.circle_background_url ? (
+        <ImageBackground
+          source={{ uri: decoration.circle_background_url }}
+          resizeMode="cover"
+          style={styles.backgroundLayer}
+        >
+          <View style={styles.backgroundTint} />
+        </ImageBackground>
+      ) : decoration?.circle_background_color ? (
+        <View
+          style={[
+            styles.backgroundLayer,
+            { backgroundColor: decoration.circle_background_color },
+          ]}
+        />
+      ) : null}
+      <View
+        pointerEvents="box-none"
+        style={[styles.floatingTopBar, { paddingTop: insets.top }]}
+      >
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={({ pressed }) => [
+            styles.floatingBackButton,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
+        </Pressable>
+      </View>
       <View style={styles.contentWidth}>
         <FlatList
           data={gridData}
@@ -680,7 +737,8 @@ function CircleProfileContent({ route, navigation }) {
             ) : (
               <PostTile
                 post={item}
-                size={tileSize}
+                size={postCircleSize}
+                slotSize={tileSize}
                 onPress={() => navigation.navigate('CirclePostsFeed', {
                   conversationId,
                   initialPostId: item.id,
@@ -755,27 +813,53 @@ function createStyles(theme) {
     flex: 1,
     backgroundColor: theme.circle.profileBackground,
   },
+  decoratedScreen: {
+    backgroundColor: 'transparent',
+  },
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  backgroundTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  floatingTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    minHeight: 48,
+    paddingHorizontal: 10,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  floatingBackButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.62)',
+  },
   contentWidth: {
     flex: 1,
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
-    borderLeftWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
-    borderRightWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
-    borderColor: theme.colors.border,
   },
   listContent: {
     flexGrow: 1,
     paddingBottom: 44,
   },
   profileHeader: {
-    overflow: 'hidden',
     alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.circle.accent,
-    paddingHorizontal: 22,
-    paddingTop: 22,
-    paddingBottom: 18,
+    paddingHorizontal: 18,
+    paddingBottom: 12,
+    backgroundColor: 'transparent',
+  },
+  decoratedProfileHeader: {
+    backgroundColor: rgba(theme.circle.accentSoft, 0.76),
   },
   decal: {
     position: 'absolute',
@@ -800,11 +884,35 @@ function createStyles(theme) {
     bottom: -42,
     right: 54,
   },
+  sharedHeaderPhotoWrap: {
+    overflow: 'hidden',
+    alignSelf: 'stretch',
+    marginHorizontal: -18,
+    marginBottom: -34,
+    backgroundColor: 'transparent',
+  },
+  sharedHeaderPhoto: {
+    width: '100%',
+    height: '100%',
+  },
+  sharedHeaderPhotoTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10,18,34,0.05)',
+  },
+  avatarOverlap: {
+    zIndex: 2,
+    padding: 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.74)',
+  },
+  avatarWithHeader: {
+    marginTop: 0,
+  },
   title: {
-    marginTop: 12,
+    marginTop: 7,
     color: theme.colors.text,
     fontFamily: theme.typography.bold,
-    fontSize: 22,
+    fontSize: 21,
     textAlign: 'center',
   },
   privacyRow: {
@@ -857,11 +965,11 @@ function createStyles(theme) {
   silentMessageCard: {
     width: '100%',
     maxWidth: 440,
-    marginTop: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: theme.circle.accentSoft,
+    marginTop: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.42)',
   },
   silentMessageHeading: {
     flexDirection: 'row',
@@ -882,28 +990,28 @@ function createStyles(theme) {
   },
   bio: {
     maxWidth: 440,
-    marginTop: 10,
+    marginTop: 5,
     color: theme.colors.text,
     fontFamily: theme.typography.regular,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
     textAlign: 'center',
   },
   statsRow: {
     width: '100%',
     maxWidth: 400,
     flexDirection: 'row',
-    marginTop: 19,
+    marginTop: 10,
   },
   stat: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
   statValue: {
-    color: theme.circle.accent,
+    color: theme.colors.text,
     fontFamily: theme.typography.bold,
-    fontSize: 17,
+    fontSize: 16,
   },
   statLabel: {
     marginTop: 1,
@@ -916,16 +1024,16 @@ function createStyles(theme) {
     maxWidth: 390,
     flexDirection: 'row',
     gap: 8,
-    marginTop: 16,
+    marginTop: 10,
   },
   primaryAction: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    borderRadius: 9,
+    borderRadius: 10,
     backgroundColor: theme.circle.accent,
   },
   primaryActionText: {
@@ -935,15 +1043,15 @@ function createStyles(theme) {
   },
   secondaryAction: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    borderRadius: 9,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accent,
-    backgroundColor: theme.circle.accentSoft,
+    borderRadius: 10,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    backgroundColor: 'rgba(255,255,255,0.34)',
   },
   secondaryActionText: {
     color: theme.colors.text,
@@ -951,18 +1059,18 @@ function createStyles(theme) {
     fontSize: 13,
   },
   membersStrip: {
-    backgroundColor: theme.colors.surface,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colors.border,
-    paddingTop: 12,
-    paddingBottom: 11,
+    backgroundColor: 'transparent',
+    borderTopWidth: 0,
+    borderTopColor: 'transparent',
+    paddingTop: 7,
+    paddingBottom: 8,
   },
   membersHeadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginHorizontal: 14,
-    marginBottom: 9,
+    marginBottom: 7,
   },
   membersHeading: {
     color: theme.colors.text,
@@ -978,25 +1086,25 @@ function createStyles(theme) {
     paddingHorizontal: 10,
   },
   member: {
-    width: 72,
+    width: 68,
     alignItems: 'center',
-    marginHorizontal: 2,
+    marginHorizontal: 1,
   },
   memberName: {
-    width: 70,
-    marginTop: 5,
+    width: 66,
+    marginTop: 4,
     color: theme.colors.text,
     fontFamily: theme.typography.semibold,
     fontSize: 10,
     textAlign: 'center',
   },
   tabs: {
-    height: 48,
+    height: 42,
     flexDirection: 'row',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    borderTopWidth: 0,
+    borderBottomWidth: 0,
+    borderColor: 'transparent',
+    backgroundColor: 'transparent',
   },
   tab: {
     flex: 1,
@@ -1004,11 +1112,6 @@ function createStyles(theme) {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  activeTab: {
-    borderBottomColor: theme.circle.accent,
   },
   tabText: {
     color: theme.colors.subtext,
@@ -1018,6 +1121,21 @@ function createStyles(theme) {
   activeTabText: {
     color: theme.colors.text,
     fontFamily: theme.typography.bold,
+  },
+  postTileSlot: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  postCircleTile: {
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: theme.colors.surfaceSoft,
+  },
+  pressedCircle: {
+    opacity: 0.86,
+    transform: [{ scale: 0.975 }],
   },
   gridTile: {
     overflow: 'hidden',

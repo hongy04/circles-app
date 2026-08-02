@@ -89,6 +89,7 @@ import { CreateGroupScreen } from './src/screens/conversations/CreateGroupScreen
 import { CircleProfileScreen } from './src/screens/conversations/CircleProfileScreen';
 import { CircleMoreScreen } from './src/screens/conversations/CircleMoreScreen';
 import { CustomizeCircleScreen } from './src/screens/conversations/CustomizeCircleScreen';
+import { CustomizeCircleDecorationsScreen } from './src/screens/conversations/CustomizeCircleDecorationsScreen';
 import { CirclePeopleScreen } from './src/screens/conversations/CirclePeopleScreen';
 import { InviteCirclePeopleScreen } from './src/screens/conversations/InviteCirclePeopleScreen';
 import { DirectConversationDetailsScreen } from './src/screens/conversations/DirectConversationDetailsScreen';
@@ -636,7 +637,7 @@ function CirclesStack() {
       <CirclesStackNav.Screen
         name="CircleProfile"
         component={CircleProfileScreen}
-        options={{ title: 'Circle' }}
+        options={{ headerShown: false }}
       />
       <CirclesStackNav.Screen
         name="CircleMore"
@@ -646,7 +647,12 @@ function CirclesStack() {
       <CirclesStackNav.Screen
         name="CustomizeCircle"
         component={CustomizeCircleScreen}
-        options={{ title: 'Customize Circle' }}
+        options={{ title: 'Circle Theme' }}
+      />
+      <CirclesStackNav.Screen
+        name="CustomizeCircleDecorations"
+        component={CustomizeCircleDecorationsScreen}
+        options={{ title: 'Header & Background' }}
       />
       <CirclesStackNav.Screen
         name="CirclePeople"
