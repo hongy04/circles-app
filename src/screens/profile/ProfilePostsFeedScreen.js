@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Alert,
   FlatList,
   Image,
@@ -18,6 +19,7 @@ import { Avatar } from '../../components/Avatar';
 import { InstagramCommentsSheet } from '../../components/comments/InstagramCommentsSheet';
 import { FramedPostImage } from '../../components/posts/FramedPostImage';
 import { mediaPresentationForIndex } from '../../utils/postPresentation';
+import { usePostCarouselHeight } from '../../hooks/usePostCarouselHeight';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
 import { fetchProfilePage } from '../../services/profileService';
@@ -91,8 +93,12 @@ function PersonalPostFeedCard({
   theme,
 }) {
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
-  const activePresentation = mediaPresentationForIndex(post.presentation, activeMediaIndex, post.media[activeMediaIndex]);
-  const mediaHeight = width / activePresentation.aspectRatio;
+  const { animatedHeight, onScroll } = usePostCarouselHeight({
+    media: post.media,
+    presentation: post.presentation,
+    width,
+    activeIndex: activeMediaIndex,
+  });
 
   return (
     <View style={styles.card}>
@@ -111,13 +117,16 @@ function PersonalPostFeedCard({
         <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.text} />
       </Pressable>
 
+      <Animated.View style={{ height: animatedHeight, overflow: 'hidden' }}>
       <FlatList
         horizontal
-        style={{ height: mediaHeight, flexGrow: 0 }}
+        style={{ flexGrow: 0 }}
         pagingEnabled
         data={post.media}
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         onMomentumScrollEnd={(event) => {
           const offset = event.nativeEvent.contentOffset.x || 0;
           setActiveMediaIndex(Math.max(0, Math.min(post.media.length - 1, Math.round(offset / width))));
@@ -148,6 +157,7 @@ function PersonalPostFeedCard({
           );
         }}
       />
+      </Animated.View>
 
       <View style={styles.actionRow}>
         <Pressable onPress={onToggleLike} hitSlop={10} style={styles.actionButton}>

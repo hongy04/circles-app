@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Alert,
   FlatList,
   Image,
@@ -23,6 +24,7 @@ import { Avatar } from '../../components/Avatar';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import { FramedPostImage } from '../../components/posts/FramedPostImage';
 import { mediaPresentationForIndex } from '../../utils/postPresentation';
+import { usePostCarouselHeight } from '../../hooks/usePostCarouselHeight';
 import {
   InstagramCommentComposer,
   InstagramCommentRow,
@@ -306,6 +308,18 @@ export function PostDetailScreen({ route, navigation }) {
         ]
       : [];
 
+  const postPresentation = {
+    mediaPresentations: Array.isArray(post?.media_presentations) ? post.media_presentations : [],
+    aspectRatio: post?.display_aspect_ratio == null ? null : Number(post.display_aspect_ratio),
+    cropPoints: Array.isArray(post?.media_crop_points) ? post.media_crop_points : [],
+  };
+  const { animatedHeight: animatedMediaHeight, onScroll: onMediaScroll } = usePostCarouselHeight({
+    media: displayMedia,
+    presentation: postPresentation,
+    width: mediaWidth,
+    activeIndex: activeMediaIndex,
+  });
+
   if (loading) {
     return (
       <SafeAreaView edges={['top']} style={styles.centerRoot}>
@@ -335,14 +349,6 @@ export function PostDetailScreen({ route, navigation }) {
     );
   }
 
-  const postPresentation = {
-    mediaPresentations: Array.isArray(post?.media_presentations) ? post.media_presentations : [],
-    aspectRatio: post?.display_aspect_ratio == null ? null : Number(post.display_aspect_ratio),
-    cropPoints: Array.isArray(post?.media_crop_points) ? post.media_crop_points : [],
-  };
-  const activePostPresentation = mediaPresentationForIndex(postPresentation, activeMediaIndex, displayMedia[activeMediaIndex]);
-  const activeMediaHeight = mediaWidth / activePostPresentation.aspectRatio;
-
   const postHeader = (
     <View style={styles.card}>
       <Pressable
@@ -368,13 +374,15 @@ export function PostDetailScreen({ route, navigation }) {
         </View>
       </Pressable>
 
-      <View style={[styles.mediaSection, { height: activeMediaHeight }]}>
+      <Animated.View style={[styles.mediaSection, { height: animatedMediaHeight }]}>
         <FlatList
           horizontal
           pagingEnabled
           data={displayMedia}
           keyExtractor={(item) => item.id}
           showsHorizontalScrollIndicator={false}
+          onScroll={onMediaScroll}
+          scrollEventThrottle={16}
           onMomentumScrollEnd={(event) => {
             const offset = event.nativeEvent.contentOffset.x || 0;
             setActiveMediaIndex(Math.max(0, Math.min(displayMedia.length - 1, Math.round(offset / mediaWidth))));
@@ -415,7 +423,7 @@ export function PostDetailScreen({ route, navigation }) {
             </Text>
           </View>
         ) : null}
-      </View>
+      </Animated.View>
 
       <View style={styles.engagementRow}>
         <Pressable

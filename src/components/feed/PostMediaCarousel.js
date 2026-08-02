@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   FlatList,
   Image,
   Pressable,
@@ -14,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { COLORS } from '../../theme/colors';
 import { FramedPostImage } from '../posts/FramedPostImage';
 import { mediaPresentationForIndex } from '../../utils/postPresentation';
+import { usePostCarouselHeight } from '../../hooks/usePostCarouselHeight';
 
 function FeedVideo({ item, shouldPlay, muted, fit = 'full' }) {
   return (
@@ -92,6 +94,15 @@ export function PostMediaCarousel({
     }, 310);
   };
 
+  const activeItem = items[activeIndex];
+  const hasMeasuredWidth = containerWidth > 8;
+  const { animatedHeight, onScroll } = usePostCarouselHeight({
+    media: items,
+    presentation,
+    width: containerWidth,
+    activeIndex,
+  });
+
   if (!items.length) {
     return (
       <View style={styles.emptyMedia}>
@@ -105,16 +116,9 @@ export function PostMediaCarousel({
     );
   }
 
-  const activeItem = items[activeIndex];
-  const activePresentation = mediaPresentationForIndex(presentation, activeIndex, activeItem);
-  const hasMeasuredWidth = containerWidth > 8;
-  const activeHeight = hasMeasuredWidth
-    ? containerWidth / activePresentation.aspectRatio
-    : 1;
-
   return (
-    <View
-      style={[styles.root, { height: activeHeight }]}
+    <Animated.View
+      style={[styles.root, { height: animatedHeight }]}
       onLayout={(event) => {
         const width = event.nativeEvent.layout.width;
         if (width > 0 && width !== containerWidth) {
@@ -138,6 +142,8 @@ export function PostMediaCarousel({
           offset: containerWidth * index,
           index,
         })}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         onMomentumScrollEnd={(event) => {
           const offset = event.nativeEvent.contentOffset.x || 0;
           const nextIndex = Math.round(offset / containerWidth);
@@ -228,7 +234,7 @@ export function PostMediaCarousel({
           ))}
         </View>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }
 

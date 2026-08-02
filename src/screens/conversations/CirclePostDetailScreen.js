@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActionSheetIOS,
+  Animated,
   ActivityIndicator,
   Alert,
   FlatList,
@@ -19,6 +20,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { FramedPostImage } from '../../components/posts/FramedPostImage';
 import { mediaPresentationForIndex } from '../../utils/postPresentation';
+import { usePostCarouselHeight } from '../../hooks/usePostCarouselHeight';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
@@ -255,8 +257,12 @@ function CirclePostDetailContent({ route, navigation }) {
     ]);
   };
 
-  const activePresentation = mediaPresentationForIndex(post?.presentation, activeMediaIndex, post?.media?.[activeMediaIndex]);
-  const activeMediaHeight = stageWidth / activePresentation.aspectRatio;
+  const { animatedHeight: animatedMediaHeight, onScroll: onMediaScroll } = usePostCarouselHeight({
+    media: post?.media || [],
+    presentation: post?.presentation,
+    width: stageWidth,
+    activeIndex: activeMediaIndex,
+  });
 
   const header = post ? (
     <View style={styles.postCard}>
@@ -289,13 +295,16 @@ function CirclePostDetailContent({ route, navigation }) {
         ) : null}
       </View>
 
+      <Animated.View style={{ height: animatedMediaHeight, overflow: 'hidden' }}>
       <FlatList
         horizontal
         pagingEnabled
-        style={{ height: activeMediaHeight, flexGrow: 0 }}
+        style={{ flexGrow: 0 }}
         data={post.media}
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
+        onScroll={onMediaScroll}
+        scrollEventThrottle={16}
         onMomentumScrollEnd={(event) => {
           const offset = event.nativeEvent.contentOffset.x || 0;
           setActiveMediaIndex(Math.max(0, Math.min(post.media.length - 1, Math.round(offset / stageWidth))));
@@ -313,6 +322,7 @@ function CirclePostDetailContent({ route, navigation }) {
           />
         )}
       />
+      </Animated.View>
 
       {post.media.length > 1 ? (
         <View style={styles.mediaCountPill}>
