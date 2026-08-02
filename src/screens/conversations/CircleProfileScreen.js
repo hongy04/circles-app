@@ -149,18 +149,6 @@ function PostTile({ post, size, slotSize, onPress, styles }) {
             />
           </View>
         )}
-
-        {firstMedia?.mediaType === 'video' ? (
-          <View style={styles.mediaBadge}>
-            <Ionicons name="play" size={12} color="#fff" />
-          </View>
-        ) : null}
-
-        {post.media?.length > 1 ? (
-          <View style={styles.multiBadge}>
-            <Ionicons name="copy-outline" size={12} color="#fff" />
-          </View>
-        ) : null}
       </Pressable>
     </View>
   );

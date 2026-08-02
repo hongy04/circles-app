@@ -10,10 +10,32 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { useThemeTokens } from '../theme/ThemeProvider';
 
 const TWO_PI = Math.PI * 2;
+const BRAND_MOTION = {
+  welcomeRevealMs: 900,
+  welcomeRevealReducedMs: 260,
+  orbBaseDurationMs: 10500,
+  orbDepthDurationMs: 7200,
+  orbVarianceDurationMs: 3400,
+};
 const MOTION_STEPS = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
+
+const BRAND_WELCOME = {
+  authBackground: ['#F7FCFF', '#FCFEFF', '#F6FFF9'],
+  portalBackground: ['#F3FAFF', '#FCFEFF', '#F4FFF8'],
+  orbPalette: [
+    [83, 205, 235],
+    [83, 159, 255],
+    [112, 220, 157],
+    [255, 152, 139],
+    [167, 139, 250],
+    [255, 207, 89],
+  ],
+  orbGlassTop: 'rgba(255,255,255,0.68)',
+  orbBorder: 'rgba(255,255,255,0.64)',
+  orbHighlight: 'rgba(255,255,255,0.22)',
+};
 
 const PORTAL_ZONES = [
   { x: [-0.15, 0.02], y: [0.08, 0.24] },
@@ -248,7 +270,6 @@ function FloatingOrb({ orb, reducedMotion, visualTokens }) {
 }
 
 export function FloatingCircleField({ variant = 'portal' }) {
-  const theme = useThemeTokens();
   const { width, height } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
   const seedRef = useRef(Math.floor(Math.random() * 1000000000));
@@ -260,10 +281,10 @@ export function FloatingCircleField({ variant = 'portal' }) {
         height,
         variant,
         seedRef.current,
-        theme.welcome.orbPalette,
-        theme.motion
+        BRAND_WELCOME.orbPalette,
+        BRAND_MOTION
       ),
-    [height, theme.motion, theme.welcome.orbPalette, variant, width]
+    [height, variant, width]
   );
 
   useEffect(() => {
@@ -271,21 +292,21 @@ export function FloatingCircleField({ variant = 'portal' }) {
     Animated.timing(reveal, {
       toValue: 1,
       duration: reducedMotion
-        ? theme.motion.welcomeRevealReducedMs
-        : theme.motion.welcomeRevealMs,
+        ? BRAND_MOTION.welcomeRevealReducedMs
+        : BRAND_MOTION.welcomeRevealMs,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [reducedMotion, reveal, theme.motion, variant]);
+  }, [reducedMotion, reveal, variant]);
 
   const backgroundColors = variant === 'auth'
-    ? theme.welcome.authBackground
-    : theme.welcome.portalBackground;
+    ? BRAND_WELCOME.authBackground
+    : BRAND_WELCOME.portalBackground;
 
   const visualTokens = {
-    orbGlassTop: theme.welcome.orbGlassTop,
-    orbBorder: theme.welcome.orbBorder,
-    orbHighlight: theme.welcome.orbHighlight,
+    orbGlassTop: BRAND_WELCOME.orbGlassTop,
+    orbBorder: BRAND_WELCOME.orbBorder,
+    orbHighlight: BRAND_WELCOME.orbHighlight,
     orbCoreAlpha: 0.08,
   };
 

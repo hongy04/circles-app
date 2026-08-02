@@ -1,7 +1,7 @@
 # Circles Theme System Foundation
 
 **Status:** Global and Circle-specific personalization implemented across core and shared surfaces
-**Default theme:** Default (clean neutral interface with the approved aqua launch atmosphere)
+**Default theme:** Default (clean neutral interface; launch portal uses the fixed Circles brand atmosphere)
 **Visual direction:** Modern Frutiger Aero — futuristic but cozy, clean but personal
 
 ## Purpose
@@ -23,14 +23,14 @@ Settings now exposes **Appearance** in all builds. The user can:
 - return to the clean Default theme
 - leave the screen without applying and automatically return to the saved theme
 
-Migration `066` stores the private account preference in `public.users.theme_id`. The app also maintains a per-user AsyncStorage cache. On launch, the provider reads the cache and reconciles it with Supabase before the welcome portal becomes visible. Signing out returns the signed-out experience to the Default theme without deleting the saved per-account cache.
+Migration `066` stores the private account preference in `public.users.theme_id`. The app also maintains a per-user AsyncStorage cache. On cold launch, the Circles-branded portal renders immediately while session, enforcement, onboarding, and theme state hydrate behind it. The portal background, floating glass circles, typography, and motion stay brand-constant; only the fluid surface particle color reflects the saved user theme. Signing out returns the signed-out experience to the Default theme without deleting the saved per-account cache.
 
 ## Files
 
 - `src/theme/themes.js`
   - Semantic colors
-  - Welcome and fluid-surface tokens
-  - Motion durations
+  - Theme-specific fluid-particle color tokens
+  - App-surface motion durations (the launch portal keeps its own fixed brand motion)
   - Spacing, radii, and typography tokens
   - Curated theme registry
   - Theme-resolution and token-merging helpers
@@ -87,7 +87,7 @@ A Circle with no explicit shared theme can omit `themeId` and inherit the user's
 
 ## Migration strategy
 
-1. Welcome and launch atmosphere
+1. Fixed Circles launch atmosphere with theme-specific fluid particles
 2. Global theme persistence and Appearance
 3. Circle profile headers and Circle More
 4. Circle/Our Circle shared theme selection
@@ -139,7 +139,7 @@ Migration `068` adds an explicit `default` theme id for both private account pre
 
 - New accounts default to the neutral Circles interface.
 - Existing saved selections remain unchanged.
-- The Default theme keeps the approved aqua welcome/portal atmosphere while using black, white, gray, and restrained neutral accents throughout the app.
+- The launch/welcome portal keeps one Circles-branded aqua/glass atmosphere for every account. Global themes personalize only the fluid particle color on that portal; the rest of each theme still controls app surfaces after entry.
 - `conversations.theme_id = 'default'` is a real shared neutral theme.
 - `conversations.theme_id = null` still means each viewer inherits their own global theme.
 - Feed, Mutuals, Circles, Me, account settings, comments, stories, unread badges, and the bottom navigation now read global theme tokens.

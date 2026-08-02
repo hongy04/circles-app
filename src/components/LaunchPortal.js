@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
+  ActivityIndicator,
   Animated,
   Easing,
   Platform,
@@ -14,13 +15,28 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useThemeTokens } from '../theme/ThemeProvider';
 import { FluidCircle } from './FluidCircle';
 import { FloatingCircleField } from './FloatingCircleField';
 
-export function LaunchPortal({ onComplete }) {
-  const theme = useThemeTokens();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+const BRAND_MOTION = {
+  tapRippleMs: 840,
+  portalCopyFadeMs: 190,
+  portalExpansionDelayMs: 145,
+  portalSurfaceFadeMs: 275,
+  portalExpansionMs: 690,
+  portalOverlayFadeMs: 205,
+  portalReducedFadeMs: 240,
+};
+
+const BRAND = {
+  ink: '#0A1222',
+  subtext: '#66717E',
+  promptLine: 'rgba(10,18,34,0.28)',
+  portalWash: ['#EAF9FF', '#CDEFFF', '#F4FCFF'],
+  portalShadow: '#8FD7F4',
+};
+
+export function LaunchPortal({ onComplete, ready = true }) {
   const { width, height } = useWindowDimensions();
   const circleSize = Math.min(230, Math.max(176, width * 0.56));
   const pressScale = useRef(new Animated.Value(1)).current;
@@ -66,7 +82,7 @@ export function LaunchPortal({ onComplete }) {
   };
 
   const startSurfaceRipple = (event) => {
-    if (entering) return;
+    if (entering || !ready) return;
 
     const x = event?.nativeEvent?.locationX;
     const y = event?.nativeEvent?.locationY;
@@ -78,7 +94,7 @@ export function LaunchPortal({ onComplete }) {
     rippleProgress.setValue(0);
     Animated.timing(rippleProgress, {
       toValue: 1,
-      duration: theme.motion.tapRippleMs,
+      duration: BRAND_MOTION.tapRippleMs,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
@@ -97,6 +113,7 @@ export function LaunchPortal({ onComplete }) {
   };
 
   const releaseSurface = () => {
+    if (!ready) return;
     Animated.spring(pressScale, {
       toValue: 1,
       damping: 15,
@@ -107,7 +124,7 @@ export function LaunchPortal({ onComplete }) {
   };
 
   const enterCircles = () => {
-    if (entering) return;
+    if (entering || !ready) return;
     setEntering(true);
 
     if (Platform.OS !== 'web') {
@@ -117,7 +134,7 @@ export function LaunchPortal({ onComplete }) {
     if (reducedMotionRef.current) {
       Animated.timing(overlayOpacity, {
         toValue: 0,
-        duration: theme.motion.portalReducedFadeMs,
+        duration: BRAND_MOTION.portalReducedFadeMs,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }).start(finish);
@@ -129,22 +146,22 @@ export function LaunchPortal({ onComplete }) {
     Animated.parallel([
       Animated.timing(contentOpacity, {
         toValue: 0,
-        duration: theme.motion.portalCopyFadeMs,
+        duration: BRAND_MOTION.portalCopyFadeMs,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
       Animated.sequence([
-        Animated.delay(theme.motion.portalExpansionDelayMs),
+        Animated.delay(BRAND_MOTION.portalExpansionDelayMs),
         Animated.parallel([
           Animated.timing(circleOpacity, {
             toValue: 0,
-            duration: theme.motion.portalSurfaceFadeMs,
+            duration: BRAND_MOTION.portalSurfaceFadeMs,
             easing: Easing.in(Easing.quad),
             useNativeDriver: true,
           }),
           Animated.timing(expansionScale, {
             toValue: coverScale,
-            duration: theme.motion.portalExpansionMs,
+            duration: BRAND_MOTION.portalExpansionMs,
             easing: Easing.inOut(Easing.cubic),
             useNativeDriver: true,
           }),
@@ -153,7 +170,7 @@ export function LaunchPortal({ onComplete }) {
     ]).start(() => {
       Animated.timing(overlayOpacity, {
         toValue: 0,
-        duration: theme.motion.portalOverlayFadeMs,
+        duration: BRAND_MOTION.portalOverlayFadeMs,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }).start(finish);
@@ -168,15 +185,18 @@ export function LaunchPortal({ onComplete }) {
       <FloatingCircleField variant="portal" />
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <Animated.View style={[styles.copy, { opacity: contentOpacity }]}> 
-          <Text style={styles.eyebrow}>CIRCLES</Text>
+          <View style={styles.brandRow}>
+            <View style={styles.brandMark} />
+            <Text style={styles.brand}>Circles</Text>
+          </View>
           <Text style={styles.title}>Welcome back.</Text>
         </Animated.View>
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Enter Circles"
-          accessibilityHint="Opens your Circles home"
-          disabled={entering}
+          accessibilityLabel={ready ? 'Enter Circles' : 'Circles is getting ready'}
+          accessibilityHint={ready ? 'Opens your Circles home' : undefined}
+          disabled={entering || !ready}
           onPressIn={startSurfaceRipple}
           onPressOut={releaseSurface}
           onPress={enterCircles}
@@ -198,7 +218,7 @@ export function LaunchPortal({ onComplete }) {
             ]}
           >
             <LinearGradient
-              colors={theme.fluid.portalWash}
+              colors={BRAND.portalWash}
               locations={[0, 0.55, 1]}
               start={{ x: 0.18, y: 0.08 }}
               end={{ x: 0.86, y: 0.95 }}
@@ -217,7 +237,12 @@ export function LaunchPortal({ onComplete }) {
         </Pressable>
 
         <Animated.View style={[styles.promptWrap, { opacity: contentOpacity }]}> 
-          <Text style={styles.prompt}>Tap the circle to enter</Text>
+          <View style={styles.promptRow}>
+            {!ready ? <ActivityIndicator size="small" color={BRAND.subtext} /> : null}
+            <Text style={styles.prompt}>
+              {ready ? 'Tap the circle to enter' : 'Getting your Circles ready…'}
+            </Text>
+          </View>
           <View style={styles.promptLine} />
         </Animated.View>
       </SafeAreaView>
@@ -225,35 +250,46 @@ export function LaunchPortal({ onComplete }) {
   );
 }
 
-function createStyles(theme) {
-  return StyleSheet.create({
+const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
     elevation: 1000,
-    backgroundColor: theme.welcome.portalBackground[0],
+    backgroundColor: '#F3FAFF',
   },
   safeArea: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 28,
-    paddingTop: 44,
+    paddingTop: 36,
     paddingBottom: 46,
     zIndex: 2,
   },
   copy: {
     alignItems: 'center',
   },
-  eyebrow: {
-    color: theme.colors.text,
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  brandMark: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: BRAND.ink,
+  },
+  brand: {
+    color: BRAND.ink,
     fontFamily: 'Manrope_700Bold',
-    fontSize: 12,
-    letterSpacing: 5.2,
+    fontSize: 18,
+    letterSpacing: -0.4,
   },
   title: {
-    marginTop: 17,
-    color: theme.colors.text,
+    marginTop: 16,
+    color: BRAND.ink,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 17,
     letterSpacing: -0.2,
@@ -266,16 +302,23 @@ function createStyles(theme) {
   portalWash: {
     position: 'absolute',
     overflow: 'hidden',
-    shadowColor: theme.fluid.portalShadow,
-    shadowOpacity: 0.16,
+    shadowColor: BRAND.portalShadow,
+    shadowOpacity: 0.15,
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 10 },
   },
   promptWrap: {
     alignItems: 'center',
   },
+  promptRow: {
+    minHeight: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
   prompt: {
-    color: theme.colors.subtext,
+    color: BRAND.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 13,
     letterSpacing: 0.2,
@@ -284,7 +327,6 @@ function createStyles(theme) {
     width: 28,
     height: StyleSheet.hairlineWidth,
     marginTop: 14,
-    backgroundColor: theme.welcome.promptLine,
+    backgroundColor: BRAND.promptLine,
   },
-  });
-}
+});

@@ -242,10 +242,10 @@ const styles = StyleSheet.create({
   root: {
     width: '100%',
     position: 'relative',
-    backgroundColor: '#111',
+    backgroundColor: '#FFFFFF',
   },
   slide: {
-    backgroundColor: '#111',
+    backgroundColor: '#FFFFFF',
     overflow: 'hidden',
   },
   media: {

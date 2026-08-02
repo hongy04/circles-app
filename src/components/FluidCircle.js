@@ -10,8 +10,26 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { useThemeTokens } from '../theme/ThemeProvider';
 
-const WAVE_INPUT_RANGE = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
-const TWO_PI = Math.PI * 2;
+const BRAND_MOTION = {
+  fluidFlowAMs: 6100,
+  fluidFlowBMs: 7900,
+  fluidBreathInMs: 3600,
+  fluidBreathOutMs: 4200,
+};
+
+const BRAND_FLUID = {
+  surfaceGradient: ['#F8FDFF', '#DDF4FF', '#ECFAFF'],
+  surfaceBackground: '#EAF8FF',
+  outline: '#0A1222',
+  boundaryRipple: 'rgba(70,186,233,0.72)',
+  shadow: '#62BFE8',
+  lightGradient: [
+    'rgba(255,255,255,0)',
+    'rgba(255,255,255,0.82)',
+    'rgba(141,220,250,0.08)',
+    'rgba(255,255,255,0)',
+  ],
+};
 
 function useReducedMotion() {
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -27,9 +45,7 @@ function useReducedMotion() {
 
     const subscription = AccessibilityInfo.addEventListener?.(
       'reduceMotionChanged',
-      (enabled) => {
-        setReducedMotion(!!enabled);
-      }
+      (enabled) => setReducedMotion(!!enabled)
     );
 
     return () => {
@@ -50,48 +66,38 @@ function deterministicUnit(row, column, salt) {
   return value - Math.floor(value);
 }
 
-function createParticleGrid(size) {
-  // Dense enough to read as a continuous material, but still light enough for
-  // the native animation driver to move smoothly on a phone.
-  const spacing = Math.max(7.6, size / 24.5);
-  const verticalSpacing = spacing * 0.86;
+function createParticleGroups(size) {
+  // The old surface animated every particle independently. Keeping the field
+  // dense but moving three particle layers as a whole preserves the fluid read
+  // while avoiding hundreds of animated interpolation graphs at app launch.
+  const spacing = Math.max(9.8, size / 19.2);
+  const verticalSpacing = spacing * 0.88;
   const radius = size / 2;
-  const boundaryInset = spacing * 0.4;
-  const particles = [];
+  const boundaryInset = spacing * 0.48;
+  const groups = [[], [], []];
 
   let row = 0;
-  for (let y = spacing * 0.45; y <= size - spacing * 0.45; y += verticalSpacing) {
+  for (let y = spacing * 0.5; y <= size - spacing * 0.5; y += verticalSpacing) {
     const rowOffset = row % 2 === 0 ? 0 : spacing * 0.5;
     let column = 0;
 
-    for (
-      let x = spacing * 0.45 + rowOffset;
-      x <= size - spacing * 0.45;
-      x += spacing
-    ) {
-      const jitterX = (deterministicUnit(row, column, 1.7) - 0.5) * spacing * 0.14;
-      const jitterY = (deterministicUnit(row, column, 4.1) - 0.5) * spacing * 0.14;
+    for (let x = spacing * 0.5 + rowOffset; x <= size - spacing * 0.5; x += spacing) {
+      const jitterX = (deterministicUnit(row, column, 1.7) - 0.5) * spacing * 0.18;
+      const jitterY = (deterministicUnit(row, column, 4.1) - 0.5) * spacing * 0.18;
       const resolvedX = x + jitterX;
       const resolvedY = y + jitterY;
       const centerDistance = Math.hypot(resolvedX - radius, resolvedY - radius);
 
       if (centerDistance <= radius - boundaryInset) {
+        const radialPosition = clamp(centerDistance / radius, 0, 1);
         const depth = 0.72 + deterministicUnit(row, column, 8.3) * 0.28;
-        particles.push({
+        const particleSize = clamp(size * 0.0071, 1.15, 1.65) * (0.86 + depth * 0.18);
+        groups[(row + column) % groups.length].push({
           id: `${row}-${column}`,
-          x: resolvedX,
-          y: resolvedY,
-          centerDistance,
-          depth,
-          phaseA:
-            (resolvedX / size) * TWO_PI +
-            (resolvedY / size) * Math.PI * 1.15 +
-            deterministicUnit(row, column, 2.6) * 0.42,
-          phaseB:
-            (resolvedY / size) * TWO_PI -
-            (resolvedX / size) * Math.PI * 0.82 +
-            1.2 +
-            deterministicUnit(row, column, 6.4) * 0.38,
+          left: resolvedX - particleSize / 2,
+          top: resolvedY - particleSize / 2,
+          size: particleSize,
+          opacity: 0.52 - radialPosition * 0.18 + deterministicUnit(row, column, 3.2) * 0.08,
         });
       }
 
@@ -101,133 +107,7 @@ function createParticleGrid(size) {
     row += 1;
   }
 
-  return particles;
-}
-
-function sineOutputRange(phase, amplitude, center = 0) {
-  return WAVE_INPUT_RANGE.map(
-    (progress) => center + Math.sin(phase + progress * TWO_PI) * amplitude
-  );
-}
-
-function createIdleParticleAnimation({
-  particle,
-  size,
-  flowA,
-  flowB,
-  baseOpacity,
-}) {
-  const depth = particle.depth;
-  const xAmplitude = clamp(size * 0.0034 * depth, 0.45, 0.92);
-  const yAmplitude = clamp(size * 0.0042 * depth, 0.55, 1.08);
-  const scaleAmplitude = 0.065 + depth * 0.035;
-  const opacityAmplitude = 0.055 + depth * 0.035;
-
-  return {
-    opacity: flowB.interpolate({
-      inputRange: WAVE_INPUT_RANGE,
-      outputRange: sineOutputRange(
-        particle.phaseB + 0.6,
-        opacityAmplitude,
-        baseOpacity
-      ),
-      extrapolate: 'clamp',
-    }),
-    transform: [
-      {
-        translateX: flowA.interpolate({
-          inputRange: WAVE_INPUT_RANGE,
-          outputRange: sineOutputRange(particle.phaseA, xAmplitude),
-          extrapolate: 'clamp',
-        }),
-      },
-      {
-        translateY: flowB.interpolate({
-          inputRange: WAVE_INPUT_RANGE,
-          outputRange: sineOutputRange(particle.phaseB, yAmplitude),
-          extrapolate: 'clamp',
-        }),
-      },
-      {
-        scale: flowA.interpolate({
-          inputRange: WAVE_INPUT_RANGE,
-          outputRange: sineOutputRange(
-            particle.phaseA + particle.phaseB * 0.28,
-            scaleAmplitude,
-            1
-          ),
-          extrapolate: 'clamp',
-        }),
-      },
-    ],
-  };
-}
-
-function createTapRippleAnimation({ particle, origin, size, rippleProgress }) {
-  const dx = particle.x - origin.x;
-  const dy = particle.y - origin.y;
-  const distance = Math.hypot(dx, dy);
-  const safeDistance = Math.max(distance, 1);
-  const directionX = dx / safeDistance;
-  const directionY = dy / safeDistance;
-  const maxDistance = Math.max(size * 0.92, 1);
-  const normalizedDistance = clamp(distance / maxDistance, 0, 1);
-  const arrival = 0.09 + normalizedDistance * 0.58;
-  const preWave = Math.max(0, arrival - 0.075);
-  const depression = arrival - 0.022;
-  const crest = arrival + 0.038;
-  const rebound = arrival + 0.105;
-  const settled = Math.min(0.96, arrival + 0.22);
-  const inputRange = [0, preWave, depression, crest, rebound, settled, 1];
-  const distanceDamping = 1 - normalizedDistance * 0.34;
-  const displacement = clamp(size * 0.009, 1.25, 2.05) * distanceDamping;
-
-  return {
-    opacityFactor: rippleProgress.interpolate({
-      inputRange,
-      outputRange: [1, 1, 0.84, 1.22, 1.06, 1, 1],
-      extrapolate: 'clamp',
-    }),
-    transforms: [
-      {
-        translateX: rippleProgress.interpolate({
-          inputRange,
-          outputRange: [
-            0,
-            0,
-            -directionX * displacement * 0.22,
-            directionX * displacement,
-            -directionX * displacement * 0.2,
-            0,
-            0,
-          ],
-          extrapolate: 'clamp',
-        }),
-      },
-      {
-        translateY: rippleProgress.interpolate({
-          inputRange,
-          outputRange: [
-            0,
-            0,
-            -directionY * displacement * 0.22,
-            directionY * displacement,
-            -directionY * displacement * 0.2,
-            0,
-            0,
-          ],
-          extrapolate: 'clamp',
-        }),
-      },
-      {
-        scale: rippleProgress.interpolate({
-          inputRange,
-          outputRange: [1, 1, 0.9, 1.24, 0.97, 1, 1],
-          extrapolate: 'clamp',
-        }),
-      },
-    ],
-  };
+  return groups;
 }
 
 export function FluidCircle({
@@ -242,7 +122,7 @@ export function FluidCircle({
   const flowB = useRef(new Animated.Value(0)).current;
   const breath = useRef(new Animated.Value(0)).current;
   const reducedMotion = useReducedMotion();
-  const particles = useMemo(() => createParticleGrid(size), [size]);
+  const particleGroups = useMemo(() => createParticleGroups(size), [size]);
 
   useEffect(() => {
     if (reducedMotion) {
@@ -253,34 +133,50 @@ export function FluidCircle({
     }
 
     const flowALoop = Animated.loop(
-      Animated.timing(flowA, {
-        toValue: 1,
-        duration: theme.motion.fluidFlowAMs,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
+      Animated.sequence([
+        Animated.timing(flowA, {
+          toValue: 1,
+          duration: BRAND_MOTION.fluidFlowAMs,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(flowA, {
+          toValue: 0,
+          duration: BRAND_MOTION.fluidFlowAMs,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
     );
 
     const flowBLoop = Animated.loop(
-      Animated.timing(flowB, {
-        toValue: 1,
-        duration: theme.motion.fluidFlowBMs,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
+      Animated.sequence([
+        Animated.timing(flowB, {
+          toValue: 1,
+          duration: BRAND_MOTION.fluidFlowBMs,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(flowB, {
+          toValue: 0,
+          duration: BRAND_MOTION.fluidFlowBMs,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
     );
 
     const breathLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(breath, {
           toValue: 1,
-          duration: theme.motion.fluidBreathInMs,
+          duration: BRAND_MOTION.fluidBreathInMs,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(breath, {
           toValue: 0,
-          duration: theme.motion.fluidBreathOutMs,
+          duration: BRAND_MOTION.fluidBreathOutMs,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
@@ -296,83 +192,96 @@ export function FluidCircle({
       flowBLoop.stop();
       breathLoop.stop();
     };
-  }, [breath, flowA, flowB, reducedMotion, theme.motion]);
+  }, [breath, flowA, flowB, reducedMotion]);
 
   const resolvedPressScale = pressScale || 1;
   const resolvedExpansionScale = expansionScale || 1;
   const origin = rippleOrigin || { x: size / 2, y: size / 2 };
   const activeRipple = rippleProgress && !reducedMotion ? rippleProgress : null;
-  const baseParticleSize = clamp(size * 0.00565, 1.02, 1.42);
   const radius = size / 2;
 
-  const animatedSurfaceStyle = useMemo(
-    () => ({
-      transform: [
-        {
-          scaleX: breath.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0.994, 1.008],
-          }),
-        },
-        {
-          scaleY: breath.interpolate({
-            inputRange: [0, 1],
-            outputRange: [1.007, 0.995],
-          }),
-        },
-        {
-          rotate: breath.interpolate({
-            inputRange: [0, 1],
-            outputRange: ['-0.16deg', '0.18deg'],
-          }),
-        },
-      ],
-    }),
-    [breath]
-  );
+  const animatedSurfaceStyle = {
+    transform: [
+      {
+        scaleX: breath.interpolate({ inputRange: [0, 1], outputRange: [0.996, 1.006] }),
+      },
+      {
+        scaleY: breath.interpolate({ inputRange: [0, 1], outputRange: [1.006, 0.996] }),
+      },
+    ],
+  };
 
-  const lightDriftStyle = useMemo(
-    () => ({
-      opacity: breath.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0.22, 0.38],
-      }),
+  const groupStyles = [
+    {
+      opacity: flowB.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }),
       transform: [
-        {
-          translateX: flowA.interpolate({
-            inputRange: [0, 1],
-            outputRange: [-size * 0.08, size * 0.08],
-          }),
-        },
-        {
-          translateY: flowB.interpolate({
-            inputRange: [0, 1],
-            outputRange: [size * 0.035, -size * 0.035],
-          }),
-        },
-        {
-          rotate: flowA.interpolate({
-            inputRange: [0, 1],
-            outputRange: ['-7deg', '7deg'],
-          }),
-        },
+        { translateX: flowA.interpolate({ inputRange: [0, 1], outputRange: [-1.2, 1.4] }) },
+        { translateY: flowB.interpolate({ inputRange: [0, 1], outputRange: [1.1, -1.25] }) },
+        { scale: flowA.interpolate({ inputRange: [0, 1], outputRange: [0.99, 1.012] }) },
       ],
-    }),
-    [breath, flowA, flowB, size]
-  );
+    },
+    {
+      opacity: flowA.interpolate({ inputRange: [0, 1], outputRange: [1, 0.88] }),
+      transform: [
+        { translateX: flowB.interpolate({ inputRange: [0, 1], outputRange: [1.35, -1.05] }) },
+        { translateY: flowA.interpolate({ inputRange: [0, 1], outputRange: [-0.8, 1.15] }) },
+        { scale: flowB.interpolate({ inputRange: [0, 1], outputRange: [1.01, 0.992] }) },
+      ],
+    },
+    {
+      opacity: breath.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }),
+      transform: [
+        { translateX: flowA.interpolate({ inputRange: [0, 1], outputRange: [0.8, -1.0] }) },
+        { translateY: flowB.interpolate({ inputRange: [0, 1], outputRange: [-1.2, 0.75] }) },
+        { scale: breath.interpolate({ inputRange: [0, 1], outputRange: [0.994, 1.008] }) },
+      ],
+    },
+  ];
+
+  const lightDriftStyle = {
+    opacity: breath.interpolate({ inputRange: [0, 1], outputRange: [0.22, 0.36] }),
+    transform: [
+      { translateX: flowA.interpolate({ inputRange: [0, 1], outputRange: [-size * 0.045, size * 0.045] }) },
+      { translateY: flowB.interpolate({ inputRange: [0, 1], outputRange: [size * 0.02, -size * 0.02] }) },
+    ],
+  };
 
   const boundaryRippleStyle = activeRipple
     ? {
         opacity: activeRipple.interpolate({
-          inputRange: [0, 0.62, 0.81, 1],
-          outputRange: [0, 0, 0.46, 0],
+          inputRange: [0, 0.6, 0.8, 1],
+          outputRange: [0, 0, 0.42, 0],
           extrapolate: 'clamp',
         }),
         transform: [
           {
             scale: activeRipple.interpolate({
-              inputRange: [0, 0.62, 0.82, 1],
-              outputRange: [0.99, 0.99, 1.012, 1.025],
+              inputRange: [0, 0.6, 0.84, 1],
+              outputRange: [0.99, 0.99, 1.013, 1.027],
+              extrapolate: 'clamp',
+            }),
+          },
+        ],
+      }
+    : null;
+
+  const tapRippleStyle = activeRipple
+    ? {
+        left: origin.x - size * 0.055,
+        top: origin.y - size * 0.055,
+        width: size * 0.11,
+        height: size * 0.11,
+        borderRadius: size * 0.055,
+        opacity: activeRipple.interpolate({
+          inputRange: [0, 0.12, 0.72, 1],
+          outputRange: [0, 0.48, 0.2, 0],
+          extrapolate: 'clamp',
+        }),
+        transform: [
+          {
+            scale: activeRipple.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.35, 9.4],
               extrapolate: 'clamp',
             }),
           },
@@ -402,16 +311,14 @@ export function FluidCircle({
             width: size,
             height: size,
             borderRadius: radius,
+            backgroundColor: BRAND_FLUID.surfaceBackground,
+            shadowColor: BRAND_FLUID.shadow,
           },
           animatedSurfaceStyle,
-          {
-            backgroundColor: theme.fluid.surfaceBackground,
-            shadowColor: theme.fluid.shadow,
-          },
         ]}
       >
         <LinearGradient
-          colors={theme.fluid.surfaceGradient}
+          colors={BRAND_FLUID.surfaceGradient}
           locations={[0, 0.52, 1]}
           start={{ x: 0.12, y: 0.03 }}
           end={{ x: 0.9, y: 0.98 }}
@@ -433,7 +340,7 @@ export function FluidCircle({
           ]}
         >
           <LinearGradient
-            colors={theme.fluid.lightGradient}
+            colors={BRAND_FLUID.lightGradient}
             locations={[0, 0.38, 0.67, 1]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
@@ -441,51 +348,42 @@ export function FluidCircle({
           />
         </Animated.View>
 
-        <View style={styles.particleField}>
-          {particles.map((particle) => {
-            const radialPosition = clamp(particle.centerDistance / radius, 0, 1);
-            const baseOpacity = 0.5 - radialPosition * 0.18;
-            const particleSize = baseParticleSize * (0.84 + particle.depth * 0.2);
-            const idleStyle = createIdleParticleAnimation({
-              particle,
-              size,
-              flowA,
-              flowB,
-              baseOpacity,
-            });
-            const tapStyle = activeRipple
-              ? createTapRippleAnimation({
-                  particle,
-                  origin,
-                  size,
-                  rippleProgress: activeRipple,
-                })
-              : null;
-
-            return (
-              <Animated.View
+        {particleGroups.map((particles, groupIndex) => (
+          <Animated.View
+            key={`particle-group-${groupIndex}`}
+            pointerEvents="none"
+            style={[styles.particleField, groupStyles[groupIndex]]}
+          >
+            {particles.map((particle) => (
+              <View
                 key={particle.id}
                 style={[
                   styles.particle,
                   {
-                    left: particle.x - particleSize / 2,
-                    top: particle.y - particleSize / 2,
-                    width: particleSize,
-                    height: particleSize,
-                    borderRadius: particleSize / 2,
-                    opacity: tapStyle
-                      ? Animated.multiply(idleStyle.opacity, tapStyle.opacityFactor)
-                      : idleStyle.opacity,
-                    transform: tapStyle
-                      ? [...idleStyle.transform, ...tapStyle.transforms]
-                      : idleStyle.transform,
+                    left: particle.left,
+                    top: particle.top,
+                    width: particle.size,
+                    height: particle.size,
+                    borderRadius: particle.size / 2,
+                    opacity: particle.opacity,
                     backgroundColor: theme.fluid.particle,
                   },
                 ]}
               />
-            );
-          })}
-        </View>
+            ))}
+          </Animated.View>
+        ))}
+
+        {tapRippleStyle ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.tapRipple,
+              { borderColor: theme.fluid.particle },
+              tapRippleStyle,
+            ]}
+          />
+        ) : null}
 
         <View
           style={[
@@ -493,11 +391,10 @@ export function FluidCircle({
             {
               borderRadius: radius,
               borderWidth: Math.max(1.6, size * 0.0074),
-              borderColor: theme.fluid.outline,
+              borderColor: BRAND_FLUID.outline,
             },
           ]}
         />
-
 
         {boundaryRippleStyle ? (
           <Animated.View
@@ -507,7 +404,7 @@ export function FluidCircle({
               {
                 borderRadius: radius,
                 borderWidth: Math.max(1, size * 0.006),
-                borderColor: theme.fluid.boundaryRipple,
+                borderColor: BRAND_FLUID.boundaryRipple,
               },
               boundaryRippleStyle,
             ]}
@@ -525,10 +422,10 @@ const styles = StyleSheet.create({
   },
   surface: {
     overflow: 'hidden',
-    shadowOpacity: 0.2,
-    shadowRadius: 26,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 9,
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 8,
   },
   lightDrift: {
     position: 'absolute',
@@ -539,6 +436,10 @@ const styles = StyleSheet.create({
   },
   particle: {
     position: 'absolute',
+  },
+  tapRipple: {
+    position: 'absolute',
+    borderWidth: 1.1,
   },
   edge: {
     ...StyleSheet.absoluteFillObject,

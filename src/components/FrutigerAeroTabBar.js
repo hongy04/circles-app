@@ -303,8 +303,10 @@ function AeroEmblem({ routeName, theme, focused }) {
           },
         ]}
       >
-        {glyph}
+        <View style={styles.emblemInnerRing} />
+        <View style={styles.glyphDepth}>{glyph}</View>
         <View style={styles.emblemShine} />
+        <View style={styles.emblemCaustic} />
       </LinearGradient>
     </View>
   );
@@ -399,21 +401,21 @@ export function FrutigerAeroTabBar({
   circlesBadgeCount = 0,
 }) {
   const tokens = theme.navigation?.aero || {};
+  const safeBottom = Math.max(8, insets?.bottom || 0);
 
   return (
     <View
+      pointerEvents="box-none"
       style={[
         styles.root,
-        {
-          paddingBottom: Math.max(7, insets?.bottom || 0),
-          backgroundColor: theme.colors.bg,
-        },
+        { height: 80 + safeBottom },
       ]}
     >
       <View
         style={[
           styles.stationShadow,
           {
+            bottom: safeBottom,
             shadowColor: tokens.stationShadow || '#74B6D4',
           },
         ]}
@@ -426,72 +428,91 @@ export function FrutigerAeroTabBar({
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
           style={[
-            styles.station,
+            styles.stationGlass,
             { borderColor: tokens.stationBorder || 'rgba(255,255,255,0.96)' },
           ]}
         >
           <View pointerEvents="none" style={styles.skySheen} />
+          <View pointerEvents="none" style={styles.stationCaustic} />
           <GrassRidge theme={theme} activeIndex={state.index} totalTabs={state.routes.length} />
-          <View style={styles.tabsRow}>
-            {state.routes.map((route, index) => {
-              const descriptor = descriptors[route.key];
-              const options = descriptor.options;
-              const focused = state.index === index;
-              const rawLabel = options.tabBarLabel ?? options.title ?? route.name;
-              const label = typeof rawLabel === 'string' ? rawLabel : route.name;
-              const badgeCount = route.name === 'Mutuals'
-                ? mutualsBadgeCount
-                : route.name === 'Circles'
-                  ? circlesBadgeCount
-                  : 0;
-
-              return (
-                <AeroTabItem
-                  key={route.key}
-                  route={route}
-                  focused={focused}
-                  label={label}
-                  navigation={navigation}
-                  descriptor={descriptor}
-                  theme={theme}
-                  badgeCount={badgeCount}
-                />
-              );
-            })}
-          </View>
         </LinearGradient>
+
+        <View style={styles.tabsRow} pointerEvents="box-none">
+          {state.routes.map((route, index) => {
+            const descriptor = descriptors[route.key];
+            const options = descriptor.options;
+            const focused = state.index === index;
+            const rawLabel = options.tabBarLabel ?? options.title ?? route.name;
+            const label = typeof rawLabel === 'string' ? rawLabel : route.name;
+            const badgeCount = route.name === 'Mutuals'
+              ? mutualsBadgeCount
+              : route.name === 'Circles'
+                ? circlesBadgeCount
+                : 0;
+
+            return (
+              <AeroTabItem
+                key={route.key}
+                route={route}
+                focused={focused}
+                label={label}
+                navigation={navigation}
+                descriptor={descriptor}
+                theme={theme}
+                badgeCount={badgeCount}
+              />
+            );
+          })}
+        </View>
       </View>
     </View>
   );
+
 }
 
 const styles = StyleSheet.create({
   root: {
-    paddingTop: 7,
-    paddingHorizontal: 10,
+    width: '100%',
+    backgroundColor: 'transparent',
+    zIndex: 100,
+    elevation: 100,
+    overflow: 'visible',
   },
   stationShadow: {
-    borderRadius: 30,
-    shadowOpacity: 0.2,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
-  },
-  station: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
     height: 72,
+    borderRadius: 30,
+    overflow: 'visible',
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 10,
+  },
+  stationGlass: {
+    ...StyleSheet.absoluteFillObject,
     borderRadius: 30,
     borderWidth: 1.2,
     overflow: 'hidden',
-    justifyContent: 'flex-end',
   },
   skySheen: {
     position: 'absolute',
-    top: 5,
+    top: 4,
     left: 18,
     right: 18,
-    height: 22,
+    height: 20,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.34)',
+    backgroundColor: 'rgba(255,255,255,0.40)',
+  },
+  stationCaustic: {
+    position: 'absolute',
+    left: '20%',
+    right: '20%',
+    bottom: -10,
+    height: 30,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255,255,255,0.20)',
   },
   grassWrap: {
     position: 'absolute',
@@ -528,12 +549,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.9)',
   },
   tabsRow: {
-    zIndex: 2,
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 4,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    height: 72,
     paddingHorizontal: 5,
     paddingBottom: 5,
+    overflow: 'visible',
   },
   tabItem: {
     flex: 1,
@@ -542,30 +564,60 @@ const styles = StyleSheet.create({
     minHeight: 62,
   },
   emblemOuter: {
-    width: 38,
-    height: 38,
+    width: 42,
+    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 19,
+    borderRadius: 21,
+    overflow: 'visible',
+    shadowColor: '#0A1222',
+    shadowOpacity: 0.10,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
   emblem: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1.2,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1.25,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  emblemInnerRing: {
+    ...StyleSheet.absoluteFillObject,
+    margin: 2,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.72)',
+  },
+  glyphDepth: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0A1222',
+    shadowOpacity: 0.18,
+    shadowRadius: 2.5,
+    shadowOffset: { width: 0, height: 1.5 },
   },
   emblemShine: {
     position: 'absolute',
     top: 4,
     left: 8,
-    width: 15,
-    height: 7,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.62)',
+    width: 17,
+    height: 8,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.72)',
     transform: [{ rotate: '-12deg' }],
+  },
+  emblemCaustic: {
+    position: 'absolute',
+    left: 9,
+    right: 9,
+    bottom: 3,
+    height: 5,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255,255,255,0.24)',
   },
   glyphBox: {
     width: 25,
@@ -662,8 +714,8 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    top: -3,
-    right: -7,
+    top: -5,
+    right: -8,
     minWidth: 17,
     height: 17,
     paddingHorizontal: 4,

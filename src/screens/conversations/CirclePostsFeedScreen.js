@@ -25,6 +25,7 @@ import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
 import {
   addCirclePostComment,
+  deleteOwnCirclePost,
   deleteOwnCirclePostComment,
   listCirclePostComments,
   listCirclePosts,
@@ -51,6 +52,7 @@ function CirclePostFeedCard({
   conversationId,
   onOpenComments,
   onToggleLike,
+  onManage,
   likeBusy,
   styles,
   theme,
@@ -94,9 +96,17 @@ function CirclePostFeedCard({
             </View>
           </View>
         </Pressable>
-        <Pressable onPress={openDetail} hitSlop={10} style={styles.optionsButton}>
-          <Ionicons name="ellipsis-horizontal" size={21} color={theme.colors.text} />
-        </Pressable>
+        {onManage ? (
+          <Pressable
+            onPress={onManage}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Manage post"
+            style={styles.optionsButton}
+          >
+            <Ionicons name="ellipsis-horizontal" size={21} color={theme.colors.text} />
+          </Pressable>
+        ) : null}
       </View>
 
       <Animated.View style={{ height: animatedHeight, overflow: 'hidden' }}>
@@ -206,6 +216,7 @@ function CirclePostsFeedContent({ route, navigation }) {
   const listRef = useRef(null);
   const didInitialScrollRef = useRef(false);
   const [togglingLikes, setTogglingLikes] = useState({});
+  const [deletingPostId, setDeletingPostId] = useState(null);
   const hasLoadedRef = useRef(false);
   const commentsPostIdRef = useRef(null);
 
@@ -314,6 +325,46 @@ function CirclePostsFeedContent({ route, navigation }) {
     }
   };
 
+  const managePost = (post) => {
+    if (!post?.canEdit || deletingPostId) return;
+
+    const edit = () => navigation.navigate('EditCirclePost', {
+      postId: post.id,
+      conversationId,
+    });
+
+    const remove = () => {
+      Alert.alert(
+        'Delete this Circle post?',
+        'The post, comments, likes, and its separately uploaded media will be removed from the Circle.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete Post',
+            style: 'destructive',
+            onPress: async () => {
+              setDeletingPostId(post.id);
+              try {
+                await deleteOwnCirclePost(post.id);
+                setPosts((current) => current.filter((item) => item.id !== post.id));
+              } catch (deleteError) {
+                Alert.alert('Circle post not deleted', deleteError?.message || 'Please try again.');
+              } finally {
+                setDeletingPostId(null);
+              }
+            },
+          },
+        ]
+      );
+    };
+
+    Alert.alert('Circle post options', null, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Edit Caption', onPress: edit },
+      { text: 'Delete Post', style: 'destructive', onPress: remove },
+    ]);
+  };
+
   const openComments = (post) => {
     setCommentsPost(post);
     setComments([]);
@@ -411,6 +462,7 @@ function CirclePostsFeedContent({ route, navigation }) {
               conversationId={conversationId}
               onOpenComments={() => openComments(item)}
               onToggleLike={() => toggleLike(item)}
+              onManage={item.canEdit ? () => managePost(item) : undefined}
               likeBusy={Boolean(togglingLikes[item.id])}
               styles={styles}
               theme={theme}
@@ -492,7 +544,7 @@ function createStyles(theme) {
     privateTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
     time: { fontFamily: 'Manrope_400Regular', color: theme.colors.subtext, fontSize: 11 },
     optionsButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-    mediaPage: { backgroundColor: '#111', alignItems: 'center', justifyContent: 'center' },
+    mediaPage: { backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
     media: { width: '100%', height: '100%' },
     videoPage: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1c1c1e' },
     actionRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13 },

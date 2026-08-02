@@ -32,7 +32,6 @@ import {
 import { Avatar } from './src/components/Avatar';
 import { DevBanner } from './src/components/DevBanner';
 import { LaunchPortal } from './src/components/LaunchPortal';
-import { MonoRingWithRipples } from './src/components/MonoRingWithRipples';
 import { FrutigerAeroTabBar } from './src/components/FrutigerAeroTabBar';
 import { AuthNavigator } from './src/navigation/AuthNavigator';
 import {
@@ -299,12 +298,16 @@ function GateScreen({ navigation }) {
   const { hydrateThemeForUser } = useTheme();
   const [errorMessage, setErrorMessage] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [mainReady, setMainReady] = useState(false);
+  const [precheckedEnforcement, setPrecheckedEnforcement] = useState(null);
 
   useEffect(() => {
     let mounted = true;
 
     const routeSession = async () => {
       setErrorMessage('');
+      setMainReady(false);
+      setPrecheckedEnforcement(null);
 
       try {
         const {
@@ -320,9 +323,9 @@ function GateScreen({ navigation }) {
           return;
         }
 
-        // Restore the account's saved appearance before any themed portal or
-        // main-app surface becomes visible. A preference failure falls back to
-        // the local cache/default and never blocks account access.
+        // Theme hydration can happen behind the fixed Circles launch portal.
+        // Only the fluid particle color inherits the saved theme now, so the
+        // brand surface itself never flashes between appearance presets.
         await hydrateThemeForUser(session.user.id);
         if (!mounted) return;
 
@@ -331,11 +334,6 @@ function GateScreen({ navigation }) {
 
         if (enforcement.active && enforcement.state === 'suspended') {
           navigation.replace('AccountStatus', { gate: true });
-          return;
-        }
-
-        if (enforcement.active && enforcement.state === 'restricted') {
-          navigation.replace('MainTabs', { showLaunchPortal: true });
           return;
         }
 
@@ -352,7 +350,8 @@ function GateScreen({ navigation }) {
           return;
         }
 
-        navigation.replace('MainTabs', { showLaunchPortal: true });
+        setPrecheckedEnforcement(enforcement);
+        setMainReady(true);
       } catch (error) {
         if (mounted) {
           setErrorMessage(
@@ -369,29 +368,39 @@ function GateScreen({ navigation }) {
     };
   }, [attempt, hydrateThemeForUser, navigation]);
 
+  const enterMainTabs = () => {
+    if (!mainReady) return;
+    navigation.replace('MainTabs', {
+      showLaunchPortal: false,
+      initialEnforcement: precheckedEnforcement,
+    });
+  };
+
   return (
-    <SafeAreaView style={styles.launchRoot} edges={['top', 'bottom']}>
-      <MonoRingWithRipples size={76} />
-      <Text style={styles.launchBrand}>Circles</Text>
+    <View style={styles.gatePortalRoot}>
+      <LaunchPortal
+        ready={mainReady && !errorMessage}
+        onComplete={enterMainTabs}
+      />
 
       {errorMessage ? (
-        <View style={styles.launchErrorCard}>
-          <Text style={styles.launchErrorTitle}>Could not open Circles</Text>
-          <Text style={styles.launchErrorText}>{errorMessage}</Text>
-          <Pressable
-            onPress={() => setAttempt((current) => current + 1)}
-            style={({ pressed }) => [
-              styles.launchRetryButton,
-              pressed && { opacity: 0.68 },
-            ]}
-          >
-            <Text style={styles.launchRetryText}>Try again</Text>
-          </Pressable>
+        <View style={styles.launchErrorOverlay} pointerEvents="box-none">
+          <View style={styles.launchErrorCard}>
+            <Text style={styles.launchErrorTitle}>Could not open Circles</Text>
+            <Text style={styles.launchErrorText}>{errorMessage}</Text>
+            <Pressable
+              onPress={() => setAttempt((current) => current + 1)}
+              style={({ pressed }) => [
+                styles.launchRetryButton,
+                pressed && { opacity: 0.68 },
+              ]}
+            >
+              <Text style={styles.launchRetryText}>Try again</Text>
+            </Pressable>
+          </View>
         </View>
-      ) : (
-        <ActivityIndicator style={{ marginTop: 22 }} color={COLORS.text} />
-      )}
-    </SafeAreaView>
+      ) : null}
+    </View>
   );
 }
 
@@ -410,8 +419,9 @@ function AppTabs({ navigation, route }) {
   const [reqCount, setReqCount] = useState(0);
   const [circleBadgeCount, setCircleBadgeCount] = useState(0);
   const [authed, setAuthed] = useState(false);
-  const [enforcement, setEnforcement] = useState(null);
-  const [enforcementLoading, setEnforcementLoading] = useState(true);
+  const initialEnforcement = route?.params?.initialEnforcement || null;
+  const [enforcement, setEnforcement] = useState(initialEnforcement);
+  const [enforcementLoading, setEnforcementLoading] = useState(!initialEnforcement);
   const [showLaunchPortal, setShowLaunchPortal] = useState(
     route?.params?.showLaunchPortal === true
   );
@@ -501,17 +511,7 @@ function AppTabs({ navigation, route }) {
     };
   }, []);
 
-  if (enforcementLoading || (showLaunchPortal && !themeReady)) {
-    return (
-      <SafeAreaView style={[styles.enforcementLoading, { backgroundColor: theme.colors.bg }]} edges={['top', 'bottom']}>
-        <MonoRingWithRipples size={76} />
-        <Text style={styles.launchBrand}>Circles</Text>
-        <ActivityIndicator style={{ marginTop: 22 }} color={theme.colors.text} />
-      </SafeAreaView>
-    );
-  }
-
-  if (enforcement?.active && enforcement.state === 'suspended') {
+  if (!enforcementLoading && enforcement?.active && enforcement.state === 'suspended') {
     return (
       <AccountEnforcementScreen
         navigation={navigation}
@@ -523,6 +523,8 @@ function AppTabs({ navigation, route }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      {!enforcementLoading ? (
+        <>
       {IS_DEVELOPMENT && !authed ? <DevBanner /> : null}
       {enforcement?.active && enforcement.state === 'restricted' ? (
         <Pressable
@@ -587,8 +589,20 @@ function AppTabs({ navigation, route }) {
         <Tabs.Screen name="Feed" component={FeedScreen} />
         <Tabs.Screen name="Me" component={MeScreen} />
       </Tabs.Navigator>
+        </>
+      ) : (
+        <View style={styles.appBootUnderlay} />
+      )}
       {showLaunchPortal ? (
-        <LaunchPortal onComplete={dismissLaunchPortal} />
+        <LaunchPortal
+          ready={!enforcementLoading && themeReady}
+          onComplete={dismissLaunchPortal}
+        />
+      ) : null}
+      {!showLaunchPortal && enforcementLoading ? (
+        <View style={styles.enforcementLoading}>
+          <ActivityIndicator color={theme.colors.text} />
+        </View>
       ) : null}
     </View>
   );
@@ -1409,6 +1423,24 @@ function MutualsScreen({ navigation, route }) {
 
 /* ---------------- Styles ---------------- */
 const styles = StyleSheet.create({
+  gatePortalRoot: {
+    flex: 1,
+    backgroundColor: '#F3FAFF',
+  },
+  launchErrorOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1200,
+    elevation: 1200,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 18,
+    paddingBottom: 48,
+    backgroundColor: 'rgba(10,18,34,0.08)',
+  },
+  appBootUnderlay: {
+    flex: 1,
+    backgroundColor: '#F3FAFF',
+  },
   launchRoot: {
     flex: 1,
     alignItems: 'center',
@@ -1443,6 +1475,7 @@ const styles = StyleSheet.create({
     maxWidth: 390,
     marginTop: 24,
     padding: 16,
+    backgroundColor: 'rgba(255,255,255,0.96)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     borderRadius: 16,
@@ -1483,7 +1516,9 @@ const styles = StyleSheet.create({
 
 
   enforcementLoading: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
+    elevation: 20,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.bg,

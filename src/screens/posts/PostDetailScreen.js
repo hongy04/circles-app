@@ -630,8 +630,8 @@ function createStyles(theme) {
     color: theme.colors.subtext,
     fontSize: 12,
   },
-  mediaSection: { position: 'relative', alignItems: 'center', backgroundColor: '#000' },
-  mediaSlide: { backgroundColor: '#000', overflow: 'hidden' },
+  mediaSection: { position: 'relative', alignItems: 'center', backgroundColor: '#FFFFFF' },
+  mediaSlide: { backgroundColor: '#FFFFFF', overflow: 'hidden' },
   media: { width: '100%', height: '100%' },
   pageBadge: {
     position: 'absolute',

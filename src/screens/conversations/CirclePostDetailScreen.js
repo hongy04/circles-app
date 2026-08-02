@@ -464,7 +464,7 @@ function createStyles(theme) {
     metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
     timestamp: { color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10 },
     optionsButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-    mediaPage: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#111' },
+    mediaPage: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
     media: { width: '100%', height: '100%' },
     videoPage: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1c1c1e' },
     videoHint: { marginTop: 8, color: 'rgba(255,255,255,0.78)', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },

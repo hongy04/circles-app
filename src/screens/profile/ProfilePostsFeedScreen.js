@@ -18,12 +18,17 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { InstagramCommentsSheet } from '../../components/comments/InstagramCommentsSheet';
 import { FramedPostImage } from '../../components/posts/FramedPostImage';
+import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import { mediaPresentationForIndex } from '../../utils/postPresentation';
 import { usePostCarouselHeight } from '../../hooks/usePostCarouselHeight';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
-import { fetchProfilePage } from '../../services/profileService';
-import { fetchPostDetail } from '../../services/postService';
+import {
+  fetchMyMutualPreviewPostId,
+  fetchProfilePage,
+  setMyMutualPreviewPost,
+} from '../../services/profileService';
+import { deleteOwnPost, fetchPostDetail } from '../../services/postService';
 import {
   addPostComment,
   fetchPostComments,
@@ -88,6 +93,7 @@ function PersonalPostFeedCard({
   onOpenDetail,
   onOpenComments,
   onOpenProfile,
+  onManage,
   onToggleLike,
   styles,
   theme,
@@ -102,20 +108,32 @@ function PersonalPostFeedCard({
 
   return (
     <View style={styles.card}>
-      <Pressable onPress={onOpenProfile} style={styles.authorRow}>
-        <Avatar
-          size={40}
-          name={post.authorName}
-          uri={post.authorAvatar}
-        />
-        <View style={styles.authorText}>
-          <Text style={styles.authorName} numberOfLines={1}>
-            {post.authorName}
-          </Text>
-          <Text style={styles.time}>{timeAgo(post.createdAt)}</Text>
-        </View>
-        <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.text} />
-      </Pressable>
+      <View style={styles.authorRow}>
+        <Pressable onPress={onOpenProfile} style={styles.authorIdentity}>
+          <Avatar
+            size={40}
+            name={post.authorName}
+            uri={post.authorAvatar}
+          />
+          <View style={styles.authorText}>
+            <Text style={styles.authorName} numberOfLines={1}>
+              {post.authorName}
+            </Text>
+            <Text style={styles.time}>{timeAgo(post.createdAt)}</Text>
+          </View>
+        </Pressable>
+        {onManage ? (
+          <Pressable
+            onPress={onManage}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Manage post"
+            style={styles.optionsButton}
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.text} />
+          </Pressable>
+        ) : null}
+      </View>
 
       <Animated.View style={{ height: animatedHeight, overflow: 'hidden' }}>
       <FlatList
@@ -217,6 +235,11 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [isSelfProfile, setIsSelfProfile] = useState(false);
+  const [managedPost, setManagedPost] = useState(null);
+  const [deletingPostId, setDeletingPostId] = useState(null);
+  const [mutualPreviewPostId, setMutualPreviewPostId] = useState(null);
+  const [previewSaving, setPreviewSaving] = useState(false);
   const hasLoadedRef = useRef(false);
   const listRef = useRef(null);
   const didInitialScrollRef = useRef(false);
@@ -234,7 +257,18 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
 
     try {
       const page = await fetchProfilePage(userId);
+      const ownProfile = page.profile?.relationship_status === 'self';
       setResolvedName(page.profile?.display_name || profileName || 'Posts');
+      setIsSelfProfile(ownProfile);
+      if (ownProfile) {
+        try {
+          setMutualPreviewPostId(await fetchMyMutualPreviewPostId());
+        } catch {
+          setMutualPreviewPostId(null);
+        }
+      } else {
+        setMutualPreviewPostId(null);
+      }
 
       const results = await Promise.allSettled(
         (page.posts || []).map((post) => fetchPostDetail(post.id))
@@ -338,6 +372,45 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
     }, 180);
   };
 
+  const editManagedPost = () => {
+    if (!managedPost?.id) return;
+    const postId = managedPost.id;
+    setManagedPost(null);
+    navigation.navigate('EditPost', { postId });
+  };
+
+  const removeManagedPost = async () => {
+    if (!managedPost?.id || deletingPostId) return;
+    const postId = managedPost.id;
+    setDeletingPostId(postId);
+    try {
+      await deleteOwnPost(postId);
+      setPosts((current) => current.filter((post) => post.id !== postId));
+      if (mutualPreviewPostId === postId) setMutualPreviewPostId(null);
+      setManagedPost(null);
+    } catch (deleteError) {
+      Alert.alert('Post not deleted', deleteError?.message || 'Please try again.');
+    } finally {
+      setDeletingPostId(null);
+    }
+  };
+
+  const toggleManagedPreview = async () => {
+    if (!managedPost?.id || previewSaving) return;
+    const isPreview = mutualPreviewPostId === managedPost.id;
+    setPreviewSaving(true);
+    try {
+      const nextId = isPreview ? null : managedPost.id;
+      await setMyMutualPreviewPost(nextId);
+      setMutualPreviewPostId(nextId);
+      setManagedPost(null);
+    } catch (previewError) {
+      Alert.alert('Preview not updated', previewError?.message || 'Please try again.');
+    } finally {
+      setPreviewSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView edges={['top']} style={styles.centerState}>
@@ -384,6 +457,7 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
               onOpenDetail={() => navigation.navigate('PostDetail', { postId: item.id })}
               onOpenComments={() => openComments(item)}
               onOpenProfile={() => navigation.navigate('Profile', { userId: item.authorId })}
+              onManage={isSelfProfile ? () => setManagedPost(item) : undefined}
               onToggleLike={() => toggleLike(item.id)}
               styles={styles}
               theme={theme}
@@ -419,6 +493,20 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
         onSubmit={submitComment}
         onOpenProfile={openCommentAuthor}
         emptyBody="Be the first to leave a comment."
+      />
+
+
+      <PostOwnerMenu
+        visible={Boolean(managedPost)}
+        busy={Boolean(deletingPostId)}
+        previewBusy={previewSaving}
+        isMutualPreview={managedPost?.id === mutualPreviewPostId}
+        onClose={() => {
+          if (!deletingPostId && !previewSaving) setManagedPost(null);
+        }}
+        onToggleMutualPreview={toggleManagedPreview}
+        onEdit={editManagedPost}
+        onDelete={removeManagedPost}
       />
     </SafeAreaView>
   );
@@ -468,10 +556,12 @@ function createStyles(theme) {
     alignItems: 'center',
     paddingHorizontal: 12,
   },
+  authorIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  optionsButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   authorText: { flex: 1, marginLeft: 10 },
   authorName: { fontFamily: 'Manrope_700Bold', color: theme.colors.text },
   time: { marginTop: 2, fontFamily: 'Manrope_400Regular', color: theme.colors.subtext, fontSize: 11 },
-  mediaPage: { backgroundColor: '#111', alignItems: 'center', justifyContent: 'center' },
+  mediaPage: { backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: '100%' },
   videoPage: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1c1c1e' },
   actionRow: { height: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },

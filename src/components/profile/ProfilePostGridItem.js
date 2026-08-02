@@ -16,7 +16,6 @@ function rgba(hex, alpha) {
 export function ProfilePostGridItem({
   post,
   onPress,
-  onMenuPress,
   isMutualPreview = false,
   size,
 }) {
@@ -64,37 +63,6 @@ export function ProfilePostGridItem({
           />
         ) : null}
 
-        {isVideo ? (
-          <View style={styles.videoBadge}>
-            <Ionicons name="play" size={12} color="#fff" />
-          </View>
-        ) : null}
-
-        {onMenuPress ? (
-          <Pressable
-            onPress={(event) => {
-              event.stopPropagation?.();
-              onMenuPress();
-            }}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Manage post"
-            style={({ pressed }) => [
-              styles.menuBadge,
-              pressed && styles.pressedBadge,
-            ]}
-          >
-            <Ionicons name="ellipsis-horizontal" size={14} color="#fff" />
-          </Pressable>
-        ) : null}
-
-        {post.mediaCount > 1 ? (
-          <View style={styles.mediaCountBadge}>
-            <Ionicons name="copy-outline" size={11} color="#fff" />
-            <Text style={styles.mediaCountText}>{post.mediaCount}</Text>
-          </View>
-        ) : null}
-
         {isMutualPreview ? (
           <View style={styles.previewBadge}>
             <Ionicons name="eye" size={11} color="#fff" />
@@ -138,9 +106,6 @@ function createStyles(theme) {
       opacity: 0.84,
       transform: [{ scale: 0.975 }],
     },
-    pressedBadge: {
-      opacity: 0.72,
-    },
     mediaFallback: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: '#353535',
@@ -152,45 +117,6 @@ function createStyles(theme) {
       fontFamily: 'Manrope_600SemiBold',
       fontSize: 10,
       marginTop: 2,
-    },
-    videoBadge: {
-      position: 'absolute',
-      top: 8,
-      left: 8,
-      width: 21,
-      height: 21,
-      borderRadius: 11,
-      backgroundColor: 'rgba(0,0,0,0.58)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    menuBadge: {
-      position: 'absolute',
-      top: 8,
-      right: 8,
-      width: 24,
-      height: 24,
-      borderRadius: 12,
-      backgroundColor: 'rgba(0,0,0,0.60)',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    mediaCountBadge: {
-      position: 'absolute',
-      left: 8,
-      bottom: 8,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 3,
-      borderRadius: 10,
-      backgroundColor: 'rgba(0,0,0,0.58)',
-      paddingHorizontal: 6,
-      height: 20,
-    },
-    mediaCountText: {
-      color: '#fff',
-      fontFamily: 'Manrope_700Bold',
-      fontSize: 9.5,
     },
     previewBadge: {
       position: 'absolute',

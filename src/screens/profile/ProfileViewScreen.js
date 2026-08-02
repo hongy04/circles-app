@@ -15,7 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { ProfileHeader } from '../../components/profile/ProfileHeader';
-import { TwoPersonCircleProposalCard } from '../../components/profile/TwoPersonCircleProposalCard';
+import { RomanceProfileSheet } from '../../components/profile/RomanceProfileSheet';
 import { PreConnectionProfileShell } from '../../components/profile/PreConnectionProfileShell';
 import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
@@ -50,6 +50,9 @@ function TopBar({
   navigation,
   onManageSelf,
   onManageProfile,
+  romanceIcon = null,
+  onRomancePress,
+  romanceBusy = false,
   overlay = false,
   topInset = 0,
 }) {
@@ -78,6 +81,31 @@ function TopBar({
       <View style={styles.topBarCenter} />
 
       <View style={[styles.topBarSide, styles.topBarRight]}>
+        {!isSelf && romanceIcon && onRomancePress ? (
+          <Pressable
+            onPress={onRomancePress}
+            disabled={romanceBusy}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={romanceIcon.startsWith('infinite') ? 'Mutual Focus details' : 'Romantic connection details'}
+            style={({ pressed }) => [
+              styles.romanceTopButton,
+              overlay && styles.overlayIconButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            {romanceBusy ? (
+              <ActivityIndicator size="small" color={theme.colors.text} />
+            ) : (
+              <Ionicons
+                name={romanceIcon}
+                size={19}
+                color={romanceIcon.startsWith('infinite') ? '#6758C8' : '#C95A70'}
+              />
+            )}
+          </Pressable>
+        ) : null}
+
         {isSelf ? (
           <Pressable
             onPress={onManageSelf}
@@ -301,6 +329,7 @@ export function ProfileViewScreen({
     focusActive: false,
   });
   const [romanticBusy, setRomanticBusy] = useState(false);
+  const [romanceSheetVisible, setRomanceSheetVisible] = useState(false);
   const [circleProposalBusy, setCircleProposalBusy] = useState(false);
   const [circleProposalStatus, setCircleProposalStatus] = useState({
     available: false,
@@ -388,6 +417,11 @@ export function ProfileViewScreen({
   }, [navigation, load]);
 
   const resolvedIsSelf = isSelf || profile?.relationship_status === 'self';
+  const romanceAffordanceIcon = romanticStatus.focusActive || romanticStatus.focusSelectedByMe
+    ? 'infinite'
+    : romanticStatus.selectedByMe || romanticStatus.mutualRevealed
+      ? 'heart'
+      : 'heart-outline';
 
   const editManagedPost = () => {
     if (!managedPost?.id) return;
@@ -974,6 +1008,9 @@ export function ProfileViewScreen({
             navigation={navigation}
             onManageSelf={handleManageSelf}
             onManageProfile={handleManageProfile}
+            romanceIcon={!resolvedIsSelf && profile.relationship_status === 'connected' && romanticStatus.channelOpen ? romanceAffordanceIcon : null}
+            onRomancePress={() => setRomanceSheetVisible(true)}
+            romanceBusy={romanticBusy || circleProposalBusy}
             overlay
             topInset={insets.top}
           />
@@ -985,41 +1022,13 @@ export function ProfileViewScreen({
             navigation={navigation}
             onManageSelf={handleManageSelf}
             onManageProfile={handleManageProfile}
+            romanceIcon={!resolvedIsSelf && profile.relationship_status === 'connected' && romanticStatus.channelOpen ? romanceAffordanceIcon : null}
+            onRomancePress={() => setRomanceSheetVisible(true)}
+            romanceBusy={romanticBusy || circleProposalBusy}
           />
           {profileHeaderNode}
         </>
       )}
-
-      {!resolvedIsSelf
-      && profile.relationship_status === 'connected'
-      && romanticStatus.channelOpen ? (
-        <RomanticInterestCard
-          profile={profile}
-          status={romanticStatus}
-          busy={romanticBusy}
-          onInterestPress={handleRomanticInterest}
-          onFocusPress={handleRomanticFocus}
-        />
-      ) : null}
-
-      {!resolvedIsSelf
-      && profile.relationship_status === 'connected'
-      && (
-        circleProposalStatus.available
-        || circleProposalStatus.accepted
-        || circleProposalStatus.existingCircle
-      ) ? (
-        <TwoPersonCircleProposalCard
-          profile={profile}
-          status={circleProposalStatus}
-          busy={circleProposalBusy}
-          onPropose={handleCircleProposal}
-          onAccept={handleAcceptCircleProposal}
-          onNotYet={handleNotYetCircleProposal}
-          onEndFocus={handleEndFocusFromProposal}
-          onOpenCircle={openTwoPersonCircle}
-        />
-      ) : null}
 
       {!profile.can_view_posts ? (
         <PreConnectionProfileShell profile={profile} />
@@ -1093,9 +1102,6 @@ export function ProfileViewScreen({
                 profileName: profile?.display_name || 'Posts',
                 initialPostId: item.id,
               })}
-              onMenuPress={
-                resolvedIsSelf ? () => setManagedPost(item) : undefined
-              }
             />
           )}
           ListEmptyComponent={profile?.can_view_posts ? (
@@ -1116,6 +1122,22 @@ export function ProfileViewScreen({
           contentContainerStyle={styles.listContent}
           columnWrapperStyle={styles.gridRow}
           showsVerticalScrollIndicator={false}
+        />
+
+        <RomanceProfileSheet
+          visible={romanceSheetVisible}
+          profile={profile}
+          romanticStatus={romanticStatus}
+          proposalStatus={circleProposalStatus}
+          busy={romanticBusy || circleProposalBusy}
+          onClose={() => setRomanceSheetVisible(false)}
+          onInterestPress={handleRomanticInterest}
+          onFocusPress={handleRomanticFocus}
+          onPropose={handleCircleProposal}
+          onAccept={handleAcceptCircleProposal}
+          onNotYet={handleNotYetCircleProposal}
+          onEndFocus={handleEndFocusFromProposal}
+          onOpenCircle={openTwoPersonCircle}
         />
 
         <PostOwnerMenu
@@ -1223,7 +1245,20 @@ function createStyles(theme) {
     alignItems: 'flex-start',
   },
   topBarRight: {
-    alignItems: 'flex-end',
+    width: 'auto',
+    minWidth: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 2,
+  },
+  romanceTopButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.46)',
   },
   topBarCenter: {
     flex: 1,

@@ -9,7 +9,7 @@ export function FramedPostImage({
   fit = 'crop',
   sourceWidth,
   sourceHeight,
-  backgroundColor = '#111',
+  backgroundColor = '#FFFFFF',
   style,
 }) {
   const [frameWidth, setFrameWidth] = useState(0);
