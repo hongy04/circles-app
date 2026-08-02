@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -85,7 +85,7 @@ function PersonalPostFeedCard({
   theme,
 }) {
   return (
-    <View style={[styles.card, { height }]}> 
+    <View style={[styles.card, { height }]}>
       <Pressable onPress={onOpenProfile} style={styles.authorRow}>
         <Avatar
           size={40}
@@ -183,6 +183,7 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const hasLoadedRef = useRef(false);
 
   const [commentsVisible, setCommentsVisible] = useState(false);
   const [commentsPost, setCommentsPost] = useState(null);
@@ -190,9 +191,9 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState('');
 
-  const load = useCallback(async ({ refresh = false } = {}) => {
+  const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
     if (refresh) setRefreshing(true);
-    else setLoading(true);
+    else if (!quiet) setLoading(true);
     setError('');
 
     try {
@@ -217,7 +218,9 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load({ quiet: hasLoadedRef.current }).finally(() => {
+        hasLoadedRef.current = true;
+      });
     }, [load])
   );
 
@@ -324,7 +327,6 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
         </View>
       ) : (
         <FlatList
-          key={`${initialIndex}-${posts.length}`}
           data={posts}
           keyExtractor={(item) => item.id}
           initialScrollIndex={posts.length ? initialIndex : undefined}

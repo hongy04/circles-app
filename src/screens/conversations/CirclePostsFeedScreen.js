@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -178,6 +178,12 @@ function CirclePostsFeedContent({ route, navigation }) {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState('');
   const [togglingLikes, setTogglingLikes] = useState({});
+  const hasLoadedRef = useRef(false);
+  const commentsPostIdRef = useRef(null);
+
+  useEffect(() => {
+    commentsPostIdRef.current = commentsPost?.id || null;
+  }, [commentsPost?.id]);
 
   const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -222,15 +228,18 @@ function CirclePostsFeedContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load({ quiet: hasLoadedRef.current }).finally(() => {
+        hasLoadedRef.current = true;
+      });
       return subscribeToCirclePostChanges({
         conversationId,
         onChange: () => {
           load({ quiet: true });
-          if (commentsPost?.id) loadComments(commentsPost.id, { quiet: true });
+          const activeCommentPostId = commentsPostIdRef.current;
+          if (activeCommentPostId) loadComments(activeCommentPostId, { quiet: true });
         },
       });
-    }, [commentsPost?.id, conversationId, load, loadComments])
+    }, [conversationId, load, loadComments])
   );
 
   const initialIndex = useMemo(() => {
@@ -352,7 +361,6 @@ function CirclePostsFeedContent({ route, navigation }) {
         </View>
       ) : (
         <FlatList
-          key={`${initialIndex}-${posts.length}`}
           data={posts}
           keyExtractor={(item) => item.id}
           initialScrollIndex={posts.length ? initialIndex : undefined}

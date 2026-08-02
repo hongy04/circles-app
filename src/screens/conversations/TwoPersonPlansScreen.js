@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -104,6 +104,7 @@ function TwoPersonPlansContent({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const hasLoadedRef = useRef(false);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!conversationId) return;
@@ -121,7 +122,9 @@ function TwoPersonPlansContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load({ quiet: hasLoadedRef.current }).finally(() => {
+        hasLoadedRef.current = true;
+      });
       return subscribeToTwoPersonPlanChanges({
         conversationId,
         onChange: () => load({ quiet: true }),

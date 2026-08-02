@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -126,6 +126,7 @@ function CircleTimelineFeedContent({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const hasLoadedRef = useRef(false);
 
   const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -144,7 +145,9 @@ function CircleTimelineFeedContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load({ quiet: hasLoadedRef.current }).finally(() => {
+        hasLoadedRef.current = true;
+      });
       return subscribeToConversationChanges({
         conversationId,
         onMessage: () => load({ quiet: true }),
@@ -185,7 +188,6 @@ function CircleTimelineFeedContent({ route, navigation }) {
         </View>
       ) : (
         <FlatList
-          key={`${initialIndex}-${groups.length}`}
           data={groups}
           keyExtractor={(item) => item.id}
           initialScrollIndex={groups.length ? initialIndex : undefined}

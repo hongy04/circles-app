@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -183,6 +183,7 @@ function CircleEventsContent({ route, navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [pollError, setPollError] = useState('');
+  const hasLoadedRef = useRef(false);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!conversationId) return;
@@ -220,7 +221,9 @@ function CircleEventsContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load({ quiet: hasLoadedRef.current }).finally(() => {
+        hasLoadedRef.current = true;
+      });
     }, [load])
   );
 
@@ -283,7 +286,7 @@ function CircleEventsContent({ route, navigation }) {
               <Text style={styles.pollButtonText}>Poll Dates</Text>
             </Pressable>
           ) : null}
-  
+
           <Pressable
             onPress={() => navigation.navigate('CreateEvent', {
               conversationId,
