@@ -216,48 +216,178 @@ function GrassRidge({ theme, activeIndex = 0, totalTabs = 4 }) {
   );
 }
 
-function FeedGlyph({ ink, accent, accent2 }) {
+function GlassOrb({ size = 10, accent, accent2, style }) {
   return (
-    <View style={styles.glyphBox}>
-      <View style={[styles.feedCardBack, { backgroundColor: rgba(accent2, 0.55) }]} />
-      <View style={[styles.feedCardMid, { backgroundColor: rgba(accent, 0.7) }]} />
-      <View style={[styles.feedCardFront, { borderColor: rgba(ink, 0.72) }]}>
-        <View style={[styles.feedDot, { backgroundColor: accent }]} />
-        <View style={[styles.feedLine, { backgroundColor: rgba(ink, 0.72) }]} />
-        <View style={[styles.feedLineShort, { backgroundColor: rgba(ink, 0.44) }]} />
-      </View>
+    <LinearGradient
+      colors={[
+        'rgba(255,255,255,0.98)',
+        rgba(accent, 0.82),
+        rgba(accent2 || accent, 0.64),
+      ]}
+      locations={[0, 0.42, 1]}
+      start={{ x: 0.18, y: 0.08 }}
+      end={{ x: 0.82, y: 0.94 }}
+      style={[
+        styles.glassOrb,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderColor: 'rgba(255,255,255,0.88)',
+        },
+        style,
+      ]}
+    >
+      <View
+        style={[
+          styles.glassOrbHighlight,
+          {
+            width: size * 0.48,
+            height: size * 0.2,
+            borderRadius: size,
+            top: size * 0.12,
+            left: size * 0.18,
+          },
+        ]}
+      />
+      <View
+        style={[
+          styles.glassOrbDepth,
+          {
+            width: size * 0.55,
+            height: size * 0.2,
+            borderRadius: size,
+            bottom: size * 0.08,
+            right: size * 0.05,
+          },
+        ]}
+      />
+    </LinearGradient>
+  );
+}
+
+function GlassPawn({ accent, accent2, large = false, style }) {
+  const headSize = large ? 11.5 : 9.5;
+  const bodyWidth = large ? 18 : 14;
+  const bodyHeight = large ? 14 : 12;
+
+  return (
+    <View style={[styles.pawnWrap, large && styles.pawnWrapLarge, style]}>
+      <GlassOrb
+        size={headSize}
+        accent={accent}
+        accent2={accent2}
+        style={styles.pawnHead}
+      />
+      <LinearGradient
+        colors={[
+          'rgba(255,255,255,0.88)',
+          rgba(accent, 0.78),
+          rgba(accent2 || accent, 0.68),
+        ]}
+        locations={[0, 0.4, 1]}
+        start={{ x: 0.12, y: 0.06 }}
+        end={{ x: 0.88, y: 0.95 }}
+        style={[
+          styles.pawnBody,
+          {
+            width: bodyWidth,
+            height: bodyHeight,
+            borderTopLeftRadius: bodyWidth * 0.42,
+            borderTopRightRadius: bodyWidth * 0.42,
+            borderBottomLeftRadius: bodyWidth * 0.23,
+            borderBottomRightRadius: bodyWidth * 0.23,
+          },
+        ]}
+      >
+        <View style={styles.pawnBodyHighlight} />
+        <View style={styles.pawnBodyCaustic} />
+      </LinearGradient>
     </View>
   );
 }
 
-function MutualsGlyph({ ink, accent, accent2 }) {
-  return (
-    <View style={styles.glyphBox}>
-      <View style={[styles.mutualOrb, styles.mutualOrbLeft, { backgroundColor: rgba(accent, 0.72), borderColor: rgba(ink, 0.55) }]} />
-      <View style={[styles.mutualOrb, styles.mutualOrbRight, { backgroundColor: rgba(accent2, 0.7), borderColor: rgba(ink, 0.55) }]} />
-      <View style={[styles.mutualBridge, { backgroundColor: 'rgba(255,255,255,0.78)', borderColor: rgba(ink, 0.5) }]} />
-    </View>
-  );
-}
-
-function CirclesGlyph({ ink, accent, accent2 }) {
-  return (
-    <View style={styles.glyphBox}>
-      <View style={[styles.circleGlyph, styles.circleGlyphTop, { borderColor: ink, backgroundColor: rgba(accent2, 0.38) }]} />
-      <View style={[styles.circleGlyph, styles.circleGlyphLeft, { borderColor: ink, backgroundColor: rgba(accent, 0.38) }]} />
-      <View style={[styles.circleGlyph, styles.circleGlyphRight, { borderColor: ink, backgroundColor: 'rgba(255,255,255,0.72)' }]} />
-    </View>
-  );
-}
-
-function MeGlyph({ ink, accent }) {
+function FeedGlyph({ accent, accent2 }) {
   return (
     <View style={styles.glyphBox}>
       <LinearGradient
-        colors={['rgba(255,255,255,0.96)', rgba(accent, 0.36)]}
-        style={[styles.meHead, { borderColor: rgba(ink, 0.72) }]}
+        colors={[rgba(accent2, 0.54), 'rgba(255,255,255,0.82)']}
+        style={[styles.glassFeedPane, styles.glassFeedPaneBack]}
       />
-      <View style={[styles.meBody, { borderColor: rgba(ink, 0.72), backgroundColor: rgba(accent, 0.34) }]} />
+      <LinearGradient
+        colors={[rgba(accent, 0.66), 'rgba(255,255,255,0.84)']}
+        style={[styles.glassFeedPane, styles.glassFeedPaneMid]}
+      />
+      <LinearGradient
+        colors={['rgba(255,255,255,0.96)', rgba(accent, 0.42), rgba(accent2, 0.46)]}
+        locations={[0, 0.6, 1]}
+        start={{ x: 0.15, y: 0.05 }}
+        end={{ x: 0.85, y: 1 }}
+        style={[styles.glassFeedPane, styles.glassFeedPaneFront]}
+      >
+        <View style={styles.feedGlassShine} />
+        <View style={[styles.feedGlassDot, { backgroundColor: rgba(accent, 0.86) }]} />
+        <View style={styles.feedGlassLine} />
+        <View style={[styles.feedGlassLine, styles.feedGlassLineShort]} />
+      </LinearGradient>
+    </View>
+  );
+}
+
+function MutualsGlyph({ accent, accent2 }) {
+  return (
+    <View style={styles.glyphBox}>
+      <View style={styles.mutualGlow} />
+      <GlassPawn
+        accent={accent}
+        accent2={accent2}
+        style={styles.mutualPawnLeft}
+      />
+      <GlassPawn
+        accent={accent2}
+        accent2={accent}
+        style={styles.mutualPawnRight}
+      />
+    </View>
+  );
+}
+
+function CirclesGlyph({ accent, accent2 }) {
+  return (
+    <View style={styles.glyphBox}>
+      <View style={styles.circleGlyphGlow} />
+      <GlassOrb
+        size={11.5}
+        accent={accent2}
+        accent2={accent}
+        style={styles.circleOrbTop}
+      />
+      <GlassOrb
+        size={12}
+        accent={accent}
+        accent2={accent2}
+        style={styles.circleOrbLeft}
+      />
+      <GlassOrb
+        size={12}
+        accent={accent2}
+        accent2="#8EDCFF"
+        style={styles.circleOrbRight}
+      />
+    </View>
+  );
+}
+
+function MeGlyph({ accent, accent2 }) {
+  return (
+    <View style={styles.glyphBox}>
+      <View style={styles.meGlow} />
+      <GlassPawn
+        large
+        accent={accent}
+        accent2={accent2}
+        style={styles.mePawn}
+      />
     </View>
   );
 }
@@ -267,13 +397,11 @@ function AeroEmblem({ routeName, theme, focused }) {
   const palette = theme.circle?.decalPalette || [];
   const accent = palette[0] || theme.circle.accent;
   const accent2 = palette[1] || '#70DC9D';
-  const ink = tokens.iconInk || theme.welcome.brandInk || theme.colors.text;
-
   const glyph =
-    routeName === 'Circles' ? <CirclesGlyph ink={ink} accent={accent} accent2={accent2} /> :
-    routeName === 'Mutuals' ? <MutualsGlyph ink={ink} accent={accent} accent2={accent2} /> :
-    routeName === 'Feed' ? <FeedGlyph ink={ink} accent={accent} accent2={accent2} /> :
-    <MeGlyph ink={ink} accent={accent} />;
+    routeName === 'Circles' ? <CirclesGlyph accent={accent} accent2={accent2} /> :
+    routeName === 'Mutuals' ? <MutualsGlyph accent={accent} accent2={accent2} /> :
+    routeName === 'Feed' ? <FeedGlyph accent={accent} accent2={accent2} /> :
+    <MeGlyph accent={accent} accent2={accent2} />;
 
   return (
     <View
@@ -290,8 +418,8 @@ function AeroEmblem({ routeName, theme, focused }) {
     >
       <LinearGradient
         colors={focused
-          ? [tokens.orbSelectedTop || '#FFFFFF', tokens.orbSelectedBottom || '#DDF4FF']
-          : [tokens.orbTop || 'rgba(255,255,255,0.92)', tokens.orbBottom || 'rgba(232,248,255,0.88)']}
+          ? ['rgba(255,255,255,0.96)', rgba(accent, 0.28), rgba(accent2, 0.24)]
+          : ['rgba(255,255,255,0.84)', rgba(accent, 0.16), 'rgba(226,247,255,0.72)']}
         start={{ x: 0.2, y: 0 }}
         end={{ x: 0.8, y: 1 }}
         style={[
@@ -306,6 +434,7 @@ function AeroEmblem({ routeName, theme, focused }) {
         <View style={styles.emblemInnerRing} />
         <View style={styles.glyphDepth}>{glyph}</View>
         <View style={styles.emblemShine} />
+        <View style={styles.emblemSideShine} />
         <View style={styles.emblemCaustic} />
       </LinearGradient>
     </View>
@@ -408,28 +537,29 @@ export function FrutigerAeroTabBar({
       pointerEvents="box-none"
       style={[
         styles.root,
-        { height: 80 + safeBottom },
+        { height: 88 + safeBottom },
       ]}
     >
       <View
         style={[
           styles.stationShadow,
           {
-            bottom: safeBottom,
+            bottom: safeBottom + 6,
             shadowColor: tokens.stationShadow || '#74B6D4',
           },
         ]}
       >
         <LinearGradient
           colors={[
-            tokens.stationTop || 'rgba(255,255,255,0.97)',
-            tokens.stationBottom || 'rgba(224,247,255,0.96)',
+            'rgba(255,255,255,0.80)',
+            rgba(theme.circle?.accent || '#4DB9E5', 0.14),
+            'rgba(224,247,255,0.72)',
           ]}
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
           style={[
             styles.stationGlass,
-            { borderColor: tokens.stationBorder || 'rgba(255,255,255,0.96)' },
+            { borderColor: 'rgba(255,255,255,0.68)' },
           ]}
         >
           <View pointerEvents="none" style={styles.skySheen} />
@@ -472,7 +602,10 @@ export function FrutigerAeroTabBar({
 
 const styles = StyleSheet.create({
   root: {
-    width: '100%',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'transparent',
     zIndex: 100,
     elevation: 100,
@@ -480,10 +613,10 @@ const styles = StyleSheet.create({
   },
   stationShadow: {
     position: 'absolute',
-    left: 10,
-    right: 10,
-    height: 72,
-    borderRadius: 30,
+    left: 14,
+    right: 14,
+    height: 70,
+    borderRadius: 31,
     overflow: 'visible',
     shadowOpacity: 0.22,
     shadowRadius: 16,
@@ -492,8 +625,8 @@ const styles = StyleSheet.create({
   },
   stationGlass: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 30,
-    borderWidth: 1.2,
+    borderRadius: 31,
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
   skySheen: {
@@ -610,6 +743,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.72)',
     transform: [{ rotate: '-12deg' }],
   },
+  emblemSideShine: {
+    position: 'absolute',
+    top: 11,
+    right: 3,
+    width: 5,
+    height: 15,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    transform: [{ rotate: '8deg' }],
+  },
   emblemCaustic: {
     position: 'absolute',
     left: 9,
@@ -620,88 +763,181 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.24)',
   },
   glyphBox: {
-    width: 25,
-    height: 25,
+    width: 27,
+    height: 27,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
   },
-  feedCardBack: {
+  glassOrb: {
+    position: 'absolute',
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    shadowColor: '#0A1222',
+    shadowOpacity: 0.14,
+    shadowRadius: 2.2,
+    shadowOffset: { width: 0, height: 1.2 },
+    elevation: 2,
+  },
+  glassOrbHighlight: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.82)',
+    transform: [{ rotate: '-12deg' }],
+  },
+  glassOrbDepth: {
+    position: 'absolute',
+    backgroundColor: 'rgba(0,70,110,0.12)',
+    transform: [{ rotate: '-7deg' }],
+  },
+  pawnWrap: {
     position: 'absolute',
     width: 16,
+    height: 23,
+    alignItems: 'center',
+  },
+  pawnWrapLarge: {
+    width: 20,
+    height: 26,
+  },
+  pawnHead: {
+    position: 'relative',
+    top: 0,
+    zIndex: 3,
+  },
+  pawnBody: {
+    position: 'absolute',
+    bottom: 0,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.82)',
+    overflow: 'hidden',
+    shadowColor: '#0A4262',
+    shadowOpacity: 0.14,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  pawnBodyHighlight: {
+    position: 'absolute',
+    top: 2,
+    left: 3,
+    width: '45%',
+    height: '58%',
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.38)',
+    transform: [{ rotate: '10deg' }],
+  },
+  pawnBodyCaustic: {
+    position: 'absolute',
+    left: 3,
+    right: 3,
+    bottom: 1,
+    height: 3,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.24)',
+  },
+  mutualGlow: {
+    position: 'absolute',
+    bottom: 1,
+    width: 25,
+    height: 7,
+    borderRadius: 8,
+    backgroundColor: 'rgba(80,200,210,0.16)',
+  },
+  mutualPawnLeft: {
+    left: 1.5,
+    bottom: 1,
+    transform: [{ rotate: '-4deg' }],
+  },
+  mutualPawnRight: {
+    right: 1.5,
+    bottom: 1,
+    transform: [{ rotate: '4deg' }],
+  },
+  circleGlyphGlow: {
+    position: 'absolute',
+    width: 24,
     height: 13,
-    borderRadius: 4,
-    transform: [{ translateX: 3 }, { translateY: -4 }, { rotate: '8deg' }],
+    bottom: 2,
+    borderRadius: 14,
+    backgroundColor: 'rgba(83,205,235,0.12)',
   },
-  feedCardMid: {
+  circleOrbTop: {
+    top: 0,
+    left: 7.5,
+  },
+  circleOrbLeft: {
+    left: 1.5,
+    bottom: 1,
+  },
+  circleOrbRight: {
+    right: 1.5,
+    bottom: 1,
+  },
+  glassFeedPane: {
     position: 'absolute',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.86)',
+    overflow: 'hidden',
+    shadowColor: '#0A5470',
+    shadowOpacity: 0.13,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  glassFeedPaneBack: {
     width: 17,
-    height: 14,
-    borderRadius: 4,
-    transform: [{ translateX: -2 }, { translateY: -1 }, { rotate: '-5deg' }],
-  },
-  feedCardFront: {
-    position: 'absolute',
-    width: 18,
     height: 15,
-    borderRadius: 4.5,
-    borderWidth: 1.1,
-    backgroundColor: 'rgba(255,255,255,0.86)',
-    paddingHorizontal: 3,
-    paddingTop: 3,
+    borderRadius: 5.5,
+    transform: [{ translateX: 3.5 }, { translateY: -4 }, { rotate: '8deg' }],
   },
-  feedDot: {
+  glassFeedPaneMid: {
+    width: 18,
+    height: 16,
+    borderRadius: 5.5,
+    transform: [{ translateX: -2.5 }, { translateY: -1 }, { rotate: '-6deg' }],
+  },
+  glassFeedPaneFront: {
+    width: 19,
+    height: 17,
+    borderRadius: 6,
+    paddingLeft: 4,
+    paddingTop: 5,
+  },
+  feedGlassShine: {
+    position: 'absolute',
+    top: 1.5,
+    left: 3,
+    width: 10,
+    height: 3.5,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255,255,255,0.68)',
+    transform: [{ rotate: '-7deg' }],
+  },
+  feedGlassDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
     marginBottom: 2,
   },
-  feedLine: { width: 10, height: 1.4, borderRadius: 1, marginBottom: 1.5 },
-  feedLineShort: { width: 7, height: 1.4, borderRadius: 1 },
-  mutualOrb: {
-    position: 'absolute',
-    width: 13,
-    height: 13,
-    borderRadius: 7,
-    borderWidth: 1,
-  },
-  mutualOrbLeft: { transform: [{ translateX: -5 }, { translateY: -2 }] },
-  mutualOrbRight: { transform: [{ translateX: 5 }, { translateY: -2 }] },
-  mutualBridge: {
-    position: 'absolute',
+  feedGlassLine: {
     width: 10,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 1,
-    transform: [{ translateY: 5 }],
+    height: 1.6,
+    borderRadius: 2,
+    marginBottom: 1.5,
+    backgroundColor: 'rgba(10,18,34,0.52)',
   },
-  circleGlyph: {
-    position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 1.2,
+  feedGlassLineShort: {
+    width: 7,
+    backgroundColor: 'rgba(10,18,34,0.32)',
   },
-  circleGlyphTop: { transform: [{ translateY: -5 }] },
-  circleGlyphLeft: { transform: [{ translateX: -6 }, { translateY: 4 }] },
-  circleGlyphRight: { transform: [{ translateX: 6 }, { translateY: 4 }] },
-  meHead: {
+  meGlow: {
     position: 'absolute',
-    top: 2,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 1.1,
+    bottom: 1,
+    width: 21,
+    height: 7,
+    borderRadius: 8,
+    backgroundColor: 'rgba(83,205,235,0.14)',
   },
-  meBody: {
-    position: 'absolute',
-    bottom: 2,
-    width: 18,
-    height: 11,
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
-    borderBottomLeftRadius: 6,
-    borderBottomRightRadius: 6,
-    borderWidth: 1.1,
+  mePawn: {
+    bottom: 0,
   },
   tabLabel: {
     marginTop: 1,

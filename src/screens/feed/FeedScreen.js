@@ -31,6 +31,10 @@ import {
   fetchActiveStories,
 } from '../../services/storyService';
 import { deleteOwnPost } from '../../services/postService';
+import {
+  fetchMyMutualPreviewPostId,
+  setMyMutualPreviewPost,
+} from '../../services/profileService';
 import { PostCard } from '../../components/feed/PostCard';
 import { InstagramCommentsSheet } from '../../components/comments/InstagramCommentsSheet';
 import { StoriesRail } from '../../components/stories/StoriesRail';
@@ -72,6 +76,8 @@ export function FeedScreen({ navigation }) {
   const [commentsError, setCommentsError] = useState(null);
   const [managedPost, setManagedPost] = useState(null);
   const [deletingPostId, setDeletingPostId] = useState(null);
+  const [mutualPreviewPostId, setMutualPreviewPostId] = useState(null);
+  const [previewSaving, setPreviewSaving] = useState(false);
 
   const [storyOpen, setStoryOpen] = useState(null);
   const [storyIndex, setStoryIndex] = useState(0);
@@ -132,6 +138,17 @@ export function FeedScreen({ navigation }) {
     }
   }, []);
 
+  const refreshMutualPreview = useCallback(async () => {
+    try {
+      const previewPostId = await fetchMyMutualPreviewPostId();
+      if (mountedRef.current) setMutualPreviewPostId(previewPostId || null);
+    } catch (error) {
+      // Preview state should never block the main feed. The owner menu can
+      // still retry the mutation if this lightweight read happens to fail.
+      console.warn('Mutuals preview state could not be refreshed.', error);
+    }
+  }, []);
+
   const refreshStories = useCallback(async () => {
     setStoryError(null);
 
@@ -175,6 +192,7 @@ export function FeedScreen({ navigation }) {
         await Promise.all([
           refreshFeed('initial'),
           refreshStories(),
+          refreshMutualPreview(),
         ]);
 
         if (!mountedRef.current) return;
@@ -221,7 +239,7 @@ export function FeedScreen({ navigation }) {
       if (feedChannel) supabase.removeChannel(feedChannel);
       if (storyChannel) supabase.removeChannel(storyChannel);
     };
-  }, [refreshFeed, refreshStories]);
+  }, [refreshFeed, refreshMutualPreview, refreshStories]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
@@ -229,10 +247,11 @@ export function FeedScreen({ navigation }) {
 
       refreshFeed('silent');
       refreshStories();
+      refreshMutualPreview();
     });
 
     return unsubscribe;
-  }, [authed, navigation, refreshFeed, refreshStories]);
+  }, [authed, navigation, refreshFeed, refreshMutualPreview, refreshStories]);
 
 
   useEffect(() => {
@@ -477,6 +496,7 @@ export function FeedScreen({ navigation }) {
       );
 
       if (openPostId === postId) closeComments();
+      if (mutualPreviewPostId === postId) setMutualPreviewPostId(null);
       setManagedPost(null);
     } catch (error) {
       Alert.alert(
@@ -486,7 +506,46 @@ export function FeedScreen({ navigation }) {
     } finally {
       if (mountedRef.current) setDeletingPostId(null);
     }
-  }, [closeComments, deletingPostId, managedPost, openPostId]);
+  }, [closeComments, deletingPostId, managedPost, mutualPreviewPostId, openPostId]);
+
+  const toggleManagedPreview = useCallback(async () => {
+    if (!managedPost?.id || previewSaving) return;
+
+    const postId = managedPost.id;
+    const isPreview = mutualPreviewPostId === postId;
+
+    const save = async () => {
+      setPreviewSaving(true);
+      try {
+        const nextId = isPreview ? null : postId;
+        const savedId = await setMyMutualPreviewPost(nextId);
+        if (!mountedRef.current) return;
+        setMutualPreviewPostId(savedId || null);
+        setManagedPost(null);
+      } catch (error) {
+        Alert.alert(
+          'Preview not updated',
+          errorMessage(error, 'Please try again.')
+        );
+      } finally {
+        if (mountedRef.current) setPreviewSaving(false);
+      }
+    };
+
+    if (isPreview) {
+      save();
+      return;
+    }
+
+    Alert.alert(
+      'Show this post to mutuals?',
+      'People who share trusted contact context with you will be able to see this one preview before you connect. Your full profile and other posts stay private.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Show post', onPress: save },
+      ]
+    );
+  }, [managedPost, mutualPreviewPostId, previewSaving]);
 
   const openStory = useCallback((userIndex) => {
     setStoryOpen(userIndex);
@@ -748,7 +807,12 @@ export function FeedScreen({ navigation }) {
       <PostOwnerMenu
         visible={Boolean(managedPost)}
         busy={Boolean(deletingPostId)}
-        onClose={() => !deletingPostId && setManagedPost(null)}
+        previewBusy={previewSaving}
+        isMutualPreview={managedPost?.id === mutualPreviewPostId}
+        onClose={() => {
+          if (!deletingPostId && !previewSaving) setManagedPost(null);
+        }}
+        onToggleMutualPreview={toggleManagedPreview}
         onEdit={editManagedPost}
         onDelete={removeManagedPost}
       />

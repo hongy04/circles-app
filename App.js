@@ -416,6 +416,7 @@ function AppTabs({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { themeReady } = useTheme();
   const theme = useThemeTokens();
+  const usesAeroTabStation = theme.navigation?.tabStation === 'aero-grass';
   const [reqCount, setReqCount] = useState(0);
   const [circleBadgeCount, setCircleBadgeCount] = useState(0);
   const [authed, setAuthed] = useState(false);
@@ -540,7 +541,7 @@ function AppTabs({ navigation, route }) {
       ) : null}
       <Tabs.Navigator
         tabBar={(props) => (
-          theme.navigation?.tabStation === 'aero-grass' ? (
+          usesAeroTabStation ? (
             <FrutigerAeroTabBar
               {...props}
               theme={theme}
@@ -555,13 +556,26 @@ function AppTabs({ navigation, route }) {
           headerShown: false,
           tabBarActiveTintColor: theme.circle.accent,
           tabBarInactiveTintColor: theme.colors.subtext,
-          tabBarStyle: {
-            paddingBottom: Math.max(8, insets.bottom),
-            paddingTop: 6,
-            backgroundColor: theme.colors.surface,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: theme.colors.border,
-          },
+          tabBarStyle: usesAeroTabStation
+            ? {
+                // The custom Aero station is an overlay, not a layout block.
+                // Keeping the navigator's measured bar at zero lets the scene
+                // continue visibly beneath/around the floating dock.
+                height: 0,
+                paddingBottom: 0,
+                paddingTop: 0,
+                backgroundColor: 'transparent',
+                borderTopWidth: 0,
+                elevation: 0,
+                shadowOpacity: 0,
+              }
+            : {
+                paddingBottom: Math.max(8, insets.bottom),
+                paddingTop: 6,
+                backgroundColor: theme.colors.surface,
+                borderTopWidth: StyleSheet.hairlineWidth,
+                borderTopColor: theme.colors.border,
+              },
           tabBarLabelStyle: { fontFamily: 'Manrope_600SemiBold', marginBottom: 4 },
           tabBarIcon: ({ color, size, focused }) => {
             const name =
