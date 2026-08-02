@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  ImageBackground,
   Platform,
   Pressable,
   RefreshControl,
@@ -10,7 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { ProfileHeader } from '../../components/profile/ProfileHeader';
@@ -44,52 +45,58 @@ function useProfileTheme() {
   return { theme, styles };
 }
 
-function TopBar({ isSelf, profile, navigation, onManageProfile }) {
+function TopBar({
+  isSelf,
+  navigation,
+  onManageSelf,
+  onManageProfile,
+  overlay = false,
+  topInset = 0,
+}) {
   const { theme, styles } = useProfileTheme();
-  const title = isSelf
-    ? profile?.username
-      ? `@${profile.username}`
-      : 'Your profile'
-    : profile?.username
-      ? `@${profile.username}`
-      : profile?.display_name || 'Profile';
 
   return (
-    <View style={styles.topBar}>
+    <View
+      pointerEvents="box-none"
+      style={[
+        styles.topBar,
+        overlay && [styles.topBarOverlay, { height: topInset + 48, paddingTop: topInset }],
+      ]}
+    >
       <View style={styles.topBarSide}>
         {!isSelf ? (
           <Pressable
             onPress={() => navigation.goBack()}
             hitSlop={10}
-            style={styles.iconButton}
+            style={[styles.iconButton, overlay && styles.overlayIconButton]}
           >
             <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
           </Pressable>
         ) : null}
       </View>
 
-      <Text style={styles.topBarTitle} numberOfLines={1}>
-        {title}
-      </Text>
+      <View style={styles.topBarCenter} />
 
       <View style={[styles.topBarSide, styles.topBarRight]}>
         {isSelf ? (
           <Pressable
-            onPress={() => navigation.navigate('AccountSettings')}
+            onPress={onManageSelf}
             hitSlop={10}
-            style={styles.iconButton}
+            accessibilityRole="button"
+            accessibilityLabel="More profile options"
+            style={[styles.iconButton, overlay && styles.overlayIconButton]}
           >
-            <Ionicons name="settings-outline" size={22} color={theme.colors.text} />
+            <Ionicons name="ellipsis-horizontal" size={23} color={theme.colors.text} />
           </Pressable>
-        ) : profile?.id ? (
+        ) : (
           <Pressable
             onPress={onManageProfile}
             hitSlop={10}
-            style={styles.iconButton}
+            style={[styles.iconButton, overlay && styles.overlayIconButton]}
           >
             <Ionicons name="ellipsis-horizontal" size={22} color={theme.colors.text} />
           </Pressable>
-        ) : null}
+        )}
       </View>
     </View>
   );
@@ -218,11 +225,11 @@ function RomanticInterestCard({
   );
 }
 
-function EmptyPosts({ isSelf, canViewPosts, onCreatePost }) {
+function EmptyPosts({ isSelf, canViewPosts, onCreatePost, decorated = false }) {
   const { theme, styles } = useProfileTheme();
   if (!canViewPosts) {
     return (
-      <View style={styles.emptyRoot}>
+      <View style={[styles.emptyRoot, decorated && styles.decoratedSurface]}>
         <Ionicons name="lock-closed-outline" size={34} color={theme.colors.subtext} />
         <Text style={styles.emptyTitle}>Private posts</Text>
         <Text style={styles.emptyText}>
@@ -233,7 +240,7 @@ function EmptyPosts({ isSelf, canViewPosts, onCreatePost }) {
   }
 
   return (
-    <View style={styles.emptyRoot}>
+    <View style={[styles.emptyRoot, decorated && styles.decoratedSurface]}>
       <Ionicons
         name={isSelf ? 'images-outline' : 'camera-outline'}
         size={36}
@@ -270,6 +277,7 @@ export function ProfileViewScreen({
   isSelf = false,
 }) {
   const { theme, styles } = useProfileTheme();
+  const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -848,6 +856,15 @@ export function ProfileViewScreen({
     });
   };
 
+  const handleManageSelf = () => {
+    Alert.alert('Profile', 'Choose what you want to manage.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Edit profile', onPress: () => navigation.navigate('EditProfile') },
+      { text: 'Customize profile', onPress: () => navigation.navigate('CustomizeProfile') },
+      { text: 'Settings', onPress: () => navigation.navigate('AccountSettings') },
+    ]);
+  };
+
   const handleManageProfile = () => {
     if (!profile?.id || resolvedIsSelf) return;
 
@@ -922,29 +939,56 @@ export function ProfileViewScreen({
     });
   };
 
+  const decorationActive = Boolean(
+    profile?.profile_header_url
+    || profile?.profile_background_url
+    || profile?.profile_background_color
+  );
+
+  const hasHeaderPhoto = Boolean(profile?.profile_header_url);
+
+  const profileHeaderNode = profile ? (
+    <ProfileHeader
+      profile={profile}
+      isSelf={resolvedIsSelf}
+      showStats={Boolean(profile.can_view_posts)}
+      busy={actionBusy}
+      onConnect={handleConnect}
+      onAccept={() => handleRespond('accept')}
+      onDecline={() => handleRespond('decline')}
+      stats={socialStats}
+      onPostsPress={openPosts}
+      onEventsPress={openEvents}
+      onConnectionsPress={openConnections}
+      topInset={hasHeaderPhoto ? insets.top : 0}
+    />
+  ) : null;
+
   const header = profile ? (
     <>
-      <TopBar
-        isSelf={resolvedIsSelf}
-        profile={profile}
-        navigation={navigation}
-        onManageProfile={handleManageProfile}
-      />
-
-      <ProfileHeader
-        profile={profile}
-        isSelf={resolvedIsSelf}
-        showStats={Boolean(profile.can_view_posts)}
-        busy={actionBusy}
-        onEdit={() => navigation.navigate('EditProfile')}
-        onConnect={handleConnect}
-        onAccept={() => handleRespond('accept')}
-        onDecline={() => handleRespond('decline')}
-        stats={socialStats}
-        onPostsPress={openPosts}
-        onEventsPress={openEvents}
-        onConnectionsPress={openConnections}
-      />
+      {hasHeaderPhoto ? (
+        <View style={styles.profileHeaderStack}>
+          {profileHeaderNode}
+          <TopBar
+            isSelf={resolvedIsSelf}
+            navigation={navigation}
+            onManageSelf={handleManageSelf}
+            onManageProfile={handleManageProfile}
+            overlay
+            topInset={insets.top}
+          />
+        </View>
+      ) : (
+        <>
+          <TopBar
+            isSelf={resolvedIsSelf}
+            navigation={navigation}
+            onManageSelf={handleManageSelf}
+            onManageProfile={handleManageProfile}
+          />
+          {profileHeaderNode}
+        </>
+      )}
 
       {!resolvedIsSelf
       && profile.relationship_status === 'connected'
@@ -977,14 +1021,9 @@ export function ProfileViewScreen({
         />
       ) : null}
 
-      {profile.can_view_posts ? (
-        <View style={styles.gridHeading}>
-          <Ionicons name="grid-outline" size={18} color={theme.colors.text} />
-          <Text style={styles.gridHeadingText}>Posts</Text>
-        </View>
-      ) : (
+      {!profile.can_view_posts ? (
         <PreConnectionProfileShell profile={profile} />
-      )}
+      ) : null}
     </>
   ) : null;
 
@@ -1022,10 +1061,16 @@ export function ProfileViewScreen({
     );
   }
 
-  return (
-    <SafeAreaView edges={['top']} style={styles.screen}>
+  const profileBody = (
+    <SafeAreaView
+      edges={hasHeaderPhoto ? [] : ['top']}
+      style={[styles.screen, decorationActive && styles.decoratedScreen]}
+    >
       <View
-        style={styles.contentWidth}
+        style={[
+          styles.contentWidth,
+          decorationActive && styles.decoratedContentWidth,
+        ]}
         onLayout={(event) => {
           const nextWidth = Math.floor(event.nativeEvent.layout.width);
           setGridWidth((currentWidth) =>
@@ -1058,6 +1103,7 @@ export function ProfileViewScreen({
               isSelf={resolvedIsSelf}
               canViewPosts
               onCreatePost={() => navigation.navigate('CreatePost')}
+              decorated={decorationActive}
             />
           ) : null}
           refreshControl={(
@@ -1087,6 +1133,29 @@ export function ProfileViewScreen({
       </View>
     </SafeAreaView>
   );
+
+  if (profile?.profile_background_url) {
+    return (
+      <ImageBackground
+        source={{ uri: profile.profile_background_url }}
+        resizeMode="cover"
+        style={styles.backgroundImage}
+      >
+        <View style={styles.backgroundImageTint} />
+        {profileBody}
+      </ImageBackground>
+    );
+  }
+
+  if (profile?.profile_background_color) {
+    return (
+      <View style={[styles.backgroundImage, { backgroundColor: profile.profile_background_color }]}>
+        {profileBody}
+      </View>
+    );
+  }
+
+  return profileBody;
 }
 
 function createStyles(theme) {
@@ -1094,6 +1163,16 @@ function createStyles(theme) {
   screen: {
     flex: 1,
     backgroundColor: theme.colors.bg,
+  },
+  decoratedScreen: {
+    backgroundColor: 'transparent',
+  },
+  backgroundImage: {
+    flex: 1,
+  },
+  backgroundImageTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.16)',
   },
   contentWidth: {
     flex: 1,
@@ -1104,6 +1183,12 @@ function createStyles(theme) {
     borderRightWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,
     borderColor: theme.colors.border,
   },
+  decoratedContentWidth: {
+    backgroundColor: 'rgba(255,255,255,0.24)',
+  },
+  decoratedSurface: {
+    backgroundColor: 'rgba(255,255,255,0.88)',
+  },
   listContent: {
     flexGrow: 1,
     paddingBottom: 42,
@@ -1112,12 +1197,26 @@ function createStyles(theme) {
     alignItems: 'flex-start',
   },
   topBar: {
-    minHeight: 52,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
+  },
+  topBarOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    minHeight: 0,
+    borderBottomWidth: 0,
+    backgroundColor: 'transparent',
+  },
+  profileHeaderStack: {
+    position: 'relative',
   },
   topBarSide: {
     width: 46,
@@ -1126,18 +1225,25 @@ function createStyles(theme) {
   topBarRight: {
     alignItems: 'flex-end',
   },
-  topBarTitle: {
+  topBarCenter: {
     flex: 1,
-    textAlign: 'center',
-    color: theme.colors.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 16,
   },
   iconButton: {
     width: 40,
     height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  overlayIconButton: {
+    backgroundColor: 'rgba(255,255,255,0.84)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.94)',
+    shadowColor: '#0A1222',
+    shadowOpacity: 0.12,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   romanticChannelCard: {
     marginHorizontal: 18,
@@ -1216,21 +1322,6 @@ function createStyles(theme) {
     fontFamily: 'Manrope_400Regular',
     fontSize: 10.5,
     lineHeight: 15,
-  },
-  gridHeading: {
-    height: 46,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
-  },
-  gridHeadingText: {
-    color: theme.colors.text,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 13,
   },
   centeredRoot: {
     flex: 1,

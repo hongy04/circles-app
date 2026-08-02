@@ -12,13 +12,15 @@ import { Video } from 'expo-av';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { COLORS } from '../../theme/colors';
+import { FramedPostImage } from '../posts/FramedPostImage';
+import { mediaPresentationForIndex } from '../../utils/postPresentation';
 
-function FeedVideo({ item, shouldPlay, muted }) {
+function FeedVideo({ item, shouldPlay, muted, fit = 'full' }) {
   return (
     <Video
       source={{ uri: item.url }}
       style={styles.media}
-      resizeMode="cover"
+      resizeMode={fit === 'crop' ? 'cover' : 'contain'}
       shouldPlay={shouldPlay}
       isLooping
       isMuted={muted}
@@ -33,8 +35,9 @@ export function PostMediaCarousel({
   isVisible,
   onOpenPost,
   onDoubleLike,
+  presentation,
 }) {
-  const [containerWidth, setContainerWidth] = useState(1);
+  const [containerWidth, setContainerWidth] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const [muted, setMuted] = useState(true);
   const [showBigHeart, setShowBigHeart] = useState(false);
@@ -103,10 +106,15 @@ export function PostMediaCarousel({
   }
 
   const activeItem = items[activeIndex];
+  const activePresentation = mediaPresentationForIndex(presentation, activeIndex, activeItem);
+  const hasMeasuredWidth = containerWidth > 8;
+  const activeHeight = hasMeasuredWidth
+    ? containerWidth / activePresentation.aspectRatio
+    : 1;
 
   return (
     <View
-      style={styles.root}
+      style={[styles.root, { height: activeHeight }]}
       onLayout={(event) => {
         const width = event.nativeEvent.layout.width;
         if (width > 0 && width !== containerWidth) {
@@ -114,6 +122,7 @@ export function PostMediaCarousel({
         }
       }}
     >
+      {hasMeasuredWidth ? (
       <FlatList
         horizontal
         pagingEnabled
@@ -136,31 +145,38 @@ export function PostMediaCarousel({
             Math.max(0, Math.min(items.length - 1, nextIndex))
           );
         }}
-        renderItem={({ item, index }) => (
-          <Pressable
-            onPress={handleMediaPress}
-            style={[styles.slide, { width: containerWidth }]}
-          >
-            {item.media_type === 'video' ? (
-              <FeedVideo
-                item={item}
-                muted={muted}
-                shouldPlay={Boolean(
-                  isVisible && activeIndex === index
-                )}
-              />
-            ) : (
-              <Image
-                source={{ uri: item.url }}
-                style={styles.media}
-                resizeMode="cover"
-              />
-            )}
-          </Pressable>
-        )}
+        renderItem={({ item, index }) => {
+          const itemPresentation = mediaPresentationForIndex(presentation, index, item);
+          const itemHeight = containerWidth / itemPresentation.aspectRatio;
+          return (
+            <Pressable
+              onPress={handleMediaPress}
+              style={[styles.slide, { width: containerWidth, height: itemHeight }]}
+            >
+              {item.media_type === 'video' ? (
+                <FeedVideo
+                  item={item}
+                  fit={itemPresentation.fit}
+                  muted={muted}
+                  shouldPlay={Boolean(isVisible && activeIndex === index)}
+                />
+              ) : (
+                <FramedPostImage
+                  uri={item.url}
+                  aspectRatio={itemPresentation.aspectRatio}
+                  fit={itemPresentation.fit}
+                  cropPoint={itemPresentation}
+                  sourceWidth={itemPresentation.width}
+                  sourceHeight={itemPresentation.height}
+                />
+              )}
+            </Pressable>
+          );
+        }}
       />
+      ) : null}
 
-      {items.length > 1 ? (
+      {items.length > 1 && hasMeasuredWidth ? (
         <View style={styles.pageBadge} pointerEvents="none">
           <Text style={styles.pageBadgeText}>
             {activeIndex + 1}/{items.length}
@@ -168,7 +184,7 @@ export function PostMediaCarousel({
         </View>
       ) : null}
 
-      {activeItem?.media_type === 'video' ? (
+      {hasMeasuredWidth && activeItem?.media_type === 'video' ? (
         <Pressable
           onPress={() => setMuted((current) => !current)}
           hitSlop={8}
@@ -199,7 +215,7 @@ export function PostMediaCarousel({
         </View>
       ) : null}
 
-      {items.length > 1 ? (
+      {items.length > 1 && hasMeasuredWidth ? (
         <View style={styles.dots} pointerEvents="none">
           {items.map((item, index) => (
             <View
@@ -219,13 +235,12 @@ export function PostMediaCarousel({
 const styles = StyleSheet.create({
   root: {
     width: '100%',
-    aspectRatio: 1,
     position: 'relative',
     backgroundColor: '#111',
   },
   slide: {
-    height: '100%',
     backgroundColor: '#111',
+    overflow: 'hidden',
   },
   media: {
     width: '100%',

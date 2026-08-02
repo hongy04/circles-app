@@ -9,6 +9,7 @@ import {
 import { uploadToBucket } from './uploadService';
 import { fetchProfileSocialStats } from './profileDirectoryService';
 import { unregisterCurrentPushDevice } from './pushNotificationService';
+import { fetchProfileDecoration } from './profileDecorationService';
 
 const REMOTE_URI_PATTERN = /^https?:\/\//i;
 
@@ -149,13 +150,17 @@ export async function fetchProfilePage(userId) {
   const profile = await fetchProfileOverview(userId);
 
   if (profile.can_view_posts) {
-    const [posts, socialStats] = await Promise.all([
+    const [posts, socialStats, decoration] = await Promise.all([
       fetchProfilePosts(profile.id),
       fetchProfileSocialStats(profile.id),
+      fetchProfileDecoration(profile.id),
     ]);
 
     return {
-      profile,
+      profile: {
+        ...profile,
+        ...decoration,
+      },
       posts,
       socialStats,
     };

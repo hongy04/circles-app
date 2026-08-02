@@ -90,6 +90,7 @@ export function PostCard({
         isVisible={isVisible}
         onOpenPost={onOpenPost}
         onDoubleLike={onDoubleLike}
+        presentation={post.presentation}
       />
 
       <View style={styles.actionRow}>

@@ -20,7 +20,13 @@ import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   getCirclePost,
   updateOwnCirclePostCaption,
+  updateOwnCirclePostPresentation,
 } from '../../services/circlePostService';
+import { PostFrameEditor } from '../../components/posts/PostFrameEditor';
+import {
+  presentationsByAssetId,
+  serializeMediaPresentations,
+} from '../../utils/postPresentation';
 
 const MAX_CAPTION_LENGTH = 2200;
 
@@ -30,6 +36,8 @@ function EditCirclePostContent({ route, navigation }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [post, setPost] = useState(null);
   const [caption, setCaption] = useState('');
+  const [presentationById, setPresentationById] = useState({});
+  const [originalPresentation, setOriginalPresentation] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -41,8 +49,29 @@ function EditCirclePostContent({ route, navigation }) {
     try {
       const row = await getCirclePost(postId);
       if (!row.canEdit) throw new Error('Only the person who created this post can edit it.');
-      setPost(row);
+      const framingAssets = (row.media || []).map((item, index) => {
+        const saved = row.presentation?.mediaPresentations?.[index] || row.presentation?.cropPoints?.[index] || {};
+        return {
+          id: item.id,
+          uri: item.url,
+          mediaType: item.mediaType,
+          width: Number(saved.width || item.width || 0) || null,
+          height: Number(saved.height || item.height || 0) || null,
+        };
+      });
+      const rawPresentations = row.presentation?.mediaPresentations?.length
+        ? row.presentation.mediaPresentations
+        : framingAssets.map((asset, index) => ({
+            aspectRatio: row.presentation?.aspectRatio || undefined,
+            fit: row.presentation?.aspectRatio ? 'crop' : 'full',
+            ...(row.presentation?.cropPoints?.[index] || {}),
+          }));
+      const nextPresentationById = presentationsByAssetId(framingAssets, rawPresentations);
+
+      setPost({ ...row, framingAssets });
       setCaption(row.caption || '');
+      setPresentationById(nextPresentationById);
+      setOriginalPresentation(JSON.stringify(serializeMediaPresentations(framingAssets, nextPresentationById)));
     } catch (loadError) {
       setError(loadError?.message || 'Could not edit this Circle post.');
     } finally {
@@ -60,7 +89,12 @@ function EditCirclePostContent({ route, navigation }) {
     }
     setSaving(true);
     try {
-      await updateOwnCirclePostCaption(post.id, caption);
+      await Promise.all([
+        updateOwnCirclePostCaption(post.id, caption),
+        updateOwnCirclePostPresentation(post.id, {
+          mediaPresentations: serializeMediaPresentations(post.framingAssets || [], presentationById),
+        }),
+      ]);
       navigation.goBack();
     } catch (saveError) {
       Alert.alert('Caption not saved', saveError?.message || 'Please try again.');
@@ -89,7 +123,6 @@ function EditCirclePostContent({ route, navigation }) {
     );
   }
 
-  const firstMedia = post.media[0];
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
@@ -106,25 +139,16 @@ function EditCirclePostContent({ route, navigation }) {
 
         <View style={styles.notice}>
           <Ionicons name="information-circle-outline" size={18} color={theme.colors.text} />
-          <Text style={styles.noticeText}>Media stays fixed so the post keeps its original private context.</Text>
+          <Text style={styles.noticeText}>Each attachment keeps its own frame without changing the original private uploads.</Text>
         </View>
 
-        {firstMedia ? (
-          <View style={styles.preview}>
-            {firstMedia.mediaType === 'image' ? (
-              <Image source={{ uri: firstMedia.url }} style={styles.previewMedia} resizeMode="cover" />
-            ) : (
-              <View style={[styles.previewMedia, styles.videoPreview]}>
-                <Ionicons name="play-circle" size={48} color="#fff" />
-              </View>
-            )}
-            {post.media.length > 1 ? (
-              <View style={styles.countBadge}>
-                <Ionicons name="copy-outline" size={13} color="#fff" />
-                <Text style={styles.countText}>{post.media.length}</Text>
-              </View>
-            ) : null}
-          </View>
+        {post.framingAssets?.length ? (
+          <PostFrameEditor
+            assets={post.framingAssets}
+            presentationById={presentationById}
+            onPresentationChange={(assetId, next) => setPresentationById((current) => ({ ...current, [assetId]: next }))}
+            disabled={saving}
+          />
         ) : null}
 
         <View style={styles.inputCard}>
@@ -147,7 +171,7 @@ function EditCirclePostContent({ route, navigation }) {
           disabled={saving}
           style={({ pressed }) => [styles.saveButton, saving && styles.disabled, pressed && styles.pressed]}
         >
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Caption</Text>}
+          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Post</Text>}
         </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>

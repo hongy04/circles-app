@@ -19,7 +19,8 @@ function fallbackMedia(row) {
 
 export function mapFeedRow(row, enrichment = {}) {
   const media = enrichment.mediaByPost?.get(row.id) || fallbackMedia(row);
-  const authorId = enrichment.authorByPost?.get(row.id) || null;
+  const postMeta = enrichment.postMetaByPost?.get(row.id) || {};
+  const authorId = postMeta.user_id || null;
 
   return {
     id: row.id,
@@ -29,6 +30,11 @@ export function mapFeedRow(row, enrichment = {}) {
       avatarUri: row.author_avatar || null,
     },
     media,
+    presentation: {
+      mediaPresentations: Array.isArray(postMeta.media_presentations) ? postMeta.media_presentations : [],
+      aspectRatio: postMeta.display_aspect_ratio == null ? null : Number(postMeta.display_aspect_ratio),
+      cropPoints: Array.isArray(postMeta.media_crop_points) ? postMeta.media_crop_points : [],
+    },
     uri: media[0]?.url || row.image_url || null,
     liked: Boolean(row.liked_by_me),
     likes: Number(row.likes_count || 0),
@@ -41,15 +47,15 @@ export function mapFeedRow(row, enrichment = {}) {
 
 async function fetchFeedEnrichment(postIds) {
   const mediaByPost = new Map();
-  const authorByPost = new Map();
+  const postMetaByPost = new Map();
   const commentCountByPost = new Map();
 
   if (!postIds.length) {
-    return { mediaByPost, authorByPost, commentCountByPost };
+    return { mediaByPost, postMetaByPost, commentCountByPost };
   }
 
   const [postResult, mediaResult, commentsResult] = await Promise.all([
-    supabase.from('posts').select('id, user_id').in('id', postIds),
+    supabase.from('posts').select('id, user_id, display_aspect_ratio, media_crop_points, media_presentations').in('id', postIds),
     supabase
       .from('post_media')
       .select('id, post_id, url, media_type, created_at')
@@ -63,7 +69,7 @@ async function fetchFeedEnrichment(postIds) {
 
   if (!postResult.error) {
     (postResult.data || []).forEach((post) => {
-      authorByPost.set(post.id, post.user_id);
+      postMetaByPost.set(post.id, post);
     });
   }
 
@@ -84,7 +90,7 @@ async function fetchFeedEnrichment(postIds) {
     });
   }
 
-  return { mediaByPost, authorByPost, commentCountByPost };
+  return { mediaByPost, postMetaByPost, commentCountByPost };
 }
 
 export async function fetchFeedPage({

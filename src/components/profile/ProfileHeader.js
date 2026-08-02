@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ImageBackground, Pressable, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../Avatar';
 import { useThemeTokens } from '../../theme/ThemeProvider';
+import { LinearGradient } from 'expo-linear-gradient';
 
 
 function useProfileHeaderTheme() {
@@ -132,7 +133,6 @@ export function ProfileHeader({
   isSelf,
   showStats = true,
   busy = false,
-  onEdit,
   onConnect,
   onAccept,
   onDecline,
@@ -140,21 +140,47 @@ export function ProfileHeader({
   onPostsPress,
   onEventsPress,
   onConnectionsPress,
+  topInset = 0,
 }) {
-  const { styles } = useProfileHeaderTheme();
+  const { theme, styles } = useProfileHeaderTheme();
   const displayName = profile.display_name || (isSelf ? 'You' : 'User');
   const username = profile.username ? `@${profile.username}` : null;
 
-  return (
-    <View style={styles.root}>
-      <View style={styles.identityRow}>
-        <Avatar
-          size={88}
-          name={displayName}
-          uri={profile.avatar_url}
-        />
+  const hasHeaderPhoto = Boolean(profile.profile_header_url);
+  const decorated = Boolean(
+    hasHeaderPhoto
+    || profile.profile_background_url
+    || profile.profile_background_color
+  );
 
-        <View style={styles.identityText}>
+  return (
+    <View style={[styles.root, decorated && styles.decoratedRoot]}>
+      {hasHeaderPhoto ? (
+        <ImageBackground
+          source={{ uri: profile.profile_header_url }}
+          resizeMode="cover"
+          style={[styles.headerPhoto, { height: 104 + topInset }]}
+          imageStyle={styles.headerPhotoImage}
+        >
+          <LinearGradient
+            colors={['rgba(10,18,34,0.02)', 'rgba(10,18,34,0.18)']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </ImageBackground>
+      ) : null}
+
+      <View style={[styles.identityRow, hasHeaderPhoto && styles.identityRowWithHeader]}>
+        <View style={hasHeaderPhoto ? styles.avatarFrameOnHeader : null}>
+          <Avatar
+            size={hasHeaderPhoto ? 76 : 82}
+            name={displayName}
+            uri={profile.avatar_url}
+          />
+        </View>
+
+        <View style={[styles.identityText, hasHeaderPhoto && styles.identityTextWithHeader]}>
           <Text style={styles.name} numberOfLines={1}>
             {displayName}
           </Text>
@@ -204,19 +230,7 @@ export function ProfileHeader({
         </View>
       ) : null}
 
-      {isSelf ? (
-        <View style={styles.actionsRow}>
-          <Pressable
-            onPress={onEdit}
-            style={({ pressed }) => [
-              styles.secondaryButton,
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <Text style={styles.secondaryButtonText}>Edit profile</Text>
-          </Pressable>
-        </View>
-      ) : (
+      {!isSelf ? (
         <RelationshipActions
           profile={profile}
           busy={busy}
@@ -224,7 +238,7 @@ export function ProfileHeader({
           onAccept={onAccept}
           onDecline={onDecline}
         />
-      )}
+      ) : null}
     </View>
   );
 }
@@ -233,8 +247,39 @@ function createStyles(theme) {
   return StyleSheet.create({
   root: {
     paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
+  },
+  decoratedRoot: {
+    backgroundColor: 'rgba(255,255,255,0.88)',
+  },
+  headerPhoto: {
+    height: 104,
+    marginHorizontal: -18,
+    marginTop: -12,
+    marginBottom: 0,
+    overflow: 'hidden',
+  },
+  headerPhotoImage: {
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+  },
+  identityRowWithHeader: {
+    marginTop: -23,
+    alignItems: 'flex-start',
+  },
+  avatarFrameOnHeader: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  identityTextWithHeader: {
+    paddingTop: 28,
   },
   identityRow: {
     flexDirection: 'row',
@@ -242,12 +287,12 @@ function createStyles(theme) {
   },
   identityText: {
     flex: 1,
-    marginLeft: 16,
+    marginLeft: 12,
   },
   name: {
     color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
-    fontSize: 22,
+    fontSize: 20,
   },
   username: {
     color: theme.colors.subtext,
@@ -262,20 +307,20 @@ function createStyles(theme) {
   bio: {
     color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
-    marginTop: 14,
-    lineHeight: 21,
+    marginTop: 10,
+    lineHeight: 20,
   },
   bioHint: {
     color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
-    marginTop: 14,
-    lineHeight: 21,
+    marginTop: 10,
+    lineHeight: 20,
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 18,
-    paddingVertical: 12,
+    marginTop: 12,
+    paddingVertical: 9,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: theme.colors.border,
@@ -332,6 +377,8 @@ function createStyles(theme) {
     backgroundColor: theme.colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
     paddingHorizontal: 14,
   },
   secondaryButtonText: {

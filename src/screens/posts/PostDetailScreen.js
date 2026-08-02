@@ -21,6 +21,8 @@ import { Video } from 'expo-av';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { Avatar } from '../../components/Avatar';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
+import { FramedPostImage } from '../../components/posts/FramedPostImage';
+import { mediaPresentationForIndex } from '../../utils/postPresentation';
 import {
   InstagramCommentComposer,
   InstagramCommentRow,
@@ -333,6 +335,14 @@ export function PostDetailScreen({ route, navigation }) {
     );
   }
 
+  const postPresentation = {
+    mediaPresentations: Array.isArray(post?.media_presentations) ? post.media_presentations : [],
+    aspectRatio: post?.display_aspect_ratio == null ? null : Number(post.display_aspect_ratio),
+    cropPoints: Array.isArray(post?.media_crop_points) ? post.media_crop_points : [],
+  };
+  const activePostPresentation = mediaPresentationForIndex(postPresentation, activeMediaIndex, displayMedia[activeMediaIndex]);
+  const activeMediaHeight = mediaWidth / activePostPresentation.aspectRatio;
+
   const postHeader = (
     <View style={styles.card}>
       <Pressable
@@ -358,7 +368,7 @@ export function PostDetailScreen({ route, navigation }) {
         </View>
       </Pressable>
 
-      <View style={styles.mediaSection}>
+      <View style={[styles.mediaSection, { height: activeMediaHeight }]}>
         <FlatList
           horizontal
           pagingEnabled
@@ -367,31 +377,35 @@ export function PostDetailScreen({ route, navigation }) {
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={(event) => {
             const offset = event.nativeEvent.contentOffset.x || 0;
-            setActiveMediaIndex(Math.round(offset / mediaWidth));
+            setActiveMediaIndex(Math.max(0, Math.min(displayMedia.length - 1, Math.round(offset / mediaWidth))));
           }}
-          renderItem={({ item, index }) => (
-            <View style={[styles.mediaSlide, { width: mediaWidth }]}>
-              {item.media_type === 'video' ? (
-                <Video
-                  source={{ uri: item.url }}
-                  style={styles.media}
-                  resizeMode="contain"
-                  shouldPlay={
-                    activeMediaIndex === index &&
-                    !ownerMenuVisible
-                  }
-                  isLooping
-                  useNativeControls
-                />
-              ) : (
-                <Image
-                  source={{ uri: item.url }}
-                  style={styles.media}
-                  resizeMode="contain"
-                />
-              )}
-            </View>
-          )}
+          renderItem={({ item, index }) => {
+            const itemPresentation = mediaPresentationForIndex(postPresentation, index, item);
+            const itemHeight = mediaWidth / itemPresentation.aspectRatio;
+            return (
+              <View style={[styles.mediaSlide, { width: mediaWidth, height: itemHeight }]}>
+                {item.media_type === 'video' ? (
+                  <Video
+                    source={{ uri: item.url }}
+                    style={styles.media}
+                    resizeMode={itemPresentation.fit === 'crop' ? 'cover' : 'contain'}
+                    shouldPlay={activeMediaIndex === index && !ownerMenuVisible}
+                    isLooping
+                    useNativeControls
+                  />
+                ) : (
+                  <FramedPostImage
+                    uri={item.url}
+                    aspectRatio={itemPresentation.aspectRatio}
+                    fit={itemPresentation.fit}
+                    cropPoint={itemPresentation}
+                    sourceWidth={itemPresentation.width}
+                    sourceHeight={itemPresentation.height}
+                  />
+                )}
+              </View>
+            );
+          }}
         />
 
         {displayMedia.length > 1 ? (
@@ -609,7 +623,7 @@ function createStyles(theme) {
     fontSize: 12,
   },
   mediaSection: { position: 'relative', alignItems: 'center', backgroundColor: '#000' },
-  mediaSlide: { aspectRatio: 1, backgroundColor: '#000' },
+  mediaSlide: { backgroundColor: '#000', overflow: 'hidden' },
   media: { width: '100%', height: '100%' },
   pageBadge: {
     position: 'absolute',

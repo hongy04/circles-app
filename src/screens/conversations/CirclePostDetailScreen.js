@@ -17,6 +17,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
+import { FramedPostImage } from '../../components/posts/FramedPostImage';
+import { mediaPresentationForIndex } from '../../utils/postPresentation';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
@@ -47,18 +49,22 @@ function formatTimestamp(timestamp) {
   });
 }
 
-function PostMedia({ item, size, onPress, styles }) {
+function PostMedia({ item, size, presentation, onPress, styles }) {
+  const height = size / presentation.aspectRatio;
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.mediaPage,
-        { width: size, height: size },
-        pressed && styles.pressed,
-      ]}
+      style={({ pressed }) => [styles.mediaPage, { width: size, height }, pressed && styles.pressed]}
     >
       {item.mediaType === 'image' ? (
-        <Image source={{ uri: item.url }} style={styles.media} resizeMode="contain" />
+        <FramedPostImage
+          uri={item.url}
+          aspectRatio={presentation.aspectRatio}
+          fit={presentation.fit}
+          cropPoint={presentation}
+          sourceWidth={presentation.width || item.width}
+          sourceHeight={presentation.height || item.height}
+        />
       ) : (
         <View style={styles.videoPage}>
           <Ionicons name="play-circle" size={62} color="#fff" />
@@ -84,6 +90,7 @@ function CirclePostDetailContent({ route, navigation }) {
   const [deleting, setDeleting] = useState(false);
   const [togglingLike, setTogglingLike] = useState(false);
   const [error, setError] = useState('');
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const stageWidth = Math.min(width, 720);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
@@ -248,6 +255,9 @@ function CirclePostDetailContent({ route, navigation }) {
     ]);
   };
 
+  const activePresentation = mediaPresentationForIndex(post?.presentation, activeMediaIndex, post?.media?.[activeMediaIndex]);
+  const activeMediaHeight = stageWidth / activePresentation.aspectRatio;
+
   const header = post ? (
     <View style={styles.postCard}>
       <View style={styles.authorRow}>
@@ -282,13 +292,19 @@ function CirclePostDetailContent({ route, navigation }) {
       <FlatList
         horizontal
         pagingEnabled
+        style={{ height: activeMediaHeight, flexGrow: 0 }}
         data={post.media}
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={(event) => {
+          const offset = event.nativeEvent.contentOffset.x || 0;
+          setActiveMediaIndex(Math.max(0, Math.min(post.media.length - 1, Math.round(offset / stageWidth))));
+        }}
         renderItem={({ item, index }) => (
           <PostMedia
             item={item}
             size={stageWidth}
+            presentation={mediaPresentationForIndex(post.presentation, index, item)}
             styles={styles}
             onPress={() => navigation.navigate('ConversationMedia', {
               items: viewerItems,

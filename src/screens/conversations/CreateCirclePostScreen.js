@@ -25,6 +25,8 @@ import {
 } from '../../services/conversationMediaService';
 import { createCirclePost } from '../../services/circlePostService';
 import { updateTwoPersonPlanMemoryPost } from '../../services/twoPersonPlanService';
+import { PostFrameEditor } from '../../components/posts/PostFrameEditor';
+import { makeDefaultMediaPresentation, serializeMediaPresentations } from '../../utils/postPresentation';
 
 const MAX_ATTACHMENTS = 10;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -69,6 +71,7 @@ function CreateCirclePostContent({ route, navigation }) {
   const { width } = useWindowDimensions();
   const [assets, setAssets] = useState([]);
   const [caption, setCaption] = useState(String(initialCaption || '').slice(0, MAX_CAPTION_LENGTH));
+  const [presentationById, setPresentationById] = useState({});
   const [posting, setPosting] = useState(false);
   const [stage, setStage] = useState('');
 
@@ -102,6 +105,13 @@ function CreateCirclePostContent({ route, navigation }) {
         return;
       }
       setAssets(merged);
+      setPresentationById((current) => {
+        const next = { ...current };
+        merged.forEach((asset) => {
+          if (!next[asset.id]) next[asset.id] = makeDefaultMediaPresentation(asset);
+        });
+        return next;
+      });
     } catch (error) {
       Alert.alert('Could not open your library', error?.message || 'Please try again.');
     }
@@ -144,7 +154,14 @@ function CreateCirclePostContent({ route, navigation }) {
       }
 
       setStage('Publishing privately…');
-      const postId = await createCirclePost({ conversationId, caption, mediaItems: uploaded });
+      const postId = await createCirclePost({
+        conversationId,
+        caption,
+        mediaItems: uploaded,
+        presentation: {
+          mediaPresentations: serializeMediaPresentations(assets, presentationById),
+        },
+      });
 
       if (memoryPlanId) {
         try {
@@ -192,7 +209,14 @@ function CreateCirclePostContent({ route, navigation }) {
                   </View>
                 )}
                 <Pressable
-                  onPress={() => setAssets((current) => current.filter((item) => item.id !== asset.id))}
+                  onPress={() => {
+                    setAssets((current) => current.filter((item) => item.id !== asset.id));
+                    setPresentationById((current) => {
+                      const next = { ...current };
+                      delete next[asset.id];
+                      return next;
+                    });
+                  }}
                   disabled={posting}
                   hitSlop={7}
                   style={styles.removeButton}
@@ -211,6 +235,15 @@ function CreateCirclePostContent({ route, navigation }) {
             <Text style={styles.mediaPickerBody}>Up to 10 attachments. Only accepted Circle members can view them.</Text>
           </Pressable>
         )}
+
+        {assets.length ? (
+          <PostFrameEditor
+            assets={assets}
+            presentationById={presentationById}
+            onPresentationChange={(assetId, next) => setPresentationById((current) => ({ ...current, [assetId]: next }))}
+            disabled={posting}
+          />
+        ) : null}
 
         {assets.length ? (
           <Pressable

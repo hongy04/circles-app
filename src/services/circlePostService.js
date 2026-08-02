@@ -40,7 +40,45 @@ function mapPost(row) {
     canEdit: Boolean(row.can_edit),
     createdAt: row.created_at,
     editedAt: row.edited_at || null,
+    presentation: {
+      mediaPresentations: Array.isArray(row.media_presentations) ? row.media_presentations : [],
+      aspectRatio: row.display_aspect_ratio == null ? null : Number(row.display_aspect_ratio),
+      cropPoints: Array.isArray(row.media_crop_points) ? row.media_crop_points : [],
+    },
   };
+}
+
+
+async function attachPostPresentations(posts) {
+  if (!posts.length) return posts;
+  const ids = posts.map((post) => post.id).filter(Boolean);
+  if (!ids.length) return posts;
+
+  const { data, error } = await supabase
+    .from('conversation_posts')
+    .select('id, display_aspect_ratio, media_crop_points, media_presentations')
+    .in('id', ids);
+
+  if (error) return posts;
+  const byId = new Map((data || []).map((row) => [row.id, row]));
+  return posts.map((post) => {
+    const row = byId.get(post.id);
+    if (!row) return post;
+    return {
+      ...post,
+      presentation: {
+        mediaPresentations: Array.isArray(row.media_presentations) ? row.media_presentations : [],
+        aspectRatio: row.display_aspect_ratio == null ? null : Number(row.display_aspect_ratio),
+        cropPoints: Array.isArray(row.media_crop_points) ? row.media_crop_points : [],
+      },
+    };
+  });
+}
+
+function createdPostId(data) {
+  if (typeof data === 'string') return data;
+  if (Array.isArray(data)) return data[0]?.id || data[0]?.post_id || data[0] || null;
+  return data?.id || data?.post_id || data || null;
 }
 
 function mapComment(row) {
@@ -74,7 +112,8 @@ export async function listCirclePosts(conversationId) {
   });
   if (error) throw error;
 
-  return Promise.all((data || []).map((row) => hydratePost(mapPost(row))));
+  const hydrated = await Promise.all((data || []).map((row) => hydratePost(mapPost(row))));
+  return attachPostPresentations(hydrated);
 }
 
 export async function getCirclePost(postId) {
@@ -86,13 +125,16 @@ export async function getCirclePost(postId) {
 
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error('This Circle post is unavailable.');
-  return hydratePost(mapPost(row));
+  const hydrated = await hydratePost(mapPost(row));
+  const [withPresentation] = await attachPostPresentations([hydrated]);
+  return withPresentation || hydrated;
 }
 
 export async function createCirclePost({
   conversationId,
   caption,
   mediaItems,
+  presentation,
 }) {
   await ensureAuthed();
   const { data, error } = await supabase.rpc('create_circle_post', {
@@ -107,6 +149,19 @@ export async function createCirclePost({
     })),
   });
   if (error) throw error;
+  const postId = createdPostId(data);
+  if (postId && presentation?.mediaPresentations?.length) {
+    const { error: presentationError } = await supabase.rpc(
+      'set_own_circle_post_media_presentations',
+      {
+        p_post_id: postId,
+        p_media_presentations: presentation.mediaPresentations,
+      }
+    );
+    if (presentationError) {
+      console.warn('Circle post created, but its display framing could not be saved.', presentationError);
+    }
+  }
   return data;
 }
 
@@ -138,6 +193,16 @@ export async function deleteOwnCirclePostComment(commentId) {
   await ensureAuthed();
   const { error } = await supabase.rpc('delete_own_circle_post_comment', {
     p_comment_id: commentId,
+  });
+  if (error) throw error;
+}
+
+
+export async function updateOwnCirclePostPresentation(postId, presentation) {
+  await ensureAuthed();
+  const { error } = await supabase.rpc('set_own_circle_post_media_presentations', {
+    p_post_id: postId,
+    p_media_presentations: presentation?.mediaPresentations || [],
   });
   if (error) throw error;
 }

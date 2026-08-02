@@ -169,6 +169,13 @@ export function AccountSettingsScreen({ navigation }) {
               subtitle="Name, username, photo, and bio"
               onPress={() => navigation.navigate('EditProfile')}
             />
+            <View style={styles.separator} />
+            <SettingRow
+              icon="color-palette-outline"
+              title="Customize profile"
+              subtitle="Header photo, profile background, and future decorations"
+              onPress={() => navigation.navigate('CustomizeProfile')}
+            />
           </View>
 
           <Text style={styles.sectionLabel}>PEOPLE</Text>

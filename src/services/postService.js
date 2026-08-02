@@ -18,9 +18,16 @@ function cleanCaption(value = '') {
   return caption;
 }
 
+function createdPostId(data) {
+  if (typeof data === 'string') return data;
+  if (Array.isArray(data)) return data[0]?.id || data[0]?.post_id || data[0] || null;
+  return data?.id || data?.post_id || data || null;
+}
+
 export async function createPostWithMedia({
   assets,
   caption,
+  presentation,
   onProgress,
 }) {
   const validationError = validatePostAssets(assets);
@@ -72,6 +79,29 @@ export async function createPostWithMedia({
     );
 
     if (error) throw error;
+
+    let postId = createdPostId(data);
+    if (!postId && uploadedUrls[0]) {
+      const { data: mediaRow } = await supabase
+        .from('post_media')
+        .select('post_id')
+        .eq('url', uploadedUrls[0])
+        .maybeSingle();
+      postId = mediaRow?.post_id || null;
+    }
+    if (postId && presentation?.mediaPresentations?.length) {
+      const { error: presentationError } = await supabase.rpc(
+        'set_own_post_media_presentations',
+        {
+          p_post_id: postId,
+          p_media_presentations: presentation.mediaPresentations,
+        }
+      );
+      if (presentationError) {
+        console.warn('Post created, but its display framing could not be saved.', presentationError);
+      }
+    }
+
     return data;
   } catch (error) {
     if (uploadedUrls.length) {
@@ -94,7 +124,7 @@ export async function fetchPostDetail(postId) {
 
   const { data: post, error: postError } = await supabase
     .from('posts')
-    .select('id, user_id, caption, image_url, created_at')
+    .select('id, user_id, caption, image_url, created_at, display_aspect_ratio, media_crop_points, media_presentations')
     .eq('id', postId)
     .single();
 
@@ -174,6 +204,16 @@ export async function fetchOwnPostForEditing(postId) {
   }
 
   return data;
+}
+
+
+export async function updateOwnPostPresentation(postId, presentation) {
+  await ensureAuthed();
+  const { error } = await supabase.rpc('set_own_post_media_presentations', {
+    p_post_id: postId,
+    p_media_presentations: presentation?.mediaPresentations || [],
+  });
+  if (error) throw error;
 }
 
 export async function updateOwnPostCaption(postId, caption) {

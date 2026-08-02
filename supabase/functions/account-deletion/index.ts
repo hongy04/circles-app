@@ -170,6 +170,12 @@ Deno.serve(async (request) => {
       (prepared?.storage_manifest || {}) as Record<string, unknown>,
     );
 
+    // Profile decoration lives in a private bucket introduced after the
+    // original deletion manifest. Sweep the user's UUID prefix explicitly so
+    // header/background images cannot survive account deletion.
+    const profileDecorationPaths = await listFolderPaths(admin, 'profile-decor', user.id);
+    await removePaths(admin, 'profile-decor', profileDecorationPaths);
+
     const { error: deleteAuthError } = await admin.auth.admin.deleteUser(user.id);
     if (deleteAuthError) throw new Error(deleteAuthError.message);
 

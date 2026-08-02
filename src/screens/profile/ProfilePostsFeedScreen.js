@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,6 +16,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { InstagramCommentsSheet } from '../../components/comments/InstagramCommentsSheet';
+import { FramedPostImage } from '../../components/posts/FramedPostImage';
+import { mediaPresentationForIndex } from '../../utils/postPresentation';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
 import { fetchProfilePage } from '../../services/profileService';
@@ -55,6 +57,11 @@ function mapDetail(detail) {
     caption: detail.post.caption || '',
     createdAt: detail.post.created_at,
     media: normalizeMedia(detail),
+    presentation: {
+      mediaPresentations: Array.isArray(detail.post.media_presentations) ? detail.post.media_presentations : [],
+      aspectRatio: detail.post.display_aspect_ratio == null ? null : Number(detail.post.display_aspect_ratio),
+      cropPoints: Array.isArray(detail.post.media_crop_points) ? detail.post.media_crop_points : [],
+    },
     likes: Number(detail.likes || 0),
     commentCount: Number(detail.commentCount || 0),
     liked: Boolean(detail.likedByMe),
@@ -76,7 +83,6 @@ function mapPersonalComment(comment) {
 function PersonalPostFeedCard({
   post,
   width,
-  height,
   onOpenDetail,
   onOpenComments,
   onOpenProfile,
@@ -84,8 +90,12 @@ function PersonalPostFeedCard({
   styles,
   theme,
 }) {
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const activePresentation = mediaPresentationForIndex(post.presentation, activeMediaIndex, post.media[activeMediaIndex]);
+  const mediaHeight = width / activePresentation.aspectRatio;
+
   return (
-    <View style={[styles.card, { height }]}>
+    <View style={styles.card}>
       <Pressable onPress={onOpenProfile} style={styles.authorRow}>
         <Avatar
           size={40}
@@ -103,25 +113,40 @@ function PersonalPostFeedCard({
 
       <FlatList
         horizontal
-        style={{ height: width, flexGrow: 0 }}
+        style={{ height: mediaHeight, flexGrow: 0 }}
         pagingEnabled
         data={post.media}
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={onOpenDetail}
-            style={[styles.mediaPage, { width, height: width }]}
-          >
-            {item.mediaType === 'image' ? (
-              <Image source={{ uri: item.url }} style={styles.media} resizeMode="cover" />
-            ) : (
-              <View style={styles.videoPage}>
-                <Ionicons name="play-circle" size={62} color="#fff" />
-              </View>
-            )}
-          </Pressable>
-        )}
+        onMomentumScrollEnd={(event) => {
+          const offset = event.nativeEvent.contentOffset.x || 0;
+          setActiveMediaIndex(Math.max(0, Math.min(post.media.length - 1, Math.round(offset / width))));
+        }}
+        renderItem={({ item, index }) => {
+          const itemPresentation = mediaPresentationForIndex(post.presentation, index, item);
+          const itemHeight = width / itemPresentation.aspectRatio;
+          return (
+            <Pressable
+              onPress={onOpenDetail}
+              style={[styles.mediaPage, { width, height: itemHeight }]}
+            >
+              {item.mediaType === 'image' ? (
+                <FramedPostImage
+                  uri={item.url}
+                  aspectRatio={itemPresentation.aspectRatio}
+                  fit={itemPresentation.fit}
+                  cropPoint={itemPresentation}
+                  sourceWidth={itemPresentation.width}
+                  sourceHeight={itemPresentation.height}
+                />
+              ) : (
+                <View style={styles.videoPage}>
+                  <Ionicons name="play-circle" size={62} color="#fff" />
+                </View>
+              )}
+            </Pressable>
+          );
+        }}
       />
 
       <View style={styles.actionRow}>
@@ -177,13 +202,14 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
   const { userId, profileName, initialPostId } = route.params || {};
   const { width } = useWindowDimensions();
   const stageWidth = Math.min(width, 720);
-  const cardHeight = stageWidth + 210;
   const [posts, setPosts] = useState([]);
   const [resolvedName, setResolvedName] = useState(profileName || 'Posts');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const hasLoadedRef = useRef(false);
+  const listRef = useRef(null);
+  const didInitialScrollRef = useRef(false);
 
   const [commentsVisible, setCommentsVisible] = useState(false);
   const [commentsPost, setCommentsPost] = useState(null);
@@ -224,9 +250,16 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
     }, [load])
   );
 
-  const initialIndex = useMemo(() => {
+
+  useEffect(() => {
+    if (didInitialScrollRef.current || !initialPostId || !posts.length) return;
     const index = posts.findIndex((post) => post.id === initialPostId);
-    return index >= 0 ? index : 0;
+    if (index < 0) return;
+    const timer = setTimeout(() => {
+      listRef.current?.scrollToIndex?.({ index, animated: false, viewPosition: 0 });
+      didInitialScrollRef.current = true;
+    }, 80);
+    return () => clearTimeout(timer);
   }, [initialPostId, posts]);
 
   const toggleLike = async (postId) => {
@@ -327,19 +360,17 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           data={posts}
           keyExtractor={(item) => item.id}
-          initialScrollIndex={posts.length ? initialIndex : undefined}
-          getItemLayout={(_, index) => ({
-            length: cardHeight,
-            offset: cardHeight * index,
-            index,
-          })}
+          onScrollToIndexFailed={({ index, averageItemLength }) => {
+            listRef.current?.scrollToOffset?.({ offset: Math.max(0, averageItemLength * index), animated: false });
+            setTimeout(() => listRef.current?.scrollToIndex?.({ index, animated: false }), 80);
+          }}
           renderItem={({ item }) => (
             <PersonalPostFeedCard
               post={item}
               width={stageWidth}
-              height={cardHeight}
               onOpenDetail={() => navigation.navigate('PostDetail', { postId: item.id })}
               onOpenComments={() => openComments(item)}
               onOpenProfile={() => navigation.navigate('Profile', { userId: item.authorId })}

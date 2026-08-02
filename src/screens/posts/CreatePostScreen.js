@@ -18,6 +18,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { createPostWithMedia } from '../../services/postService';
+import { PostFrameEditor } from '../../components/posts/PostFrameEditor';
+import { makeDefaultMediaPresentation, serializeMediaPresentations } from '../../utils/postPresentation';
 import {
   formatDuration,
   formatFileSize,
@@ -60,6 +62,7 @@ export function CreatePostScreen({ navigation }) {
   const { width } = useWindowDimensions();
   const [assets, setAssets] = useState([]);
   const [caption, setCaption] = useState('');
+  const [presentationById, setPresentationById] = useState({});
   const [posting, setPosting] = useState(false);
   const [progress, setProgress] = useState(null);
 
@@ -105,6 +108,7 @@ export function CreatePostScreen({ navigation }) {
       }
 
       setAssets(nextAssets);
+      setPresentationById(Object.fromEntries(nextAssets.map((asset) => [asset.id, makeDefaultMediaPresentation(asset)])));
     } catch (error) {
       Alert.alert(
         'Could not open your library',
@@ -115,9 +119,12 @@ export function CreatePostScreen({ navigation }) {
 
   const removeAsset = (assetId) => {
     if (posting) return;
-    setAssets((current) =>
-      current.filter((asset) => asset.id !== assetId)
-    );
+    setAssets((current) => current.filter((asset) => asset.id !== assetId));
+    setPresentationById((current) => {
+      const next = { ...current };
+      delete next[assetId];
+      return next;
+    });
   };
 
   const submit = async () => {
@@ -142,6 +149,9 @@ export function CreatePostScreen({ navigation }) {
       await createPostWithMedia({
         assets,
         caption,
+        presentation: {
+          mediaPresentations: serializeMediaPresentations(assets, presentationById),
+        },
         onProgress: setProgress,
       });
 
@@ -289,6 +299,15 @@ export function CreatePostScreen({ navigation }) {
               ))}
             </View>
           </View>
+        ) : null}
+
+        {assets.length ? (
+          <PostFrameEditor
+            assets={assets}
+            presentationById={presentationById}
+            onPresentationChange={(assetId, next) => setPresentationById((current) => ({ ...current, [assetId]: next }))}
+            disabled={posting}
+          />
         ) : null}
 
         <Text style={styles.fieldLabel}>Caption</Text>

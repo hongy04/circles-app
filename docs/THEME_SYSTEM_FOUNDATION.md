@@ -157,3 +157,15 @@ Aqua Daylight is the first theme using the Aero station. The station is intentio
 The Aero station uses a contained glass-and-grass platform, custom emblem-like tab icons, subtle selected-state lift/glow, and the existing request/notification badges. Default and the other curated themes remain on the standard tab bar until their own station treatments are deliberately designed.
 
 - Appearance now includes compact live theme previews showing atmosphere and navigation-station behavior, plus clear global-vs-shared-Circle scope guidance.
+
+## Personal profile decoration v1
+
+Global themes define the user's app atmosphere. Personal profile decoration is a separate identity layer and currently supports:
+
+- a private-storage custom 3:1 header photo;
+- a theme background, curated solid background, or uploaded profile background image;
+- live preview and reset controls from `Customize Profile`.
+
+Decoration imagery is not part of the pre-connection shell. Raw files live in the private `profile-decor` bucket, and only the owner or an accepted connection can receive signed access. Profile content remains on readable glass/neutral surfaces above custom backgrounds.
+
+This storage/rendering model is intended to be reused for future Circle / Our Circle decorative imagery and then a bounded sticker/decal canvas. Stickers should remain inside safe decorative regions and must not obscure controls, profile stats, privacy state, or shared content.

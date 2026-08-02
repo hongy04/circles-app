@@ -15,9 +15,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
-  fetchOwnPostForEditing,
+  fetchPostDetail,
   updateOwnPostCaption,
+  updateOwnPostPresentation,
 } from '../../services/postService';
+import { PostFrameEditor } from '../../components/posts/PostFrameEditor';
+import {
+  presentationsByAssetId,
+  serializeMediaPresentations,
+} from '../../utils/postPresentation';
 
 const CAPTION_LIMIT = 2200;
 
@@ -27,6 +33,9 @@ export function EditPostScreen({ route, navigation }) {
   const { postId } = route.params || {};
   const [caption, setCaption] = useState('');
   const [originalCaption, setOriginalCaption] = useState('');
+  const [assets, setAssets] = useState([]);
+  const [presentationById, setPresentationById] = useState({});
+  const [originalPresentation, setOriginalPresentation] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -37,12 +46,35 @@ export function EditPostScreen({ route, navigation }) {
     setError('');
 
     try {
-      const post = await fetchOwnPostForEditing(postId);
+      const detail = await fetchPostDetail(postId);
+      if (!detail?.isOwner) throw new Error('This post is unavailable or you do not own it.');
       if (!mountedRef.current) return;
 
-      const nextCaption = post.caption || '';
+      const nextCaption = detail.post.caption || '';
+      const nextAssets = (detail.media || []).map((item, index) => {
+        const saved = detail.post.media_presentations?.[index] || detail.post.media_crop_points?.[index] || {};
+        return {
+          id: item.id,
+          uri: item.url,
+          type: item.media_type === 'video' ? 'video' : 'image',
+          width: Number(saved.width || 0) || null,
+          height: Number(saved.height || 0) || null,
+        };
+      });
+      const rawPresentations = Array.isArray(detail.post.media_presentations) && detail.post.media_presentations.length
+        ? detail.post.media_presentations
+        : nextAssets.map((asset, index) => ({
+            aspectRatio: detail.post.display_aspect_ratio || undefined,
+            fit: detail.post.display_aspect_ratio ? 'crop' : 'full',
+            ...(detail.post.media_crop_points?.[index] || {}),
+          }));
+      const nextPresentationById = presentationsByAssetId(nextAssets, rawPresentations);
+
       setCaption(nextCaption);
       setOriginalCaption(nextCaption);
+      setAssets(nextAssets);
+      setPresentationById(nextPresentationById);
+      setOriginalPresentation(JSON.stringify(serializeMediaPresentations(nextAssets, nextPresentationById)));
     } catch (loadError) {
       if (!mountedRef.current) return;
       setError(loadError?.message || 'The post could not be loaded.');
@@ -60,14 +92,21 @@ export function EditPostScreen({ route, navigation }) {
     };
   }, [postId]);
 
-  const hasChanges = caption.trim() !== originalCaption.trim();
+  const currentPresentation = JSON.stringify(serializeMediaPresentations(assets, presentationById));
+  const hasChanges = caption.trim() !== originalCaption.trim()
+    || currentPresentation !== originalPresentation;
 
   const save = async () => {
     if (saving || !hasChanges) return;
 
     setSaving(true);
     try {
-      await updateOwnPostCaption(postId, caption);
+      await Promise.all([
+        updateOwnPostCaption(postId, caption),
+        updateOwnPostPresentation(postId, {
+          mediaPresentations: serializeMediaPresentations(assets, presentationById),
+        }),
+      ]);
       navigation.goBack();
     } catch (saveError) {
       Alert.alert(
@@ -118,7 +157,7 @@ export function EditPostScreen({ route, navigation }) {
           <Ionicons name="chevron-back" size={24} color={theme.colors.text} />
         </Pressable>
 
-        <Text style={styles.headerTitle}>Edit caption</Text>
+        <Text style={styles.headerTitle}>Edit post</Text>
 
         <Pressable
           onPress={save}
@@ -146,13 +185,21 @@ export function EditPostScreen({ route, navigation }) {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
         >
+          {assets.length ? (
+            <PostFrameEditor
+              assets={assets}
+              presentationById={presentationById}
+              onPresentationChange={(assetId, next) => setPresentationById((current) => ({ ...current, [assetId]: next }))}
+              disabled={saving}
+            />
+          ) : null}
+
           <Text style={styles.label}>Caption</Text>
           <TextInput
             value={caption}
             onChangeText={setCaption}
             editable={!saving}
             multiline
-            autoFocus
             maxLength={CAPTION_LIMIT}
             placeholder="Write a caption…"
             placeholderTextColor={theme.colors.subtext}
@@ -160,7 +207,7 @@ export function EditPostScreen({ route, navigation }) {
           />
           <Text style={styles.counter}>{caption.length}/{CAPTION_LIMIT}</Text>
           <Text style={styles.helper}>
-            Editing the caption keeps the original photos, videos, likes, and comments.
+            Each photo keeps its own framing everywhere the post appears. Original uploads, likes, and comments stay intact.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>

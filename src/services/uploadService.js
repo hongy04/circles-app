@@ -77,7 +77,7 @@ export async function removeStorageUrls(bucket, urls = []) {
   return data || [];
 }
 
-export async function uploadToBucket(
+export async function uploadPathToBucket(
   uri,
   bucket,
   mimeHint = 'image/jpeg',
@@ -112,7 +112,16 @@ export async function uploadToBucket(
   );
 
   if (error) throw error;
+  return path;
+}
 
+export async function uploadToBucket(
+  uri,
+  bucket,
+  mimeHint = 'image/jpeg',
+  options = {}
+) {
+  const path = await uploadPathToBucket(uri, bucket, mimeHint, options);
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   return data.publicUrl;
 }

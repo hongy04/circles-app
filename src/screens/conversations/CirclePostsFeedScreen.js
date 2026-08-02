@@ -16,6 +16,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { InstagramCommentsSheet } from '../../components/comments/InstagramCommentsSheet';
+import { FramedPostImage } from '../../components/posts/FramedPostImage';
+import { mediaPresentationForIndex } from '../../utils/postPresentation';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
@@ -43,7 +45,6 @@ function mapCircleComment(comment) {
 function CirclePostFeedCard({
   post,
   width,
-  height,
   navigation,
   conversationId,
   onOpenComments,
@@ -67,8 +68,12 @@ function CirclePostFeedCard({
     postId: post.id,
   });
 
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const activePresentation = mediaPresentationForIndex(post.presentation, activeMediaIndex, post.media[activeMediaIndex]);
+  const mediaHeight = width / activePresentation.aspectRatio;
+
   return (
-    <View style={[styles.card, { height }]}>
+    <View style={styles.card}>
       <View style={styles.authorRow}>
         <Pressable
           onPress={() => navigation.navigate('Profile', { userId: post.authorId })}
@@ -90,28 +95,40 @@ function CirclePostFeedCard({
 
       <FlatList
         horizontal
-        style={{ height: width, flexGrow: 0 }}
+        style={{ height: mediaHeight, flexGrow: 0 }}
         pagingEnabled
         data={post.media}
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
-        renderItem={({ item, index }) => (
-          <Pressable
-            onPress={() => navigation.navigate('ConversationMedia', {
-              items: viewerItems,
-              startIndex: index,
-            })}
-            style={[styles.mediaPage, { width, height: width }]}
-          >
-            {item.mediaType === 'image' ? (
-              <Image source={{ uri: item.url }} style={styles.media} resizeMode="cover" />
-            ) : (
-              <View style={styles.videoPage}>
-                <Ionicons name="play-circle" size={62} color="#fff" />
-              </View>
-            )}
-          </Pressable>
-        )}
+        onMomentumScrollEnd={(event) => {
+          const offset = event.nativeEvent.contentOffset.x || 0;
+          setActiveMediaIndex(Math.max(0, Math.min(post.media.length - 1, Math.round(offset / width))));
+        }}
+        renderItem={({ item, index }) => {
+          const itemPresentation = mediaPresentationForIndex(post.presentation, index, item);
+          const itemHeight = width / itemPresentation.aspectRatio;
+          return (
+            <Pressable
+              onPress={openDetail}
+              style={[styles.mediaPage, { width, height: itemHeight }]}
+            >
+              {item.mediaType === 'image' ? (
+                <FramedPostImage
+                  uri={item.url}
+                  aspectRatio={itemPresentation.aspectRatio}
+                  fit={itemPresentation.fit}
+                  cropPoint={itemPresentation}
+                  sourceWidth={itemPresentation.width || item.width}
+                  sourceHeight={itemPresentation.height || item.height}
+                />
+              ) : (
+                <View style={styles.videoPage}>
+                  <Ionicons name="play-circle" size={62} color="#fff" />
+                </View>
+              )}
+            </Pressable>
+          );
+        }}
       />
 
       <View style={styles.actionRow}>
@@ -167,7 +184,6 @@ function CirclePostsFeedContent({ route, navigation }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const stageWidth = Math.min(width - 24, 696);
-  const cardHeight = stageWidth + 232;
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -177,6 +193,8 @@ function CirclePostsFeedContent({ route, navigation }) {
   const [comments, setComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState('');
+  const listRef = useRef(null);
+  const didInitialScrollRef = useRef(false);
   const [togglingLikes, setTogglingLikes] = useState({});
   const hasLoadedRef = useRef(false);
   const commentsPostIdRef = useRef(null);
@@ -242,9 +260,16 @@ function CirclePostsFeedContent({ route, navigation }) {
     }, [conversationId, load, loadComments])
   );
 
-  const initialIndex = useMemo(() => {
+
+  useEffect(() => {
+    if (didInitialScrollRef.current || !initialPostId || !posts.length) return;
     const index = posts.findIndex((post) => post.id === initialPostId);
-    return index >= 0 ? index : 0;
+    if (index < 0) return;
+    const timer = setTimeout(() => {
+      listRef.current?.scrollToIndex?.({ index, animated: false, viewPosition: 0 });
+      didInitialScrollRef.current = true;
+    }, 80);
+    return () => clearTimeout(timer);
   }, [initialPostId, posts]);
 
   const toggleLike = async (post) => {
@@ -361,19 +386,17 @@ function CirclePostsFeedContent({ route, navigation }) {
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           data={posts}
           keyExtractor={(item) => item.id}
-          initialScrollIndex={posts.length ? initialIndex : undefined}
-          getItemLayout={(_, index) => ({
-            length: cardHeight + 12,
-            offset: (cardHeight + 12) * index,
-            index,
-          })}
+          onScrollToIndexFailed={({ index, averageItemLength }) => {
+            listRef.current?.scrollToOffset?.({ offset: Math.max(0, averageItemLength * index), animated: false });
+            setTimeout(() => listRef.current?.scrollToIndex?.({ index, animated: false }), 80);
+          }}
           renderItem={({ item }) => (
             <CirclePostFeedCard
               post={item}
               width={stageWidth}
-              height={cardHeight}
               navigation={navigation}
               conversationId={conversationId}
               onOpenComments={() => openComments(item)}

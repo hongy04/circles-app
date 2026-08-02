@@ -51,6 +51,7 @@ import { ProfileEventsScreen } from './src/screens/profile/ProfileEventsScreen';
 import { ProfileConnectionsScreen } from './src/screens/profile/ProfileConnectionsScreen';
 import { GuestClaimProfileSetupScreen } from './src/screens/profile/GuestClaimProfileSetupScreen';
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
+import { CustomizeProfileScreen } from './src/screens/profile/CustomizeProfileScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
 import {
   AppearanceScreen,
@@ -205,6 +206,7 @@ export default function App() {
             component={GuestClaimProfileSetupScreen}
           />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
+          <RootStack.Screen name="CustomizeProfile" component={CustomizeProfileScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
           <RootStack.Screen name="Appearance" component={AppearanceScreen} />
           <RootStack.Screen
