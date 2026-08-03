@@ -328,6 +328,23 @@ export function CustomizeProfileScreen({ navigation }) {
           Profile content stays on readable surfaces above your background. Uploaded backgrounds are stored privately and delivered through expiring signed access.
         </Text>
 
+        <Text style={styles.sectionLabel}>STICKERS & DECALS</Text>
+        <View style={styles.sectionCard}>
+          <Pressable
+            onPress={() => navigation.navigate('ProfileStickers')}
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+          >
+            <View style={styles.rowIcon}>
+              <Ionicons name="sparkles-outline" size={20} color={theme.colors.text} />
+            </View>
+            <View style={styles.rowCopy}>
+              <Text style={styles.rowTitle}>Decorate your canvas</Text>
+              <Text style={styles.rowSubtitle}>Place, resize, rotate, and layer built-in stickers behind your profile content.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={theme.colors.subtext} />
+          </Pressable>
+        </View>
+
         {saving ? (
           <View style={styles.savingRow}>
             <ActivityIndicator size="small" />
@@ -352,7 +369,7 @@ export function CustomizeProfileScreen({ navigation }) {
           disabled={saving}
           style={({ pressed }) => [styles.resetButton, pressed && styles.pressed]}
         >
-          <Text style={styles.resetButtonText}>Reset decorations</Text>
+          <Text style={styles.resetButtonText}>Reset header & background</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

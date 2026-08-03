@@ -6,6 +6,12 @@ const BUCKET = 'profile-decor';
 const SIGNED_URL_TTL_SECONDS = 60 * 60 * 6;
 const REMOTE_URI_PATTERN = /^https?:\/\//i;
 
+function normalizeStickerMime(mime) {
+  const clean = String(mime || '').toLowerCase();
+  if (clean === 'image/png' || clean === 'image/webp') return clean;
+  return 'image/jpeg';
+}
+
 async function signDecorationPath(path) {
   const cleanPath = String(path || '').trim();
   if (!cleanPath) return null;
@@ -18,11 +24,21 @@ async function signDecorationPath(path) {
   return data?.signedUrl || null;
 }
 
+async function signCustomStickerAssets(assets = []) {
+  const cleanAssets = Array.isArray(assets) ? assets : [];
+  return Promise.all(cleanAssets.map(async (asset) => ({
+    id: String(asset?.id || ''),
+    path: asset?.path || null,
+    mimeType: asset?.mime_type || asset?.mimeType || 'image/png',
+    url: asset?.path ? await signDecorationPath(asset.path) : null,
+  })));
+}
+
 export async function fetchProfileDecoration(userId) {
   await ensureAuthed();
 
   const { data, error } = await supabase
-    .rpc('get_profile_decoration', { profile_user_id: userId })
+    .rpc('get_profile_decoration_v3', { profile_user_id: userId })
     .maybeSingle();
 
   if (error) throw error;
@@ -34,12 +50,15 @@ export async function fetchProfileDecoration(userId) {
       profile_background_path: null,
       profile_background_url: null,
       profile_background_color: null,
+      profile_stickers: [],
+      profile_custom_stickers: [],
     };
   }
 
-  const [headerUrl, backgroundUrl] = await Promise.all([
+  const [headerUrl, backgroundUrl, customStickers] = await Promise.all([
     signDecorationPath(data.profile_header_path),
     signDecorationPath(data.profile_background_path),
+    signCustomStickerAssets(data.profile_custom_stickers),
   ]);
 
   return {
@@ -48,6 +67,8 @@ export async function fetchProfileDecoration(userId) {
     profile_background_path: data.profile_background_path || null,
     profile_background_url: backgroundUrl,
     profile_background_color: data.profile_background_color || null,
+    profile_stickers: Array.isArray(data.profile_stickers) ? data.profile_stickers : [],
+    profile_custom_stickers: customStickers,
   };
 }
 
@@ -72,6 +93,82 @@ export async function fetchMyProfileDecoration() {
     avatar_url: profile?.avatar_url || null,
     ...decoration,
   };
+}
+
+
+export async function saveMyProfileStickerState({
+  stickers = [],
+  customStickers = [],
+  existingCustomStickers = [],
+  onPhaseChange,
+}) {
+  const session = await ensureAuthed();
+  const userId = session.user.id;
+  const uploadedPaths = [];
+
+  try {
+    const persistedAssets = [];
+    for (const asset of Array.isArray(customStickers) ? customStickers : []) {
+      if (asset?.path) {
+        persistedAssets.push({
+          id: String(asset.id),
+          path: String(asset.path),
+          mime_type: normalizeStickerMime(asset.mimeType || asset.mime_type),
+        });
+        continue;
+      }
+
+      const localUri = asset?.localUri || asset?.url;
+      if (!localUri || REMOTE_URI_PATTERN.test(localUri)) {
+        throw new Error('A custom sticker upload is missing its local image.');
+      }
+
+      onPhaseChange?.('Uploading custom stickers…');
+      const path = await uploadPathToBucket(
+        localUri,
+        BUCKET,
+        normalizeStickerMime(asset?.mimeType || asset?.mime_type),
+        { folder: `${userId}/stickers`, preserveFormat: true }
+      );
+      uploadedPaths.push(path);
+      persistedAssets.push({
+        id: String(asset.id),
+        path,
+        mime_type: normalizeStickerMime(asset?.mimeType || asset?.mime_type),
+      });
+    }
+
+    onPhaseChange?.('Saving sticker canvas…');
+    const { error } = await supabase.rpc('update_my_profile_sticker_state', {
+      p_profile_stickers: Array.isArray(stickers) ? stickers : [],
+      p_custom_stickers: persistedAssets,
+    });
+    if (error) throw error;
+
+    const nextPaths = new Set(persistedAssets.map((asset) => asset.path));
+    const stalePaths = (Array.isArray(existingCustomStickers) ? existingCustomStickers : [])
+      .map((asset) => asset?.path)
+      .filter((path) => path && !nextPaths.has(path));
+
+    if (stalePaths.length) {
+      try {
+        await removeDecorationPaths(stalePaths);
+      } catch (cleanupError) {
+        console.warn('Could not remove old custom profile stickers:', cleanupError?.message || cleanupError);
+      }
+    }
+
+    return fetchProfileDecoration(userId);
+  } catch (error) {
+    if (uploadedPaths.length) {
+      try {
+        await removeDecorationPaths(uploadedPaths);
+      } catch {
+        // Best effort: account deletion also sweeps this private UUID prefix.
+      }
+    }
+    throw error;
+  }
 }
 
 async function removeDecorationPaths(paths = []) {

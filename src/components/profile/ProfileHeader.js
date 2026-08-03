@@ -151,6 +151,7 @@ export function ProfileHeader({
     hasHeaderPhoto
     || profile.profile_background_url
     || profile.profile_background_color
+    || profile.profile_stickers?.length
   );
 
   return (

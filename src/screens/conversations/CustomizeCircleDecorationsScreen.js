@@ -405,7 +405,7 @@ function CustomizeCircleDecorationsContent({ route, navigation }) {
           disabled={saving}
           style={({ pressed }) => [styles.resetButton, pressed && styles.pressed]}
         >
-          <Text style={styles.resetButtonText}>Reset decorations</Text>
+          <Text style={styles.resetButtonText}>Reset header & background</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

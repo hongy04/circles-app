@@ -342,6 +342,15 @@ function CircleMoreContent({ route, navigation }) {
                   styles={styles}
                   theme={theme}
                 />
+                <Separator styles={styles} />
+                <FeatureRow
+                  icon="sparkles-outline"
+                  title={isTwoPersonCircle ? 'Our Circle Stickers & Decals' : 'Stickers & Decals'}
+                  subtitle="Place shared built-in decorations behind the Circle profile while keeping its content readable."
+                  onPress={() => open('CircleStickers')}
+                  styles={styles}
+                  theme={theme}
+                />
               </View>
             </>
           ) : null}

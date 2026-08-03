@@ -10,10 +10,14 @@ export function normalizeMime(mime) {
   return mime;
 }
 
-export async function compressIfImage(uri, mimeHint = 'image/jpeg') {
+export async function compressIfImage(uri, mimeHint = 'image/jpeg', options = {}) {
   const mime = normalizeMime(mimeHint);
 
   if (!mime.startsWith('image/')) {
+    return { uri, mime };
+  }
+
+  if (options.preserveFormat && (mime === 'image/png' || mime === 'image/webp')) {
     return { uri, mime };
   }
 
@@ -87,11 +91,18 @@ export async function uploadPathToBucket(
 
   const { uri: uploadUri, mime: rawMime } = await compressIfImage(
     uri,
-    mimeHint
+    mimeHint,
+    options
   );
 
   const mime = normalizeMime(rawMime);
-  const extension = mime.startsWith('video/') ? 'mp4' : 'jpg';
+  const extension = mime.startsWith('video/')
+    ? 'mp4'
+    : mime === 'image/png'
+      ? 'png'
+      : mime === 'image/webp'
+        ? 'webp'
+        : 'jpg';
   const folder = sanitizeFolder(options.folder);
   const filename = `${Date.now()}_${Math.floor(Math.random() * 1e6)}.${extension}`;
   const path = folder ? `${folder}/${filename}` : filename;

@@ -51,6 +51,7 @@ import { ProfileConnectionsScreen } from './src/screens/profile/ProfileConnectio
 import { GuestClaimProfileSetupScreen } from './src/screens/profile/GuestClaimProfileSetupScreen';
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { CustomizeProfileScreen } from './src/screens/profile/CustomizeProfileScreen';
+import { ProfileStickerEditorScreen, CircleStickerEditorScreen } from './src/screens/decorations/StickerEditorScreen';
 import { AccountSettingsScreen } from './src/screens/profile/AccountSettingsScreen';
 import {
   AppearanceScreen,
@@ -207,6 +208,7 @@ export default function App() {
           />
           <RootStack.Screen name="EditProfile" component={EditProfileScreen} />
           <RootStack.Screen name="CustomizeProfile" component={CustomizeProfileScreen} />
+          <RootStack.Screen name="ProfileStickers" component={ProfileStickerEditorScreen} />
           <RootStack.Screen name="AccountSettings" component={AccountSettingsScreen} />
           <RootStack.Screen name="Appearance" component={AppearanceScreen} />
           <RootStack.Screen
@@ -692,6 +694,11 @@ function CirclesStack() {
         name="CustomizeCircleDecorations"
         component={CustomizeCircleDecorationsScreen}
         options={{ title: 'Header & Background' }}
+      />
+      <CirclesStackNav.Screen
+        name="CircleStickers"
+        component={CircleStickerEditorScreen}
+        options={{ headerShown: false }}
       />
       <CirclesStackNav.Screen
         name="CirclePeople"

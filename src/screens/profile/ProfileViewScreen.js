@@ -18,6 +18,7 @@ import { ProfileHeader } from '../../components/profile/ProfileHeader';
 import { RomanceProfileSheet } from '../../components/profile/RomanceProfileSheet';
 import { PreConnectionProfileShell } from '../../components/profile/PreConnectionProfileShell';
 import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
+import { StickerCanvas } from '../../components/decorations/StickerCanvas';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import { deleteOwnPost } from '../../services/postService';
 import { blockUser } from '../../services/safetyService';
@@ -977,6 +978,7 @@ export function ProfileViewScreen({
     profile?.profile_header_url
     || profile?.profile_background_url
     || profile?.profile_background_color
+    || profile?.profile_stickers?.length
   );
 
   const hasHeaderPhoto = Boolean(profile?.profile_header_url);
@@ -1075,6 +1077,7 @@ export function ProfileViewScreen({
       edges={hasHeaderPhoto ? [] : ['top']}
       style={[styles.screen, decorationActive && styles.decoratedScreen]}
     >
+      <StickerCanvas stickers={profile?.profile_stickers} customStickers={profile?.profile_custom_stickers} style={styles.stickerLayer} />
       <View
         style={[
           styles.contentWidth,
@@ -1196,9 +1199,13 @@ function createStyles(theme) {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
+  stickerLayer: {
+    zIndex: 0,
+  },
   contentWidth: {
     flex: 1,
     width: '100%',
+    zIndex: 1,
     maxWidth: 720,
     alignSelf: 'center',
     borderLeftWidth: Platform.OS === 'web' ? StyleSheet.hairlineWidth : 0,

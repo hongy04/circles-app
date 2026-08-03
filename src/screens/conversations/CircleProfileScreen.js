@@ -15,6 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
+import { StickerCanvas } from '../../components/decorations/StickerCanvas';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -320,6 +321,7 @@ function CircleProfileContent({ route, navigation }) {
     decoration?.circle_header_url
     || decoration?.circle_background_url
     || decoration?.circle_background_color
+    || decoration?.circle_stickers?.length
   );
   const hasHeaderPhoto = Boolean(decoration?.circle_header_url);
   const gridWidth = Math.min(width, 720);
@@ -673,6 +675,7 @@ function CircleProfileContent({ route, navigation }) {
           ]}
         />
       ) : null}
+      <StickerCanvas stickers={decoration?.circle_stickers} customStickers={decoration?.circle_custom_stickers} style={styles.stickerLayer} />
       <View
         pointerEvents="box-none"
         style={[styles.floatingTopBar, { paddingTop: insets.top }]}
@@ -811,6 +814,9 @@ function createStyles(theme) {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255,255,255,0.14)',
   },
+  stickerLayer: {
+    zIndex: 1,
+  },
   floatingTopBar: {
     position: 'absolute',
     top: 0,
@@ -833,6 +839,7 @@ function createStyles(theme) {
   contentWidth: {
     flex: 1,
     width: '100%',
+    zIndex: 2,
     maxWidth: 720,
     alignSelf: 'center',
   },
