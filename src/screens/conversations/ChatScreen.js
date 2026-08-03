@@ -24,6 +24,10 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../../theme/colors';
 import { ConversationHeaderTitle } from '../../components/conversations/ConversationHeaderTitle';
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
+import { useThemeTokens } from '../../theme/ThemeProvider';
+import { getTheme } from '../../theme/themes';
+import { getCircleThemeSettings } from '../../services/circleThemeService';
 import {
   deleteOwnConversationMessage,
   getConversationDetails,
@@ -264,6 +268,7 @@ export function ChatScreen({ route, navigation }) {
   } = route.params || {};
 
   const insets = useSafeAreaInsets();
+  const globalTheme = useThemeTokens();
   const listRef = useRef(null);
   const screenFocusedRef = useRef(false);
   const appStateRef = useRef(AppState.currentState || 'active');
@@ -286,6 +291,14 @@ export function ChatScreen({ route, navigation }) {
   const [error, setError] = useState(null);
   const [mutualRevealVisible, setMutualRevealVisible] = useState(false);
   const [focusRevealVisible, setFocusRevealVisible] = useState(false);
+  const [sharedChatThemeId, setSharedChatThemeId] = useState(null);
+
+  const isCircle = conversation?.is_circle == null
+    ? conversation?.kind === 'group'
+    : Boolean(conversation.is_circle);
+  const chatTheme = sharedChatThemeId
+    ? getTheme(sharedChatThemeId)
+    : globalTheme;
 
   const load = useCallback(async ({
     quiet = false,
@@ -340,6 +353,27 @@ export function ChatScreen({ route, navigation }) {
       };
     }, [load])
   );
+
+  useEffect(() => {
+    let active = true;
+
+    if (!conversationId || !isCircle) {
+      setSharedChatThemeId(null);
+      return undefined;
+    }
+
+    getCircleThemeSettings(conversationId)
+      .then((settings) => {
+        if (active) setSharedChatThemeId(settings?.themeId || null);
+      })
+      .catch(() => {
+        if (active) setSharedChatThemeId(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [conversationId, isCircle]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -611,9 +645,6 @@ export function ChatScreen({ route, navigation }) {
     });
   };
 
-  const isCircle = conversation?.is_circle == null
-    ? conversation?.kind === 'group'
-    : Boolean(conversation.is_circle);
   const otherUserId = conversation?.other_user_id || initialOtherUserId || null;
 
   const openIdentity = () => {
@@ -714,6 +745,7 @@ export function ChatScreen({ route, navigation }) {
 
   return (
     <View style={styles.screen}>
+      <ThemeAtmosphere theme={chatTheme} strength={0.82} />
       <MutualInterestRevealModal
         visible={mutualRevealVisible}
         onContinue={() => setMutualRevealVisible(false)}
@@ -723,7 +755,13 @@ export function ChatScreen({ route, navigation }) {
         onContinue={() => setFocusRevealVisible(false)}
       />
 
-      <View style={[styles.chatHeader, { paddingTop: insets.top }]}>
+      <View style={[
+        styles.chatHeader,
+        {
+          paddingTop: insets.top,
+          borderBottomColor: chatTheme.colors.border,
+        },
+      ]}>
         <View style={styles.chatHeaderRow}>
           <Pressable
             onPress={() => navigation.goBack()}
@@ -986,7 +1024,7 @@ const styles = StyleSheet.create({
   },
   chatHeader: {
     flexShrink: 0,
-    backgroundColor: COLORS.bg,
+    backgroundColor: 'rgba(255,255,255,0.84)',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: COLORS.border,
   },
@@ -1220,7 +1258,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: COLORS.border,
-    backgroundColor: COLORS.bg,
+    backgroundColor: 'rgba(255,255,255,0.90)',
   },
   addButton: {
     width: 38,
@@ -1239,7 +1277,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#c7c7cc',
     borderRadius: 19,
-    backgroundColor: COLORS.bg,
+    backgroundColor: 'rgba(255,255,255,0.90)',
   },
   input: {
     minHeight: 38,

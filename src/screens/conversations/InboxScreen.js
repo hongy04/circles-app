@@ -15,6 +15,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Avatar } from '../../components/Avatar';
 import { UnreadBadge } from '../../components/UnreadBadge';
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
 import {
@@ -54,7 +55,7 @@ function PinnedConversation({
   const { theme, styles } = useInboxTheme();
 
   return (
-    <View style={[styles.pinnedCell, { width: itemWidth }]}> 
+    <View style={[styles.pinnedCell, { width: itemWidth }]}>
       <Pressable
         onPress={() => onOpen(conversation)}
         onLongPress={() => onTogglePin(conversation)}
@@ -390,27 +391,32 @@ export function InboxScreen({ navigation }) {
 
   if (loading) {
     return (
-      <View style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.stateText}>Loading your circles…</Text>
+      <View style={styles.screen}>
+        <ThemeAtmosphere theme={theme} strength={1.25} decals />
+        <View style={styles.centerState}>
+          <ActivityIndicator />
+          <Text style={styles.stateText}>Loading your circles…</Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.content}
-      refreshControl={(
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => {
-            setRefreshing(true);
-            load({ quiet: true });
-          }}
-        />
-      )}
-    >
+    <View style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={1.25} decals />
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        refreshControl={(
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load({ quiet: true });
+            }}
+          />
+        )}
+      >
       {error ? (
         <View style={styles.errorCard}>
           <Text style={styles.errorText}>{error}</Text>
@@ -487,7 +493,8 @@ export function InboxScreen({ navigation }) {
           </Text>
         </View>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -496,6 +503,10 @@ function createStyles(theme) {
   screen: {
     flex: 1,
     backgroundColor: theme.colors.bg,
+  },
+  scroll: {
+    flex: 1,
+    backgroundColor: 'transparent',
   },
   content: {
     width: '100%',
@@ -508,7 +519,7 @@ function createStyles(theme) {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.bg,
+    backgroundColor: 'transparent',
   },
   stateText: {
     marginTop: 10,
@@ -660,7 +671,10 @@ function createStyles(theme) {
     marginTop: 2,
   },
   messageList: {
-    backgroundColor: theme.colors.bg,
+    marginHorizontal: 8,
+    overflow: 'hidden',
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.58)',
   },
   row: {
     minHeight: 78,
@@ -669,7 +683,7 @@ function createStyles(theme) {
     paddingLeft: 16,
     paddingRight: 12,
     paddingVertical: 9,
-    backgroundColor: theme.colors.bg,
+    backgroundColor: 'transparent',
   },
   rowPressed: {
     backgroundColor: theme.colors.surfaceSoft,

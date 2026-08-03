@@ -22,115 +22,89 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function GrassRidge({ theme, activeIndex = 0, totalTabs = 4 }) {
+const GrassRidge = React.memo(function GrassRidge({ theme }) {
   const tokens = theme.navigation?.aero || {};
-  const breezeA = useRef(new Animated.Value(0)).current;
-  const breezeB = useRef(new Animated.Value(0)).current;
-  const breezeC = useRef(new Animated.Value(0)).current;
-  const gust = useRef(new Animated.Value(0)).current;
+  const driftA = useRef(new Animated.Value(0)).current;
+  const driftB = useRef(new Animated.Value(0)).current;
+  const driftC = useRef(new Animated.Value(0)).current;
 
-  const particles = useMemo(() => {
-    const rows = 4;
-    const cols = 44;
-    const all = [];
+  const particleGroups = useMemo(() => {
+    const groups = [[], [], []];
+    const rows = 3;
+    const cols = 24;
 
     for (let row = 0; row < rows; row += 1) {
       for (let col = 0; col < cols; col += 1) {
-        const stagger = row % 2 === 0 ? 0.1 : 0.58;
-        const jitter = ((((col + 1) * (row + 3) * 17) % 9) - 4) * 0.12;
+        const group = (col + row) % 3;
+        const stagger = row % 2 === 0 ? 0.16 : 0.58;
+        const jitter = ((((col + 1) * (row + 3) * 17) % 7) - 3) * 0.16;
         const left = clamp(((col + stagger) / cols) * 100 + jitter, 1, 99);
-        const xNorm = left / 100;
-        const width = 1.1 + (((col * 7 + row * 3) % 4) * 0.18);
-        const height = 3.2 + row * 1.15 + (((col * 5 + row * 11) % 4) * 0.5);
-        const bottom = 2 + row * 3.1 + (((col * 3 + row) % 2) * 0.35);
-        const opacity = 0.24 + row * 0.1 + (((col + row * 2) % 3) * 0.04);
+        const width = 1.2 + (((col * 7 + row * 3) % 3) * 0.18);
+        const height = 3.8 + row * 1.5 + (((col * 5 + row * 11) % 3) * 0.55);
+        const bottom = 2 + row * 4.1;
         const paletteBand = (col + row) % 3;
-        const baseColor = paletteBand === 0
-          ? rgba(tokens.grassLight || '#DDF6AF', 0.82)
+        const color = paletteBand === 0
+          ? rgba(tokens.grassLight || '#DDF6AF', 0.72)
           : paletteBand === 1
-            ? rgba(tokens.grassMid || '#A6E17B', 0.84)
-            : rgba(tokens.grassDark || '#70BE64', 0.82);
+            ? rgba(tokens.grassMid || '#A6E17B', 0.74)
+            : rgba(tokens.grassDark || '#70BE64', 0.70);
 
-        all.push({
+        groups[group].push({
           key: `${row}-${col}`,
           left: `${left}%`,
-          xNorm,
           width,
           height,
           bottom,
-          opacity,
-          color: baseColor,
-          group: (col + row) % 3,
-          direction: row % 2 === 0 ? 1 : -1,
+          color,
           rotate: `${-4 + (((col * 13 + row * 19) % 9))}deg`,
         });
       }
     }
 
-    return all;
+    return groups;
   }, [tokens.grassDark, tokens.grassLight, tokens.grassMid]);
 
   useEffect(() => {
-    const makeLoop = (value, duration, delay = 0) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(value, {
-            toValue: 1,
-            duration,
-            delay,
-            useNativeDriver: true,
-          }),
-          Animated.timing(value, {
-            toValue: 0,
-            duration,
-            useNativeDriver: true,
-          }),
-        ])
-      );
+    const makeLoop = (value, duration, delay = 0) => Animated.loop(
+      Animated.sequence([
+        Animated.timing(value, {
+          toValue: 1,
+          duration,
+          delay,
+          useNativeDriver: true,
+          isInteraction: false,
+        }),
+        Animated.timing(value, {
+          toValue: 0,
+          duration,
+          useNativeDriver: true,
+          isInteraction: false,
+        }),
+      ])
+    );
 
-    const loopA = makeLoop(breezeA, 3400);
-    const loopB = makeLoop(breezeB, 4300, 180);
-    const loopC = makeLoop(breezeC, 5200, 90);
+    const loops = [
+      makeLoop(driftA, 4700),
+      makeLoop(driftB, 5700, 180),
+      makeLoop(driftC, 6900, 100),
+    ];
+    loops.forEach((loop) => loop.start());
+    return () => loops.forEach((loop) => loop.stop());
+  }, [driftA, driftB, driftC]);
 
-    loopA.start();
-    loopB.start();
-    loopC.start();
-
-    return () => {
-      loopA.stop();
-      loopB.stop();
-      loopC.stop();
-    };
-  }, [breezeA, breezeB, breezeC]);
-
-  useEffect(() => {
-    gust.stopAnimation();
-    gust.setValue(0);
-    Animated.sequence([
-      Animated.timing(gust, {
-        toValue: 1,
-        duration: 340,
-        useNativeDriver: true,
-      }),
-      Animated.timing(gust, {
-        toValue: 0,
-        duration: 420,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [activeIndex, gust]);
-
-  const activeCenter = clamp((activeIndex + 0.5) / Math.max(1, totalTabs), 0.08, 0.92);
-
-  const breezeXByGroup = [
-    breezeA.interpolate({ inputRange: [0, 1], outputRange: [-1.2, 1.2] }),
-    breezeB.interpolate({ inputRange: [0, 1], outputRange: [1.4, -1.1] }),
-    breezeC.interpolate({ inputRange: [0, 1], outputRange: [-1.0, 1.5] }),
-  ];
-  const breezeYByGroup = [
-    breezeB.interpolate({ inputRange: [0, 1], outputRange: [0.3, -0.9] }),
-    breezeC.interpolate({ inputRange: [0, 1], outputRange: [-0.8, 0.2] }),
-    breezeA.interpolate({ inputRange: [0, 1], outputRange: [0.25, -0.7] }),
+  const motion = [
+    {
+      x: driftA.interpolate({ inputRange: [0, 1], outputRange: [-2.0, 2.0] }),
+      y: driftB.interpolate({ inputRange: [0, 1], outputRange: [0.35, -1.0] }),
+    },
+    {
+      x: driftB.interpolate({ inputRange: [0, 1], outputRange: [1.8, -1.8] }),
+      y: driftC.interpolate({ inputRange: [0, 1], outputRange: [-0.9, 0.35] }),
+    },
+    {
+      x: driftC.interpolate({ inputRange: [0, 1], outputRange: [-1.6, 1.9] }),
+      y: driftA.interpolate({ inputRange: [0, 1], outputRange: [0.25, -0.85] }),
+    },
   ];
 
   return (
@@ -138,83 +112,57 @@ function GrassRidge({ theme, activeIndex = 0, totalTabs = 4 }) {
       <LinearGradient
         colors={[
           rgba(tokens.grassLight || '#DDF6AF', 0),
-          rgba(tokens.grassLight || '#DDF6AF', 0.22),
-          rgba(tokens.grassMid || '#A6E17B', 0.42),
-          rgba(tokens.grassDark || '#70BE64', 0.6),
+          rgba(tokens.grassLight || '#DDF6AF', 0.18),
+          rgba(tokens.grassMid || '#A6E17B', 0.34),
+          rgba(tokens.grassDark || '#70BE64', 0.48),
         ]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={styles.grassBase}
       />
       <LinearGradient
-        colors={[
-          'rgba(255,255,255,0.14)',
-          'rgba(255,255,255,0)',
-        ]}
+        colors={['rgba(255,255,255,0.12)', 'rgba(255,255,255,0)']}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={styles.grassMist}
       />
-      {particles.map((particle) => {
-        const focusWeight = clamp(1 - Math.abs(particle.xNorm - activeCenter) / 0.28, 0, 1);
-        const gustX = gust.interpolate({
-          inputRange: [0, 0.45, 1],
-          outputRange: [
-            0,
-            particle.direction * focusWeight * 2.4,
-            0,
-          ],
-        });
-        const gustY = gust.interpolate({
-          inputRange: [0, 0.45, 1],
-          outputRange: [
-            0,
-            -focusWeight * 1.35,
-            0,
-          ],
-        });
-        const glowOpacity = gust.interpolate({
-          inputRange: [0, 0.45, 1],
-          outputRange: [0.05, 0.05 + (focusWeight * 0.16), 0.05],
-        });
-        const swayX = breezeXByGroup[particle.group];
-        const swayY = breezeYByGroup[particle.group];
-
-        return (
-          <Animated.View
-            key={particle.key}
-            style={[
-              styles.grassParticle,
-              {
-                left: particle.left,
-                bottom: particle.bottom,
-                width: particle.width,
-                height: particle.height,
-                opacity: particle.opacity,
-                backgroundColor: particle.color,
-                borderRadius: particle.width,
-                transform: [
-                  { translateX: Animated.add(swayX, gustX) },
-                  { translateY: Animated.add(swayY, gustY) },
-                  { rotate: particle.rotate },
-                ],
-              },
-            ]}
-          >
-            <Animated.View
+      {particleGroups.map((particles, groupIndex) => (
+        <Animated.View
+          key={`grass-group-${groupIndex}`}
+          style={[
+            StyleSheet.absoluteFillObject,
+            {
+              transform: [
+                { translateX: motion[groupIndex].x },
+                { translateY: motion[groupIndex].y },
+              ],
+            },
+          ]}
+        >
+          {particles.map((particle) => (
+            <View
+              key={particle.key}
               style={[
-                styles.grassParticleGlow,
+                styles.grassParticle,
                 {
-                  opacity: glowOpacity,
+                  left: particle.left,
+                  bottom: particle.bottom,
+                  width: particle.width,
+                  height: particle.height,
+                  backgroundColor: particle.color,
+                  borderRadius: particle.width,
+                  transform: [{ rotate: particle.rotate }],
                 },
               ]}
-            />
-          </Animated.View>
-        );
-      })}
+            >
+              <View style={styles.grassParticleGlowStatic} />
+            </View>
+          ))}
+        </Animated.View>
+      ))}
     </View>
   );
-}
+});
 
 function GlassOrb({ size = 10, accent, accent2, style }) {
   return (
@@ -549,44 +497,24 @@ function AeroTabItem({
   badgeCount = 0,
 }) {
   const lift = useRef(new Animated.Value(focused ? 1 : 0)).current;
-  const press = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.spring(lift, {
+    Animated.timing(lift, {
       toValue: focused ? 1 : 0,
-      damping: 16,
-      stiffness: 185,
-      mass: 0.7,
+      duration: focused ? 125 : 95,
       useNativeDriver: true,
+      isInteraction: false,
     }).start();
   }, [focused, lift]);
 
-  const translateY = Animated.add(
-    lift.interpolate({ inputRange: [0, 1], outputRange: [0, -4.8] }),
-    press.interpolate({ inputRange: [0, 1], outputRange: [0, 1.4] })
-  );
-  const scale = Animated.multiply(
-    lift.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1.025] }),
-    press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.972] })
-  );
-
-  const onPressIn = () => {
-    Animated.timing(press, {
-      toValue: 1,
-      duration: 90,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const onPressOut = () => {
-    Animated.spring(press, {
-      toValue: 0,
-      damping: 12,
-      stiffness: 210,
-      mass: 0.52,
-      useNativeDriver: true,
-    }).start();
-  };
+  const translateY = lift.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -4],
+  });
+  const scale = lift.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.99, 1.02],
+  });
 
   const onPress = () => {
     const event = navigation.emit({
@@ -610,8 +538,6 @@ function AeroTabItem({
       accessibilityLabel={descriptor.options.tabBarAccessibilityLabel}
       testID={descriptor.options.tabBarButtonTestID}
       onPress={onPress}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
       onLongPress={onLongPress}
       style={styles.tabItem}
     >
@@ -689,7 +615,7 @@ export function FrutigerAeroTabBar({
         >
           <View pointerEvents="none" style={styles.skySheen} />
           <View pointerEvents="none" style={styles.stationCaustic} />
-          <GrassRidge theme={theme} activeIndex={state.index} totalTabs={state.routes.length} />
+          <GrassRidge theme={theme} />
         </LinearGradient>
 
         <View style={styles.tabsRow} pointerEvents="box-none">
@@ -798,13 +724,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     overflow: 'hidden',
   },
-  grassParticleGlow: {
+  grassParticleGlowStatic: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: '60%',
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    height: '55%',
+    backgroundColor: 'rgba(255,255,255,0.22)',
   },
   tabsRow: {
     ...StyleSheet.absoluteFillObject,
