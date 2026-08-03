@@ -31,6 +31,21 @@ import {
 } from '../../services/notificationService';
 
 
+function colorWithAlpha(color, alpha) {
+  const value = String(color || '').trim();
+  const longHex = value.match(/^#([0-9a-fA-F]{6})$/);
+  if (longHex) {
+    const hex = longHex[1];
+    return `rgba(${parseInt(hex.slice(0, 2), 16)},${parseInt(hex.slice(2, 4), 16)},${parseInt(hex.slice(4, 6), 16)},${alpha})`;
+  }
+  const shortHex = value.match(/^#([0-9a-fA-F]{3})$/);
+  if (shortHex) {
+    const hex = shortHex[1].split('').map((part) => part + part).join('');
+    return `rgba(${parseInt(hex.slice(0, 2), 16)},${parseInt(hex.slice(2, 4), 16)},${parseInt(hex.slice(4, 6), 16)},${alpha})`;
+  }
+  return `rgba(255,255,255,${alpha})`;
+}
+
 function useInboxTheme() {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -259,6 +274,10 @@ export function InboxScreen({ navigation }) {
 
   useEffect(() => {
     navigation.setOptions({
+      headerShadowVisible: false,
+      headerStyle: {
+        backgroundColor: colorWithAlpha(theme.colors.surface, 0.72),
+      },
       headerRight: () => (
         <View style={styles.headerActions}>
           <Pressable

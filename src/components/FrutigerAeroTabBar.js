@@ -27,15 +27,17 @@ const GrassRidge = React.memo(function GrassRidge({ theme }) {
   const driftA = useRef(new Animated.Value(0)).current;
   const driftB = useRef(new Animated.Value(0)).current;
   const driftC = useRef(new Animated.Value(0)).current;
+  const driftD = useRef(new Animated.Value(0)).current;
+  const driftE = useRef(new Animated.Value(0)).current;
 
   const particleGroups = useMemo(() => {
-    const groups = [[], [], []];
+    const groups = [[], [], [], [], []];
     const rows = 3;
-    const cols = 24;
+    const cols = 26;
 
     for (let row = 0; row < rows; row += 1) {
       for (let col = 0; col < cols; col += 1) {
-        const group = (col + row) % 3;
+        const group = (col * 2 + row) % 5;
         const stagger = row % 2 === 0 ? 0.16 : 0.58;
         const jitter = ((((col + 1) * (row + 3) * 17) % 7) - 3) * 0.16;
         const left = clamp(((col + stagger) / cols) * 100 + jitter, 1, 99);
@@ -84,26 +86,41 @@ const GrassRidge = React.memo(function GrassRidge({ theme }) {
     );
 
     const loops = [
-      makeLoop(driftA, 4700),
-      makeLoop(driftB, 5700, 180),
-      makeLoop(driftC, 6900, 100),
+      makeLoop(driftA, 3300),
+      makeLoop(driftB, 4100, 120),
+      makeLoop(driftC, 4800, 260),
+      makeLoop(driftD, 5600, 80),
+      makeLoop(driftE, 6300, 210),
     ];
     loops.forEach((loop) => loop.start());
     return () => loops.forEach((loop) => loop.stop());
-  }, [driftA, driftB, driftC]);
+  }, [driftA, driftB, driftC, driftD, driftE]);
 
   const motion = [
     {
-      x: driftA.interpolate({ inputRange: [0, 1], outputRange: [-2.0, 2.0] }),
-      y: driftB.interpolate({ inputRange: [0, 1], outputRange: [0.35, -1.0] }),
+      x: driftA.interpolate({ inputRange: [0, 1], outputRange: [-5.4, 5.4] }),
+      y: driftB.interpolate({ inputRange: [0, 1], outputRange: [1.0, -2.0] }),
+      rotate: driftA.interpolate({ inputRange: [0, 1], outputRange: ['-0.9deg', '0.9deg'] }),
     },
     {
-      x: driftB.interpolate({ inputRange: [0, 1], outputRange: [1.8, -1.8] }),
-      y: driftC.interpolate({ inputRange: [0, 1], outputRange: [-0.9, 0.35] }),
+      x: driftB.interpolate({ inputRange: [0, 1], outputRange: [5.0, -5.0] }),
+      y: driftC.interpolate({ inputRange: [0, 1], outputRange: [-1.8, 0.8] }),
+      rotate: driftB.interpolate({ inputRange: [0, 1], outputRange: ['0.8deg', '-0.8deg'] }),
     },
     {
-      x: driftC.interpolate({ inputRange: [0, 1], outputRange: [-1.6, 1.9] }),
-      y: driftA.interpolate({ inputRange: [0, 1], outputRange: [0.25, -0.85] }),
+      x: driftC.interpolate({ inputRange: [0, 1], outputRange: [-4.7, 5.2] }),
+      y: driftD.interpolate({ inputRange: [0, 1], outputRange: [0.9, -2.2] }),
+      rotate: driftC.interpolate({ inputRange: [0, 1], outputRange: ['-0.7deg', '1.0deg'] }),
+    },
+    {
+      x: driftD.interpolate({ inputRange: [0, 1], outputRange: [5.7, -5.1] }),
+      y: driftE.interpolate({ inputRange: [0, 1], outputRange: [-2.0, 0.9] }),
+      rotate: driftD.interpolate({ inputRange: [0, 1], outputRange: ['0.9deg', '-0.7deg'] }),
+    },
+    {
+      x: driftE.interpolate({ inputRange: [0, 1], outputRange: [-5.2, 5.8] }),
+      y: driftA.interpolate({ inputRange: [0, 1], outputRange: [0.8, -1.9] }),
+      rotate: driftE.interpolate({ inputRange: [0, 1], outputRange: ['-1.0deg', '0.8deg'] }),
     },
   ];
 
@@ -135,6 +152,7 @@ const GrassRidge = React.memo(function GrassRidge({ theme }) {
               transform: [
                 { translateX: motion[groupIndex].x },
                 { translateY: motion[groupIndex].y },
+                { rotate: motion[groupIndex].rotate },
               ],
             },
           ]}
