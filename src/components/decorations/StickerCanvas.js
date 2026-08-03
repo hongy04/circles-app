@@ -129,12 +129,15 @@ export function normalizeStickerList(input, customAssets = []) {
 }
 
 export function makeDecorationInstance(payload = {}, index = 0) {
+  // New decorations should be immediately visible when added. Start them over
+  // the upper profile/header area, then fan subsequent additions out slightly.
+  // Users can drag them anywhere on the full normalized canvas afterward.
   const spread = [
-    [0.22, 0.2],
-    [0.78, 0.24],
-    [0.22, 0.67],
-    [0.78, 0.72],
-    [0.5, 0.48],
+    [0.5, 0.19],
+    [0.34, 0.22],
+    [0.66, 0.22],
+    [0.43, 0.28],
+    [0.57, 0.28],
   ];
   const [x, y] = spread[index % spread.length];
   const kind = payload.kind || 'built_in';

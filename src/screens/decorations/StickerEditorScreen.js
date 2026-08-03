@@ -29,7 +29,6 @@ import {
   MAX_EMOJI_DECORATION_LENGTH,
   MAX_TEXT_DECORATION_LENGTH,
   STICKER_BASE_SIZE,
-  STICKER_CATALOG,
   TEXT_DECORATION_COLORS,
   TEXT_DECORATION_STYLES,
   StickerArt,
@@ -53,7 +52,7 @@ import { listCirclePosts } from '../../services/circlePostService';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 
-const PACKS = ['Aero', 'Nature', 'Cozy', 'Emoji', 'Text', 'Yours'];
+const PACKS = ['Emoji', 'Text', 'Yours'];
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -84,12 +83,15 @@ function EditorSticker({
   sticker,
   customUrl,
   selected,
+  floating = false,
   canvasSize,
   onSelect,
   onMove,
+  onBeginDrag,
 }) {
   const startRef = useRef({ x: sticker.x, y: sticker.y });
   const positionRef = useRef({ x: sticker.x, y: sticker.y });
+  const hasStartedDragRef = useRef(false);
   positionRef.current = { x: sticker.x, y: sticker.y };
   const box = getDecorationRenderBox(sticker, STICKER_BASE_SIZE);
 
@@ -99,15 +101,20 @@ function EditorSticker({
     onPanResponderTerminationRequest: () => false,
     onPanResponderGrant: () => {
       startRef.current = positionRef.current;
+      hasStartedDragRef.current = false;
       onSelect(sticker.id);
     },
     onPanResponderMove: (_, gesture) => {
       if (!canvasSize.width || !canvasSize.height) return;
+      if (!hasStartedDragRef.current && (Math.abs(gesture.dx) > 2 || Math.abs(gesture.dy) > 2)) {
+        hasStartedDragRef.current = true;
+        onBeginDrag?.(sticker.id);
+      }
       const nextX = clamp(startRef.current.x + (gesture.dx / canvasSize.width), 0.04, 0.96);
       const nextY = clamp(startRef.current.y + (gesture.dy / canvasSize.height), 0.04, 0.96);
       onMove(sticker.id, { x: nextX, y: nextY });
     },
-  }), [canvasSize.height, canvasSize.width, onMove, onSelect, sticker.id]);
+  }), [canvasSize.height, canvasSize.width, onBeginDrag, onMove, onSelect, sticker.id]);
 
   return (
     <View
@@ -123,6 +130,7 @@ function EditorSticker({
           transform: [{ rotate: `${sticker.rotation}deg` }],
         },
         selected && styles.editorStickerSelected,
+        floating && styles.editorStickerFloating,
       ]}
     >
       <StickerArt
@@ -329,7 +337,8 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
   const [customStickers, setCustomStickers] = useState([]);
   const [existingCustomStickers, setExistingCustomStickers] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
-  const [activePack, setActivePack] = useState('Aero');
+  const [floatingSpawnIds, setFloatingSpawnIds] = useState(() => new Set());
+  const [activePack, setActivePack] = useState('Emoji');
   const [emojiInput, setEmojiInput] = useState('');
   const [textInput, setTextInput] = useState('');
   const [textStyle, setTextStyle] = useState('glass');
@@ -355,6 +364,7 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    setFloatingSpawnIds(new Set());
     try {
       if (mode === 'circle') {
         if (!conversationId) throw new Error('Circle not found.');
@@ -406,7 +416,6 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     [customStickers]
   );
   const selected = stickers.find((item) => item.id === selectedId) || null;
-  const packItems = STICKER_CATALOG.filter((item) => item.pack === activePack);
 
   const updateSticker = useCallback((id, patch) => {
     setStickers((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
@@ -415,8 +424,22 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
   const appendSticker = (next) => {
     next.z = stickers.reduce((max, item) => Math.max(max, item.z), -1) + 1;
     setStickers((current) => [...current, next]);
+    setFloatingSpawnIds((current) => {
+      const nextIds = new Set(current);
+      nextIds.add(next.id);
+      return nextIds;
+    });
     setSelectedId(next.id);
   };
+
+  const settleSpawnedSticker = useCallback((id) => {
+    setFloatingSpawnIds((current) => {
+      if (!current.has(id)) return current;
+      const nextIds = new Set(current);
+      nextIds.delete(id);
+      return nextIds;
+    });
+  }, []);
 
   const addSticker = (stickerId, assetId = null) => {
     if (stickers.length >= MAX_DECORATION_STICKERS) {
@@ -498,7 +521,14 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     const perform = () => {
       const selectedUsesAsset = (selected?.kind === 'custom_image' || selected?.kind === 'apple_glyph' || selected?.sticker === 'custom') && selected?.asset_id === asset.id;
       setCustomStickers((current) => current.filter((item) => item.id !== asset.id));
+      const removedIds = stickers.filter((item) => item.asset_id === asset.id).map((item) => item.id);
       setStickers((current) => current.filter((item) => item.asset_id !== asset.id));
+      setFloatingSpawnIds((current) => {
+        if (!removedIds.some((id) => current.has(id))) return current;
+        const nextIds = new Set(current);
+        removedIds.forEach((id) => nextIds.delete(id));
+        return nextIds;
+      });
       if (selectedUsesAsset) setSelectedId(null);
     };
 
@@ -519,7 +549,14 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
 
   const deleteSelected = () => {
     if (!selected) return;
-    setStickers((current) => current.filter((item) => item.id !== selected.id));
+    const id = selected.id;
+    setStickers((current) => current.filter((item) => item.id !== id));
+    setFloatingSpawnIds((current) => {
+      if (!current.has(id)) return current;
+      const nextIds = new Set(current);
+      nextIds.delete(id);
+      return nextIds;
+    });
     setSelectedId(null);
   };
 
@@ -556,7 +593,7 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     if (!stickers.length) return;
     Alert.alert('Remove all placed decorations?', 'Your uploaded image library, header, and background will stay unchanged.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove all', style: 'destructive', onPress: () => { setStickers([]); setSelectedId(null); } },
+      { text: 'Remove all', style: 'destructive', onPress: () => { setStickers([]); setSelectedId(null); setFloatingSpawnIds(new Set()); } },
     ]);
   };
 
@@ -665,9 +702,11 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
             sticker={sticker}
             customUrl={sticker.sticker === 'custom' ? customMap[sticker.asset_id]?.url : null}
             selected={selectedId === sticker.id}
+            floating={floatingSpawnIds.has(sticker.id)}
             canvasSize={canvasSize}
             onSelect={setSelectedId}
             onMove={updateSticker}
+            onBeginDrag={settleSpawnedSticker}
           />
         ))
         : null}
@@ -823,42 +862,29 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
             </View>
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.palette}>
-              {activePack === 'Yours' ? (
-                <>
-                  <Pressable onPress={pickCustomSticker} style={({ pressed }) => [themedStyles.uploadPaletteItem, pressed && styles.pressed]}>
-                    <View style={themedStyles.uploadIcon}>
-                      <Ionicons name="add" size={22} color={theme.colors.text} />
-                    </View>
-                    <Text style={themedStyles.paletteLabel}>Upload</Text>
+              <Pressable onPress={pickCustomSticker} style={({ pressed }) => [themedStyles.uploadPaletteItem, pressed && styles.pressed]}>
+                <View style={themedStyles.uploadIcon}>
+                  <Ionicons name="add" size={22} color={theme.colors.text} />
+                </View>
+                <Text style={themedStyles.paletteLabel}>Upload</Text>
+              </Pressable>
+              {customStickers.map((asset) => (
+                <View key={asset.id} style={themedStyles.customPaletteWrap}>
+                  <Pressable
+                    onPress={() => addSticker('custom', asset.id)}
+                    style={({ pressed }) => [themedStyles.paletteItem, pressed && styles.pressed]}
+                  >
+                    <StickerArt stickerId="custom" kind="custom_image" customUrl={asset.url} size={48} />
+                    <Text style={themedStyles.paletteLabel}>Yours</Text>
                   </Pressable>
-                  {customStickers.map((asset) => (
-                    <View key={asset.id} style={themedStyles.customPaletteWrap}>
-                      <Pressable
-                        onPress={() => addSticker('custom', asset.id)}
-                        style={({ pressed }) => [themedStyles.paletteItem, pressed && styles.pressed]}
-                      >
-                        <StickerArt stickerId="custom" kind="custom_image" customUrl={asset.url} size={48} />
-                        <Text style={themedStyles.paletteLabel}>Yours</Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => removeCustomAsset(asset)}
-                        hitSlop={6}
-                        style={themedStyles.removeUploadButton}
-                      >
-                        <Ionicons name="close" size={12} color="#fff" />
-                      </Pressable>
-                    </View>
-                  ))}
-                </>
-              ) : packItems.map((item) => (
-                <Pressable
-                  key={item.id}
-                  onPress={() => addSticker(item.id)}
-                  style={({ pressed }) => [themedStyles.paletteItem, pressed && styles.pressed]}
-                >
-                  <StickerArt stickerId={item.id} kind="built_in" size={48} />
-                  <Text style={themedStyles.paletteLabel}>{item.label}</Text>
-                </Pressable>
+                  <Pressable
+                    onPress={() => removeCustomAsset(asset)}
+                    hitSlop={6}
+                    style={themedStyles.removeUploadButton}
+                  >
+                    <Ionicons name="close" size={12} color="#fff" />
+                  </Pressable>
+                </View>
               ))}
             </ScrollView>
           )}
@@ -901,6 +927,14 @@ const styles = StyleSheet.create({
   canvasTint: { ...StyleSheet.absoluteFillObject },
   editorSticker: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   editorStickerSelected: { zIndex: 65 },
+  editorStickerFloating: {
+    zIndex: 92,
+    shadowColor: '#0A1222',
+    shadowOpacity: 0.22,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 12,
+  },
   selectionRing: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 999,
