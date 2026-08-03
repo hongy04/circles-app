@@ -242,11 +242,11 @@ function GlassOrb({ size = 10, accent, accent2, style }) {
         style={[
           styles.glassOrbHighlight,
           {
-            width: size * 0.48,
-            height: size * 0.2,
+            width: size * 0.28,
+            height: size * 0.16,
             borderRadius: size,
-            top: size * 0.12,
-            left: size * 0.18,
+            top: size * 0.13,
+            left: size * 0.16,
           },
         ]}
       />
@@ -392,6 +392,100 @@ function MeGlyph({ accent, accent2 }) {
   );
 }
 
+function BubbleLightField({ routeName, accent, accent2, focused }) {
+  const variant = routeName === 'Mutuals'
+    ? styles.bubbleLightMutuals
+    : routeName === 'Feed'
+      ? styles.bubbleLightFeed
+      : routeName === 'Me'
+        ? styles.bubbleLightMe
+        : styles.bubbleLightCircles;
+  const secondaryVariant = routeName === 'Mutuals'
+    ? styles.bubbleSecondaryMutuals
+    : routeName === 'Feed'
+      ? styles.bubbleSecondaryFeed
+      : routeName === 'Me'
+        ? styles.bubbleSecondaryMe
+        : styles.bubbleSecondaryCircles;
+  const pinVariant = routeName === 'Mutuals'
+    ? styles.bubblePinGlintMutuals
+    : routeName === 'Feed'
+      ? styles.bubblePinGlintFeed
+      : routeName === 'Me'
+        ? styles.bubblePinGlintMe
+        : styles.bubblePinGlintCircles;
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+      <LinearGradient
+        colors={[
+          'rgba(255,255,255,0.98)',
+          rgba(accent2 || accent, focused ? 0.28 : 0.18),
+          rgba(accent, focused ? 0.32 : 0.2),
+          'rgba(214,244,255,0.18)',
+        ]}
+        locations={[0, 0.22, 0.62, 1]}
+        start={{ x: 0.18, y: 0.02 }}
+        end={{ x: 0.86, y: 1 }}
+        style={styles.bubbleBaseBlend}
+      />
+      <LinearGradient
+        colors={['rgba(255,255,255,0.70)', 'rgba(255,255,255,0.04)']}
+        start={{ x: 0.24, y: 0 }}
+        end={{ x: 0.78, y: 1 }}
+        style={styles.bubbleTopCap}
+      />
+      <LinearGradient
+        colors={[
+          rgba(accent2 || accent, focused ? 0.04 : 0.02),
+          rgba(accent2 || accent, focused ? 0.18 : 0.12),
+          rgba(accent, focused ? 0.32 : 0.22),
+          'rgba(255,255,255,0.22)',
+        ]}
+        locations={[0, 0.38, 0.84, 1]}
+        start={{ x: 0.5, y: 0.28 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.bubbleBottomPool}
+      />
+      <View
+        style={[
+          styles.bubbleColorPool,
+          {
+            backgroundColor: rgba(accent2 || accent, focused ? 0.24 : 0.17),
+          },
+        ]}
+      />
+      <View
+        style={[
+          styles.bubbleColorPoolSecondary,
+          {
+            backgroundColor: rgba(accent, focused ? 0.18 : 0.12),
+          },
+        ]}
+      />
+      <LinearGradient
+        colors={['rgba(255,255,255,0.72)', 'rgba(255,255,255,0.12)', 'rgba(255,255,255,0)']}
+        locations={[0, 0.55, 1]}
+        start={{ x: 0.12, y: 0.08 }}
+        end={{ x: 0.94, y: 0.96 }}
+        style={[styles.bubbleSpecular, variant]}
+      />
+      <LinearGradient
+        colors={['rgba(255,255,255,0.50)', 'rgba(255,255,255,0)']}
+        start={{ x: 0.08, y: 0.08 }}
+        end={{ x: 0.92, y: 0.92 }}
+        style={[styles.bubbleSpecularSecondary, secondaryVariant]}
+      />
+      <View style={[styles.bubblePinGlint, pinVariant]} />
+      <View style={styles.bubbleLowerRefraction} />
+      <View style={styles.bubbleHorizonBand} />
+      <View style={styles.bubbleSideBloom} />
+      <View style={styles.bubbleEdgeShade} />
+      <View style={styles.bubbleRimLight} />
+    </View>
+  );
+}
+
 function AeroEmblem({ routeName, theme, focused }) {
   const tokens = theme.navigation?.aero || {};
   const palette = theme.circle?.decalPalette || [];
@@ -418,24 +512,28 @@ function AeroEmblem({ routeName, theme, focused }) {
     >
       <LinearGradient
         colors={focused
-          ? ['rgba(255,255,255,0.96)', rgba(accent, 0.28), rgba(accent2, 0.24)]
-          : ['rgba(255,255,255,0.84)', rgba(accent, 0.16), 'rgba(226,247,255,0.72)']}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
+          ? ['rgba(255,255,255,0.96)', rgba(accent2, 0.22), rgba(accent, 0.30), 'rgba(214,246,255,0.58)']
+          : ['rgba(255,255,255,0.90)', rgba(accent2, 0.12), rgba(accent, 0.18), 'rgba(220,245,255,0.42)']}
+        locations={[0, 0.26, 0.66, 1]}
+        start={{ x: 0.14, y: 0.02 }}
+        end={{ x: 0.9, y: 1 }}
         style={[
           styles.emblem,
           {
             borderColor: focused
-              ? tokens.selectedBorder || rgba(theme.circle.accent, 0.72)
-              : tokens.orbBorder || 'rgba(255,255,255,0.9)',
+              ? tokens.selectedBorder || rgba(theme.circle.accent, 0.66)
+              : tokens.orbBorder || 'rgba(255,255,255,0.82)',
           },
         ]}
       >
+        <BubbleLightField
+          routeName={routeName}
+          accent={accent}
+          accent2={accent2}
+          focused={focused}
+        />
         <View style={styles.emblemInnerRing} />
         <View style={styles.glyphDepth}>{glyph}</View>
-        <View style={styles.emblemShine} />
-        <View style={styles.emblemSideShine} />
-        <View style={styles.emblemCaustic} />
       </LinearGradient>
     </View>
   );
@@ -451,19 +549,44 @@ function AeroTabItem({
   badgeCount = 0,
 }) {
   const lift = useRef(new Animated.Value(focused ? 1 : 0)).current;
+  const press = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.spring(lift, {
       toValue: focused ? 1 : 0,
       damping: 16,
-      stiffness: 190,
-      mass: 0.65,
+      stiffness: 185,
+      mass: 0.7,
       useNativeDriver: true,
     }).start();
   }, [focused, lift]);
 
-  const translateY = lift.interpolate({ inputRange: [0, 1], outputRange: [0, -5] });
-  const scale = lift.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1.04] });
+  const translateY = Animated.add(
+    lift.interpolate({ inputRange: [0, 1], outputRange: [0, -4.8] }),
+    press.interpolate({ inputRange: [0, 1], outputRange: [0, 1.4] })
+  );
+  const scale = Animated.multiply(
+    lift.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1.025] }),
+    press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.972] })
+  );
+
+  const onPressIn = () => {
+    Animated.timing(press, {
+      toValue: 1,
+      duration: 90,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const onPressOut = () => {
+    Animated.spring(press, {
+      toValue: 0,
+      damping: 12,
+      stiffness: 210,
+      mass: 0.52,
+      useNativeDriver: true,
+    }).start();
+  };
 
   const onPress = () => {
     const event = navigation.emit({
@@ -487,6 +610,8 @@ function AeroTabItem({
       accessibilityLabel={descriptor.options.tabBarAccessibilityLabel}
       testID={descriptor.options.tabBarButtonTestID}
       onPress={onPress}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
       onLongPress={onLongPress}
       style={styles.tabItem}
     >
@@ -704,63 +829,238 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     overflow: 'visible',
     shadowColor: '#0A1222',
-    shadowOpacity: 0.10,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   emblem: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    borderWidth: 1.25,
+    borderWidth: 1.2,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   emblemInnerRing: {
     ...StyleSheet.absoluteFillObject,
     margin: 2,
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.72)',
+    borderColor: 'rgba(255,255,255,0.70)',
   },
   glyphDepth: {
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#0A1222',
+    shadowColor: '#083954',
     shadowOpacity: 0.18,
-    shadowRadius: 2.5,
-    shadowOffset: { width: 0, height: 1.5 },
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1.2 },
   },
-  emblemShine: {
+  bubbleColorPool: {
     position: 'absolute',
-    top: 4,
-    left: 8,
-    width: 17,
-    height: 8,
-    borderRadius: 9,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    transform: [{ rotate: '-12deg' }],
+    width: 34,
+    height: 28,
+    borderRadius: 24,
+    left: -5,
+    bottom: -8,
+    transform: [{ rotate: '18deg' }],
   },
-  emblemSideShine: {
+  bubbleColorPoolSecondary: {
     position: 'absolute',
-    top: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 18,
+    right: -6,
+    top: 10,
+  },
+  bubbleBaseBlend: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  bubbleTopCap: {
+    position: 'absolute',
+    left: 3,
     right: 3,
-    width: 5,
-    height: 15,
-    borderRadius: 5,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    transform: [{ rotate: '8deg' }],
+    top: 2,
+    height: 14,
+    borderTopLeftRadius: 17,
+    borderTopRightRadius: 17,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
   },
-  emblemCaustic: {
+  bubbleBottomPool: {
     position: 'absolute',
-    left: 9,
-    right: 9,
+    left: 4,
+    right: 4,
     bottom: 3,
-    height: 5,
+    height: 19,
+    borderRadius: 15,
+  },
+  bubbleSpecular: {
+    position: 'absolute',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.2,
+    shadowRadius: 1.5,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  bubbleSpecularSecondary: {
+    position: 'absolute',
+  },
+  bubbleLightCircles: {
+    width: 16,
+    height: 7,
+    borderRadius: 10,
+    top: 4,
+    left: 5,
+    transform: [{ rotate: '-17deg' }],
+  },
+  bubbleSecondaryCircles: {
+    width: 8,
+    height: 12,
+    borderRadius: 8,
+    top: 7,
+    right: 6,
+    transform: [{ rotate: '16deg' }],
+  },
+  bubbleLightMutuals: {
+    width: 10,
+    height: 9,
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 7,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 10,
+    top: 5,
+    left: 8,
+    transform: [{ rotate: '-25deg' }],
+  },
+  bubbleSecondaryMutuals: {
+    width: 8,
+    height: 8,
+    borderRadius: 6,
+    top: 11,
+    right: 7,
+    transform: [{ rotate: '18deg' }],
+  },
+  bubbleLightFeed: {
+    width: 5,
+    height: 16,
     borderRadius: 5,
-    backgroundColor: 'rgba(255,255,255,0.24)',
+    top: 5,
+    left: 7,
+    transform: [{ rotate: '19deg' }],
+  },
+  bubbleSecondaryFeed: {
+    width: 10,
+    height: 6,
+    borderRadius: 6,
+    top: 7,
+    right: 7,
+    transform: [{ rotate: '-10deg' }],
+  },
+  bubbleLightMe: {
+    width: 12,
+    height: 6,
+    borderRadius: 8,
+    top: 4,
+    right: 7,
+    transform: [{ rotate: '15deg' }],
+  },
+  bubbleSecondaryMe: {
+    width: 7,
+    height: 11,
+    borderRadius: 7,
+    top: 8,
+    left: 8,
+    transform: [{ rotate: '-18deg' }],
+  },
+  bubblePinGlint: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.78)',
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.22,
+    shadowRadius: 1.5,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  bubblePinGlintCircles: {
+    top: 8,
+    right: 7,
+    width: 2.6,
+    height: 2.6,
+    borderRadius: 3,
+  },
+  bubblePinGlintMutuals: {
+    top: 13,
+    left: 5,
+    width: 2.2,
+    height: 5,
+    borderRadius: 4,
+    transform: [{ rotate: '18deg' }],
+  },
+  bubblePinGlintFeed: {
+    top: 9,
+    right: 7,
+    width: 2.2,
+    height: 2.2,
+    borderRadius: 3,
+  },
+  bubblePinGlintMe: {
+    left: 6,
+    bottom: 10,
+    width: 4.5,
+    height: 2.1,
+    borderRadius: 4,
+    transform: [{ rotate: '-28deg' }],
+  },
+  bubbleLowerRefraction: {
+    position: 'absolute',
+    left: 6,
+    right: 5,
+    bottom: 4,
+    height: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.20)',
+    transform: [{ rotate: '-4deg' }],
+  },
+  bubbleHorizonBand: {
+    position: 'absolute',
+    left: 4,
+    right: 4,
+    top: 17,
+    height: 2.4,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  bubbleSideBloom: {
+    position: 'absolute',
+    right: 3,
+    top: 10,
+    width: 9,
+    height: 17,
+    borderRadius: 10,
+    backgroundColor: 'rgba(165,245,255,0.18)',
+    transform: [{ rotate: '11deg' }],
+  },
+  bubbleEdgeShade: {
+    position: 'absolute',
+    right: -6,
+    bottom: -6,
+    width: 26,
+    height: 26,
+    borderRadius: 17,
+    borderWidth: 5,
+    borderColor: 'rgba(0,72,110,0.10)',
+  },
+  bubbleRimLight: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    bottom: 1,
+    borderRadius: 19,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.34)',
   },
   glyphBox: {
     width: 27,
@@ -774,19 +1074,19 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
     shadowColor: '#0A1222',
-    shadowOpacity: 0.14,
-    shadowRadius: 2.2,
-    shadowOffset: { width: 0, height: 1.2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 1.8,
+    shadowOffset: { width: 0, height: 1 },
     elevation: 2,
   },
   glassOrbHighlight: {
     position: 'absolute',
-    backgroundColor: 'rgba(255,255,255,0.82)',
-    transform: [{ rotate: '-12deg' }],
+    backgroundColor: 'rgba(255,255,255,0.62)',
+    transform: [{ rotate: '-18deg' }],
   },
   glassOrbDepth: {
     position: 'absolute',
-    backgroundColor: 'rgba(0,70,110,0.12)',
+    backgroundColor: 'rgba(0,82,120,0.10)',
     transform: [{ rotate: '-7deg' }],
   },
   pawnWrap: {
@@ -819,8 +1119,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 2,
     left: 3,
-    width: '45%',
-    height: '58%',
+    width: '28%',
+    height: '48%',
     borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.38)',
     transform: [{ rotate: '10deg' }],
