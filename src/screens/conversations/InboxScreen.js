@@ -276,7 +276,7 @@ export function InboxScreen({ navigation }) {
     navigation.setOptions({
       headerShadowVisible: false,
       headerStyle: {
-        backgroundColor: colorWithAlpha(theme.colors.surface, 0.72),
+        backgroundColor: colorWithAlpha(theme.colors.surface, 0.48),
       },
       headerRight: () => (
         <View style={styles.headerActions}>
