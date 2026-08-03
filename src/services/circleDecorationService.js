@@ -90,7 +90,7 @@ export async function saveCircleStickerState({
         throw new Error('A custom sticker upload is missing its local image.');
       }
 
-      onPhaseChange?.('Uploading custom stickers…');
+      onPhaseChange?.('Uploading sticker images…');
       const path = await uploadPathToBucket(
         localUri,
         BUCKET,

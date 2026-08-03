@@ -59,6 +59,7 @@ export function normalizeCustomStickerAssets(input) {
       url: item.url || item.localUri || null,
       localUri: item.localUri || null,
       mimeType: item.mimeType || item.mime_type || 'image/png',
+      source: item.source === 'apple_glyph' || String(item.id || '').startsWith('apple-') ? 'apple_glyph' : 'custom_image',
     }));
 }
 

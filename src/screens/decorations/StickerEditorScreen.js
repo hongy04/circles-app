@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   ImageBackground,
   Keyboard,
   PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +20,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
+
+import {
+  canImportAppleGlyphs,
+  discardTemporaryAppleGlyphAsync,
+  hasCirclesExpressiveInputBridge,
+  pickAppleGlyphAsync,
+} from '../../../modules/circles-expressive-input';
 
 import { Avatar } from '../../components/Avatar';
 import { ProfileHeader } from '../../components/profile/ProfileHeader';
@@ -54,9 +63,61 @@ import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 
 const PACKS = ['Emoji', 'Text', 'Yours'];
+const PACK_META = {
+  Emoji: { icon: 'happy-outline', hint: 'Quick picks' },
+  Text: { icon: 'text-outline', hint: 'Words & color' },
+  Yours: { icon: 'albums-outline', hint: 'Sticker shelf' },
+};
+
+function makeEditorFingerprint(stickers = [], customStickers = []) {
+  return JSON.stringify({
+    stickers: stickers.map((item) => ({
+      id: item?.id || '',
+      kind: item?.kind || '',
+      sticker: item?.sticker || null,
+      asset_id: item?.asset_id || null,
+      content: item?.content || null,
+      text_style: item?.text_style || null,
+      color: item?.color || null,
+      x: Number(item?.x) || 0,
+      y: Number(item?.y) || 0,
+      scale: Number(item?.scale) || 0,
+      rotation: Number(item?.rotation) || 0,
+      z: Number(item?.z) || 0,
+    })),
+    assets: customStickers.map((asset) => ({
+      id: asset?.id || '',
+      path: asset?.path || null,
+      localUri: asset?.path ? null : (asset?.localUri || asset?.url || null),
+      mimeType: asset?.mimeType || asset?.mime_type || 'image/png',
+      source: isAppleStickerAsset(asset) ? 'apple_glyph' : 'custom_image',
+    })),
+  });
+}
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function stableShortHash(value) {
+  let hash = 2166136261;
+  for (const character of String(value || '')) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function makeAppleStickerAssetId(contentIdentifier) {
+  const raw = String(contentIdentifier || '').trim();
+  if (!raw) return `apple-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  // Keep Apple's stable identifier out of Circles persistence while retaining
+  // deterministic duplicate detection for this tiny per-space asset library.
+  return `apple-${stableShortHash(raw)}-${stableShortHash(`circles:${raw}`)}`;
+}
+
+function isAppleStickerAsset(asset) {
+  return asset?.source === 'apple_glyph' || String(asset?.id || '').startsWith('apple-');
 }
 
 function rgba(hex, alpha) {
@@ -90,6 +151,7 @@ function EditorSticker({
   onMove,
   onBeginDrag,
   onGuideChange,
+  accentColor,
 }) {
   const startRef = useRef({ x: sticker.x, y: sticker.y });
   const positionRef = useRef({ x: sticker.x, y: sticker.y });
@@ -170,7 +232,19 @@ function EditorSticker({
         width={box.width}
         height={box.height}
       />
-      {selected ? <View pointerEvents="none" style={styles.selectionRing} /> : null}
+      {selected ? (
+        <>
+          <View
+            pointerEvents="none"
+            style={[
+              styles.selectionRing,
+              sticker.kind === 'text' && styles.selectionRingText,
+              { borderColor: rgba(accentColor, 0.92) },
+            ]}
+          />
+          <View pointerEvents="none" style={[styles.selectionDot, { backgroundColor: accentColor }]} />
+        </>
+      ) : null}
     </View>
   );
 }
@@ -352,7 +426,7 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
   const conversationId = route.params?.conversationId || null;
   const theme = useThemeTokens();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height: windowHeight } = useWindowDimensions();
   const themedStyles = useMemo(() => createThemedStyles(theme), [theme]);
 
   const [loading, setLoading] = useState(true);
@@ -367,21 +441,96 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
   const [activePack, setActivePack] = useState('Emoji');
   const [emojiInput, setEmojiInput] = useState('');
   const [textInput, setTextInput] = useState('');
+  const [editingContentId, setEditingContentId] = useState(null);
   const [textStyle, setTextStyle] = useState('glass');
   const [textColor, setTextColor] = useState('#0A1222');
+  const [importingAppleGlyph, setImportingAppleGlyph] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [background, setBackground] = useState({ uri: null, color: null });
   const [preview, setPreview] = useState(null);
   const [decoration, setDecoration] = useState(null);
   const [controlsCollapsed, setControlsCollapsed] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [panelHeight, setPanelHeight] = useState(0);
   const [alignmentGuides, setAlignmentGuides] = useState({ vertical: false, horizontal: false });
   const [, setHistoryVersion] = useState(0);
   const historyRef = useRef({ undo: [], redo: [] });
   const stickersRef = useRef(stickers);
   const customStickersRef = useRef(customStickers);
+  const savedFingerprintRef = useRef('');
+  const allowExitRef = useRef(false);
+  const appleTemporaryUrisRef = useRef(new Set());
+  const emojiInputRef = useRef(null);
+  const textInputRef = useRef(null);
+  const panelTranslateY = useRef(new Animated.Value(0)).current;
+  const packContentAnim = useRef(new Animated.Value(1)).current;
+  const panelYRef = useRef(0);
+  const panelHeightRef = useRef(0);
+  const panelInitializedRef = useRef(false);
+  const panelDragStartRef = useRef(0);
   stickersRef.current = stickers;
   customStickersRef.current = customStickers;
+
+  const getPanelBounds = useCallback((measuredHeight = panelHeightRef.current) => {
+    const height = Math.max(1, measuredHeight || 1);
+    const minY = Math.max(insets.top + 58, 70);
+    const keyboardTop = keyboardHeight > 0 ? windowHeight - keyboardHeight : windowHeight;
+    const maxY = Math.max(minY, keyboardTop - height - Math.max(insets.bottom, 8) - 8);
+    return { minY, maxY };
+  }, [insets.bottom, insets.top, keyboardHeight, windowHeight]);
+
+  const movePanelTo = useCallback((nextY, animated = false) => {
+    const { minY, maxY } = getPanelBounds();
+    const clampedY = clamp(nextY, minY, maxY);
+    panelYRef.current = clampedY;
+    panelTranslateY.stopAnimation();
+    if (animated) {
+      Animated.spring(panelTranslateY, {
+        toValue: clampedY,
+        useNativeDriver: true,
+        damping: 24,
+        stiffness: 230,
+        mass: 0.8,
+      }).start();
+    } else {
+      panelTranslateY.setValue(clampedY);
+    }
+  }, [getPanelBounds, panelTranslateY]);
+
+  const handlePanelLayout = useCallback((event) => {
+    const nextHeight = Math.ceil(event?.nativeEvent?.layout?.height || 0);
+    if (!nextHeight) return;
+    panelHeightRef.current = nextHeight;
+    setPanelHeight((current) => current === nextHeight ? current : nextHeight);
+    const { minY, maxY } = getPanelBounds(nextHeight);
+    if (!panelInitializedRef.current) {
+      panelInitializedRef.current = true;
+      panelYRef.current = maxY;
+      panelTranslateY.setValue(maxY);
+      return;
+    }
+    if (panelYRef.current < minY || panelYRef.current > maxY) {
+      const clampedY = clamp(panelYRef.current, minY, maxY);
+      movePanelTo(clampedY, true);
+    }
+  }, [getPanelBounds, movePanelTo, panelTranslateY]);
+
+  const panelDragResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: () => {
+      panelDragStartRef.current = panelYRef.current;
+    },
+    onPanResponderMove: (_, gesture) => {
+      const { minY, maxY } = getPanelBounds();
+      const nextY = clamp(panelDragStartRef.current + gesture.dy, minY, maxY);
+      panelYRef.current = nextY;
+      panelTranslateY.setValue(nextY);
+    },
+    onPanResponderRelease: () => movePanelTo(panelYRef.current, true),
+    onPanResponderTerminate: () => movePanelTo(panelYRef.current, true),
+  }), [getPanelBounds, movePanelTo, panelTranslateY]);
 
   const cloneEditorSnapshot = useCallback(() => ({
     stickers: stickersRef.current.map((item) => ({ ...item })),
@@ -441,22 +590,43 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     refreshHistoryControls();
   }, [applyEditorSnapshot, cloneEditorSnapshot, refreshHistoryControls]);
 
+  const cleanupTemporaryAppleImports = useCallback(async () => {
+    const uris = [...appleTemporaryUrisRef.current];
+    appleTemporaryUrisRef.current.clear();
+    if (!uris.length) return;
+    await Promise.all(uris.map((uri) => discardTemporaryAppleGlyphAsync(uri).catch(() => false)));
+  }, []);
+
   useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', (event) => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, (event) => {
       setKeyboardHeight(Math.max(0, event?.endCoordinates?.height || 0));
     });
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
     return () => {
       show.remove();
       hide.remove();
     };
   }, []);
 
+  useEffect(() => {
+    if (!panelInitializedRef.current || !panelHeightRef.current || keyboardHeight <= 0) return;
+    const { maxY } = getPanelBounds(panelHeightRef.current);
+    if (panelYRef.current > maxY) movePanelTo(maxY, true);
+  }, [getPanelBounds, keyboardHeight, movePanelTo]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     setFloatingSpawnIds(new Set());
     setAlignmentGuides({ vertical: false, horizontal: false });
+    setEditingContentId(null);
+    setEmojiInput('');
+    setTextInput('');
+    savedFingerprintRef.current = '';
+    allowExitRef.current = false;
+    appleTemporaryUrisRef.current.clear();
     resetHistory();
     try {
       if (mode === 'circle') {
@@ -476,9 +646,11 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
           uri: decorationRows.circle_background_url || null,
           color: decorationRows.circle_background_color || theme.circle.profileBackground,
         });
+        const nextStickers = normalizeStickerList(decorationRows.circle_stickers, assets);
         setCustomStickers(assets);
         setExistingCustomStickers(assets);
-        setStickers(normalizeStickerList(decorationRows.circle_stickers, assets));
+        setStickers(nextStickers);
+        savedFingerprintRef.current = makeEditorFingerprint(nextStickers, assets);
       } else {
         const ownDecoration = await fetchMyProfileDecoration();
         const page = await fetchProfilePage(ownDecoration.id);
@@ -489,9 +661,11 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
           uri: ownDecoration.profile_background_url || null,
           color: ownDecoration.profile_background_color || theme.colors.bg,
         });
+        const nextStickers = normalizeStickerList(ownDecoration.profile_stickers, assets);
         setCustomStickers(assets);
         setExistingCustomStickers(assets);
-        setStickers(normalizeStickerList(ownDecoration.profile_stickers, assets));
+        setStickers(nextStickers);
+        savedFingerprintRef.current = makeEditorFingerprint(nextStickers, assets);
       }
     } catch (loadError) {
       setError(loadError?.message || 'Could not load stickers.');
@@ -509,8 +683,116 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     [customStickers]
   );
   const selected = stickers.find((item) => item.id === selectedId) || null;
+  const selectedAssetId = selected && (selected.kind === 'custom_image' || selected.kind === 'apple_glyph' || selected.sticker === 'custom')
+    ? selected.asset_id
+    : null;
+  const canvasAtLimit = stickers.length >= MAX_DECORATION_STICKERS;
+  const assetLibraryAtLimit = customStickers.length >= MAX_CUSTOM_STICKER_ASSETS;
   const canUndo = historyRef.current.undo.length > 0;
   const canRedo = historyRef.current.redo.length > 0;
+  const appleGlyphBridgePresent = Platform.OS === 'ios' && hasCirclesExpressiveInputBridge();
+  const appleGlyphAvailable = appleGlyphBridgePresent && canImportAppleGlyphs();
+  const editorFingerprint = useMemo(
+    () => makeEditorFingerprint(stickers, customStickers),
+    [customStickers, stickers]
+  );
+  const hasUnsavedChanges = Boolean(savedFingerprintRef.current) && editorFingerprint !== savedFingerprintRef.current;
+
+  useEffect(() => {
+    packContentAnim.stopAnimation();
+    packContentAnim.setValue(0);
+    Animated.timing(packContentAnim, {
+      toValue: 1,
+      duration: 155,
+      useNativeDriver: true,
+    }).start();
+  }, [activePack, packContentAnim]);
+
+  const displayStickers = useMemo(() => stickers.map((item) => {
+    if (!editingContentId || item.id !== editingContentId) return item;
+    if (item.kind === 'text') {
+      return {
+        ...item,
+        content: textInput.length ? textInput : ' ',
+        text_style: textStyle,
+        color: textColor,
+      };
+    }
+    if (item.kind === 'emoji') {
+      return { ...item, content: emojiInput.length ? emojiInput : ' ' };
+    }
+    return item;
+  }), [editingContentId, emojiInput, stickers, textColor, textInput, textStyle]);
+
+  const revealSelectedDecoration = useCallback((item = selected) => {
+    if (!item || !panelInitializedRef.current || !panelHeightRef.current || !canvasSize.height) return;
+    const draftItem = displayStickers.find((candidate) => candidate.id === item.id) || item;
+    const box = getDecorationRenderBox(draftItem, STICKER_BASE_SIZE);
+    const centerY = canvasSize.height * draftItem.y;
+    const decorationTop = centerY - (box.height / 2) - 18;
+    const decorationBottom = centerY + (box.height / 2) + 18;
+    const panelTop = panelYRef.current;
+    const panelBottom = panelTop + panelHeightRef.current;
+    const overlaps = decorationBottom >= panelTop && decorationTop <= panelBottom;
+    if (!overlaps) return;
+
+    const { minY, maxY } = getPanelBounds(panelHeightRef.current);
+    const topSpace = decorationTop - minY;
+    const bottomSpace = maxY - decorationBottom;
+    movePanelTo(topSpace >= bottomSpace ? minY : maxY, true);
+  }, [canvasSize.height, displayStickers, getPanelBounds, movePanelTo, selected]);
+
+  useEffect(() => {
+    if (!editingContentId || !selected || selected.id !== editingContentId || !panelHeight) return;
+    const timer = setTimeout(() => revealSelectedDecoration(selected), 40);
+    return () => clearTimeout(timer);
+  }, [editingContentId, panelHeight, revealSelectedDecoration, selected]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (allowExitRef.current) return;
+
+      if (!hasUnsavedChanges) {
+        if (!appleTemporaryUrisRef.current.size) return;
+        event.preventDefault();
+        cleanupTemporaryAppleImports().finally(() => {
+          allowExitRef.current = true;
+          navigation.dispatch(event.data.action);
+        });
+        return;
+      }
+
+      event.preventDefault();
+      Alert.alert(
+        'Discard decoration changes?',
+        'Your placed decorations and sticker-library changes have not been saved yet.',
+        [
+          { text: 'Keep editing', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: async () => {
+              await cleanupTemporaryAppleImports();
+              allowExitRef.current = true;
+              navigation.dispatch(event.data.action);
+            },
+          },
+        ]
+      );
+    });
+
+    return unsubscribe;
+  }, [cleanupTemporaryAppleImports, hasUnsavedChanges, navigation]);
+
+  useEffect(() => {
+    if (!editingContentId) return;
+    const editingItem = stickers.find((item) => item.id === editingContentId);
+    if (!editingItem || editingItem.id !== selectedId) {
+      setEditingContentId(null);
+      setEmojiInput('');
+      setTextInput('');
+    }
+  }, [editingContentId, selectedId, stickers]);
 
   const updateSticker = useCallback((id, patch) => {
     setStickers((current) => {
@@ -561,6 +843,21 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
   const addEmoji = (value) => {
     const content = String(value || '').trim().slice(0, MAX_EMOJI_DECORATION_LENGTH);
     if (!content) return;
+
+    const editingItem = editingContentId
+      ? stickers.find((item) => item.id === editingContentId && item.kind === 'emoji')
+      : null;
+    if (editingItem) {
+      if (editingItem.content !== content) {
+        recordHistory();
+        updateSticker(editingItem.id, { content });
+      }
+      setEmojiInput('');
+      setEditingContentId(null);
+      Keyboard.dismiss();
+      return;
+    }
+
     if (stickers.length >= MAX_DECORATION_STICKERS) {
       Alert.alert('Decoration limit reached', `You can place up to ${MAX_DECORATION_STICKERS} decorations in this space.`);
       return;
@@ -572,9 +869,39 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
   const addText = () => {
     const content = String(textInput || '').trim().slice(0, MAX_TEXT_DECORATION_LENGTH);
     if (!content) {
-      Alert.alert('Add some text', 'Type a short phrase first.');
+      Alert.alert(editingContentId ? 'Keep some text' : 'Add some text', 'Type a short phrase first.');
       return;
     }
+
+    const editingItem = editingContentId
+      ? stickers.find((item) => item.id === editingContentId && item.kind === 'text')
+      : null;
+    if (editingItem) {
+      const changed = editingItem.content !== content
+        || editingItem.text_style !== textStyle
+        || editingItem.color !== textColor;
+      if (changed) {
+        recordHistory();
+        const nextSticker = {
+          ...editingItem,
+          content,
+          text_style: textStyle,
+          color: textColor,
+        };
+        const safe = getSafeDecorationPosition(nextSticker, canvasSize, editingItem.x, editingItem.y, STICKER_BASE_SIZE);
+        updateSticker(editingItem.id, {
+          content,
+          text_style: textStyle,
+          color: textColor,
+          ...safe,
+        });
+      }
+      setTextInput('');
+      setEditingContentId(null);
+      Keyboard.dismiss();
+      return;
+    }
+
     if (stickers.length >= MAX_DECORATION_STICKERS) {
       Alert.alert('Decoration limit reached', `You can place up to ${MAX_DECORATION_STICKERS} decorations in this space.`);
       return;
@@ -630,6 +957,106 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     }
   };
 
+  const pickAppleSticker = async () => {
+    if (!appleGlyphBridgePresent) {
+      Alert.alert(
+        'Apple Stickers need the Circles iOS build',
+        'This option becomes active in a Circles development or production build, not Expo Go.'
+      );
+      return;
+    }
+    if (!appleGlyphAvailable) {
+      Alert.alert('Apple Stickers need iOS 18', 'Update this iPhone to iOS 18 or later to import Apple expressive stickers.');
+      return;
+    }
+
+    setImportingAppleGlyph(true);
+    try {
+      const result = await pickAppleGlyphAsync();
+      if (!result?.uri) return;
+      if (result.byteSize && result.byteSize > 9_500_000) {
+        await discardTemporaryAppleGlyphAsync(result.uri).catch(() => false);
+        Alert.alert('Sticker is too large', 'This Apple sticker could not be imported because its rendered image is too large.');
+        return;
+      }
+
+      const id = makeAppleStickerAssetId(result.contentIdentifier);
+      const existingAsset = customStickers.find((asset) => asset.id === id);
+
+      // A duplicate does not consume another library slot, so allow it even
+      // when the 24-image library is already full.
+      if (!existingAsset && customStickers.length >= MAX_CUSTOM_STICKER_ASSETS) {
+        await discardTemporaryAppleGlyphAsync(result.uri).catch(() => false);
+        Alert.alert('Sticker library full', `You can keep up to ${MAX_CUSTOM_STICKER_ASSETS} sticker images in this space.`);
+        return;
+      }
+
+      setActivePack('Yours');
+
+      if (existingAsset) {
+        // We already have the persisted/local image for this stable Apple
+        // glyph, so the newly rendered cache file is unnecessary.
+        await discardTemporaryAppleGlyphAsync(result.uri).catch(() => false);
+        if (stickers.length >= MAX_DECORATION_STICKERS) {
+          Alert.alert('Decoration limit reached', `You can place up to ${MAX_DECORATION_STICKERS} decorations in this space.`);
+          return;
+        }
+        appendSticker(makeDecorationInstance({ kind: 'apple_glyph', assetId: id }, stickers.length));
+        return;
+      }
+
+      const custom = {
+        id,
+        path: null,
+        localUri: result.uri,
+        url: result.uri,
+        mimeType: 'image/png',
+        source: 'apple_glyph',
+      };
+      appleTemporaryUrisRef.current.add(result.uri);
+
+      recordHistory();
+      setCustomStickers((current) => {
+        const next = [...current, custom];
+        customStickersRef.current = next;
+        return next;
+      });
+
+      if (stickers.length < MAX_DECORATION_STICKERS) {
+        appendSticker(makeDecorationInstance({ kind: 'apple_glyph', assetId: id }, stickers.length), { record: false });
+      } else {
+        Alert.alert('Apple sticker imported', 'It is saved in Yours. Remove a placed decoration when you want to add it to the canvas.');
+      }
+    } catch (appleError) {
+      Alert.alert(
+        'Could not import Apple sticker',
+        appleError?.message || 'Try choosing the sticker again.'
+      );
+    } finally {
+      setImportingAppleGlyph(false);
+    }
+  };
+
+  const addLibraryAssetToCanvas = (asset) => {
+    if (!asset) return;
+    if (stickers.length >= MAX_DECORATION_STICKERS) {
+      Alert.alert('Decoration limit reached', `You can place up to ${MAX_DECORATION_STICKERS} decorations in this space.`);
+      return;
+    }
+    appendSticker(makeDecorationInstance({
+      kind: isAppleStickerAsset(asset) ? 'apple_glyph' : 'custom_image',
+      assetId: asset.id,
+    }, stickers.length));
+  };
+
+  const chooseEmojiPreset = (emoji) => {
+    if (editingContentId) {
+      setEmojiInput(emoji);
+      return;
+    }
+    addEmoji(emoji);
+  };
+
   const removeCustomAsset = (asset) => {
     const usageCount = stickers.filter((item) => (item.kind === 'custom_image' || item.kind === 'apple_glyph' || item.sticker === 'custom') && item.asset_id === asset.id).length;
     const perform = () => {
@@ -670,6 +1097,46 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     );
   };
 
+  const cancelContentEdit = () => {
+    setEditingContentId(null);
+    setEmojiInput('');
+    setTextInput('');
+    Keyboard.dismiss();
+  };
+
+  const editSelectedContent = () => {
+    if (!selected || (selected.kind !== 'text' && selected.kind !== 'emoji')) return;
+    Keyboard.dismiss();
+    setControlsCollapsed(false);
+    setEditingContentId(selected.id);
+    if (selected.kind === 'text') {
+      setActivePack('Text');
+      setTextInput(selected.content || '');
+      setTextStyle(selected.text_style || 'glass');
+      setTextColor(selected.color || '#0A1222');
+    } else {
+      setActivePack('Emoji');
+      setEmojiInput(selected.content || '');
+    }
+  };
+
+  const duplicateSelected = () => {
+    if (!selected) return;
+    if (stickers.length >= MAX_DECORATION_STICKERS) {
+      Alert.alert('Decoration limit reached', `You can place up to ${MAX_DECORATION_STICKERS} decorations in this space.`);
+      return;
+    }
+
+    const copy = {
+      ...selected,
+      id: `sticker-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      x: clamp(selected.x + 0.045, 0.04, 0.96),
+      y: clamp(selected.y + 0.035, 0.04, 0.96),
+    };
+    const safe = getSafeDecorationPosition(copy, canvasSize, copy.x, copy.y, STICKER_BASE_SIZE);
+    appendSticker({ ...copy, ...safe });
+  };
+
   const deleteSelected = () => {
     if (!selected) return;
     recordHistory();
@@ -690,8 +1157,9 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
 
   const scaleSelected = (delta) => {
     if (!selected) return;
-    recordHistory();
     const nextScale = clamp(selected.scale + delta, 0.55, 2.2);
+    if (Math.abs(nextScale - selected.scale) < 0.0001) return;
+    recordHistory();
     const nextSticker = { ...selected, scale: nextScale };
     const safe = getSafeDecorationPosition(nextSticker, canvasSize, selected.x, selected.y, STICKER_BASE_SIZE);
     updateSticker(selected.id, { scale: nextScale, ...safe });
@@ -785,6 +1253,9 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
           onPhaseChange: setSavePhase,
         });
       }
+      savedFingerprintRef.current = makeEditorFingerprint(clean, assets);
+      await cleanupTemporaryAppleImports();
+      allowExitRef.current = true;
       navigation.goBack();
     } catch (saveError) {
       Alert.alert('Could not save decorations', saveError?.message || 'Please try again.');
@@ -794,11 +1265,21 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     }
   };
 
+  const saveOrDone = async () => {
+    if (hasUnsavedChanges) {
+      save();
+      return;
+    }
+    await cleanupTemporaryAppleImports();
+    allowExitRef.current = true;
+    navigation.goBack();
+  };
+
   if (loading) {
     return (
       <View style={themedStyles.loadingRoot}>
         <ActivityIndicator color={theme.circle.accent} />
-        <Text style={themedStyles.loadingText}>Opening your live profile canvas…</Text>
+        <Text style={themedStyles.loadingText}>Opening your live {mode === 'circle' ? 'Circle' : 'profile'} canvas…</Text>
       </View>
     );
   }
@@ -842,7 +1323,7 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     >
       <View pointerEvents="none" style={[styles.canvasTint, { backgroundColor: background.uri ? (mode === 'circle' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.16)') : 'transparent' }]} />
       {canvasSize.width > 0 && canvasSize.height > 0
-        ? [...stickers].sort((a, b) => a.z - b.z).map((sticker) => (
+        ? [...displayStickers].sort((a, b) => a.z - b.z).map((sticker) => (
           <EditorSticker
             key={sticker.id}
             sticker={sticker}
@@ -854,6 +1335,7 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
             onMove={updateSticker}
             onBeginDrag={beginStickerDrag}
             onGuideChange={setAlignmentGuides}
+            accentColor={theme.circle.accent}
           />
         ))
         : null}
@@ -884,13 +1366,22 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
 
       <View pointerEvents="box-none" style={[styles.editorTopBar, { top: insets.top + 5 }]}>
         <View style={styles.editorTopLeftControls}>
-          <Pressable onPress={() => navigation.goBack()} hitSlop={10} style={themedStyles.floatingEditorButton}>
+          <Pressable
+            onPress={() => navigation.goBack()}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Close decoration editor"
+            style={themedStyles.floatingEditorButton}
+          >
             <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
           </Pressable>
           <Pressable
             onPress={undo}
             disabled={!canUndo || saving}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Undo decoration change"
+            accessibilityState={{ disabled: !canUndo || saving }}
             style={[themedStyles.historyButton, (!canUndo || saving) && styles.historyButtonDisabled]}
           >
             <Ionicons name="arrow-undo" size={17} color={theme.colors.text} />
@@ -899,17 +1390,31 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
             onPress={redo}
             disabled={!canRedo || saving}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Redo decoration change"
+            accessibilityState={{ disabled: !canRedo || saving }}
             style={[themedStyles.historyButton, (!canRedo || saving) && styles.historyButtonDisabled]}
           >
             <Ionicons name="arrow-redo" size={17} color={theme.colors.text} />
           </Pressable>
         </View>
         <View style={themedStyles.livePill}>
-          <Text style={themedStyles.livePillTitle}>LIVE PROFILE</Text>
-          <Text style={themedStyles.livePillSubtitle}>what you place is what people see</Text>
+          <Text style={themedStyles.livePillTitle}>{mode === 'circle' ? 'LIVE CIRCLE' : 'LIVE PROFILE'}</Text>
+          <Text style={themedStyles.livePillSubtitle}>{hasUnsavedChanges ? 'unsaved changes' : 'what you place is what people see'}</Text>
         </View>
-        <Pressable onPress={save} disabled={saving} hitSlop={10} style={themedStyles.floatingSaveButton}>
-          {saving ? <ActivityIndicator size="small" color={theme.colors.text} /> : <Text style={themedStyles.saveText}>Save</Text>}
+        <Pressable
+          onPress={saveOrDone}
+          disabled={saving}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel={hasUnsavedChanges ? 'Save decoration changes' : 'Finish decorating'}
+          style={themedStyles.floatingSaveButton}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color={theme.colors.text} />
+          ) : (
+            <Text style={themedStyles.saveText}>{hasUnsavedChanges ? 'Save' : 'Done'}</Text>
+          )}
         </Pressable>
       </View>
 
@@ -922,23 +1427,70 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
       {controlsCollapsed ? (
         <Pressable
           onPress={() => setControlsCollapsed(false)}
+          accessibilityRole="button"
+          accessibilityLabel="Open decoration controls"
           style={[themedStyles.openControlsButton, { bottom: keyboardHeight ? keyboardHeight + 12 : insets.bottom + 16 }]}
         >
           <Ionicons name="color-palette-outline" size={18} color={theme.colors.text} />
-          <Text style={themedStyles.openControlsText}>Stickers</Text>
+          <Text style={themedStyles.openControlsText}>Decorate</Text>
         </Pressable>
       ) : (
-        <View style={[themedStyles.controlPanel, { paddingBottom: Math.max(insets.bottom, 7), bottom: keyboardHeight ? keyboardHeight + 8 : 8 }]}>
-          <View style={styles.controlPanelHandleRow}>
-            <Text style={themedStyles.selectionHint} numberOfLines={1}>
-              {selected
-                ? 'Selected decoration'
-                : stickers.length
-                  ? 'Tap a decoration to edit it'
-                  : 'Add an emoji, text, or image below'}
-            </Text>
-            <Pressable onPress={() => setControlsCollapsed(true)} hitSlop={8} style={styles.collapseButton}>
-              <Ionicons name="chevron-down" size={20} color={theme.colors.subtext} />
+        <Animated.View
+          onLayout={handlePanelLayout}
+          style={[
+            themedStyles.controlPanel,
+            {
+              paddingBottom: Math.max(insets.bottom, 7),
+              opacity: panelHeight ? 1 : 0,
+              transform: [{ translateY: panelTranslateY }],
+            },
+          ]}
+        >
+          <View style={styles.controlPanelHeader}>
+            <View
+              {...panelDragResponder.panHandlers}
+              accessible
+              accessibilityRole="adjustable"
+              accessibilityLabel="Move decoration tools"
+              accessibilityHint="Drag up or down to move the tool panel and uncover your decoration"
+              style={styles.panelDragZone}
+            >
+              <View style={themedStyles.panelGrabber} />
+              <View style={styles.panelHeaderCopy}>
+                <Text style={themedStyles.panelEyebrow}>
+                  {editingContentId ? 'LIVE EDIT' : selected ? 'SELECTED' : 'DECORATE'}
+                </Text>
+                <Text style={themedStyles.selectionHint} numberOfLines={1}>
+                  {editingContentId
+                    ? `Editing ${selected?.kind === 'emoji' ? 'emoji' : 'text'} · changes preview live`
+                    : selected
+                      ? 'Adjust this decoration or drag it on the canvas'
+                      : stickers.length
+                        ? 'Tap a decoration, or add something new'
+                        : 'Add an emoji, text, or image'}
+                </Text>
+              </View>
+              <Ionicons name="move-outline" size={16} color={theme.colors.subtext} />
+            </View>
+            {stickers.length ? (
+              <Pressable
+                onPress={clearAll}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityLabel="Remove all placed decorations"
+                style={({ pressed }) => [themedStyles.panelHeaderButton, pressed && styles.pressed]}
+              >
+                <Ionicons name="trash-bin-outline" size={16} color="#B42318" />
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={() => setControlsCollapsed(true)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Hide decoration tools"
+              style={({ pressed }) => [themedStyles.panelHeaderButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="chevron-down" size={18} color={theme.colors.subtext} />
             </Pressable>
           </View>
 
@@ -968,7 +1520,12 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
                 onRight={() => moveLayer('front')}
                 theme={theme}
               />
-              <Pressable onPress={deleteSelected} style={({ pressed }) => [styles.selectionDeleteButton, pressed && styles.pressed]}>
+              <Pressable
+                onPress={deleteSelected}
+                accessibilityRole="button"
+                accessibilityLabel="Delete selected decoration"
+                style={({ pressed }) => [styles.selectionDeleteButton, pressed && styles.pressed]}
+              >
                 <View style={styles.selectionDeleteIcon}>
                   <Ionicons name="trash-outline" size={17} color="#B42318" />
                 </View>
@@ -977,123 +1534,385 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
             </View>
           ) : null}
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.packRow}>
-            {PACKS.map((pack) => (
+          {selected ? (
+            <View style={styles.selectionQuickActions}>
+              {(selected.kind === 'text' || selected.kind === 'emoji') && !editingContentId ? (
+                <Pressable
+                  onPress={editSelectedContent}
+                  accessibilityRole="button"
+                  accessibilityLabel={selected.kind === 'text' ? 'Edit selected text' : 'Edit selected emoji'}
+                  style={({ pressed }) => [themedStyles.selectionQuickAction, pressed && styles.pressed]}
+                >
+                  <Ionicons name="pencil-outline" size={14} color={theme.colors.text} />
+                  <Text style={themedStyles.selectionQuickActionText}>Edit</Text>
+                </Pressable>
+              ) : null}
               <Pressable
-                key={pack}
-                onPress={() => setActivePack(pack)}
-                style={[themedStyles.packButton, activePack === pack && themedStyles.packButtonActive]}
+                onPress={duplicateSelected}
+                accessibilityRole="button"
+                accessibilityLabel="Duplicate selected decoration"
+                style={({ pressed }) => [themedStyles.selectionQuickAction, pressed && styles.pressed]}
               >
-                <Text style={[themedStyles.packText, activePack === pack && themedStyles.packTextActive]}>{pack}</Text>
+                <Ionicons name="copy-outline" size={14} color={theme.colors.text} />
+                <Text style={themedStyles.selectionQuickActionText}>Duplicate</Text>
               </Pressable>
-            ))}
-            <Pressable onPress={clearAll} style={themedStyles.clearButton}>
-              <Text style={themedStyles.clearText}>Clear placed</Text>
-            </Pressable>
-          </ScrollView>
-
-          {activePack === 'Emoji' ? (
-            <View style={styles.typeComposerBlock}>
-              <View style={styles.typeComposerRow}>
-                <TextInput
-                  value={emojiInput}
-                  onChangeText={setEmojiInput}
-                  onSubmitEditing={() => addEmoji(emojiInput)}
-                  maxLength={MAX_EMOJI_DECORATION_LENGTH}
-                  placeholder="Type or paste emoji"
-                  placeholderTextColor={theme.colors.subtext}
-                  style={themedStyles.emojiInput}
-                />
-                <Pressable onPress={() => addEmoji(emojiInput)} style={themedStyles.addComposerButton}>
-                  <Text style={themedStyles.addComposerText}>Add</Text>
-                </Pressable>
-              </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.emojiPalette}>
-                {EMOJI_DECALS.map((emoji) => (
-                  <Pressable
-                    key={emoji}
-                    onPress={() => addEmoji(emoji)}
-                    style={({ pressed }) => [themedStyles.emojiPaletteItem, pressed && styles.pressed]}
-                  >
-                    <Text style={styles.emojiPaletteText}>{emoji}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
             </View>
-          ) : activePack === 'Text' ? (
-            <View style={styles.typeComposerBlock}>
-              <View style={styles.typeComposerRow}>
-                <TextInput
-                  value={textInput}
-                  onChangeText={setTextInput}
-                  onSubmitEditing={addText}
-                  maxLength={MAX_TEXT_DECORATION_LENGTH}
-                  placeholder="Write something…"
-                  placeholderTextColor={theme.colors.subtext}
-                  style={themedStyles.textDecorationInput}
-                />
-                <Pressable onPress={addText} style={themedStyles.addComposerButton}>
-                  <Text style={themedStyles.addComposerText}>Add</Text>
-                </Pressable>
+          ) : null}
+
+          {editingContentId ? (
+            <View style={themedStyles.editingBanner}>
+              <View style={styles.editingBannerCopy}>
+                <Ionicons name="eye-outline" size={14} color={theme.colors.text} />
+                <Text style={themedStyles.editingBannerText} numberOfLines={1}>Previewing changes on the canvas</Text>
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.textOptionsRow}>
-                {TEXT_DECORATION_STYLES.map((option) => (
-                  <Pressable
-                    key={option.id}
-                    onPress={() => setTextStyle(option.id)}
-                    style={[themedStyles.textStyleChip, textStyle === option.id && themedStyles.textStyleChipActive]}
-                  >
-                    <Text style={[themedStyles.textStyleChipText, textStyle === option.id && themedStyles.textStyleChipTextActive]}>{option.label}</Text>
-                  </Pressable>
-                ))}
-                <View style={styles.colorDivider} />
-                {TEXT_DECORATION_COLORS.map((color) => (
-                  <Pressable
-                    key={color}
-                    onPress={() => setTextColor(color)}
-                    style={[
-                      styles.textColorSwatch,
-                      { backgroundColor: color },
-                      color === '#FFFFFF' && styles.textColorSwatchLight,
-                      textColor === color && { borderColor: theme.circle.accent, borderWidth: 2 },
-                    ]}
+              <Pressable
+                onPress={cancelContentEdit}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel content edit"
+                style={({ pressed }) => [themedStyles.editingCancelButton, pressed && styles.pressed]}
+              >
+                <Text style={themedStyles.editingCancelText}>Cancel</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          <View style={themedStyles.packSwitcher} accessibilityRole="tablist">
+            {PACKS.map((pack) => {
+              const meta = PACK_META[pack];
+              const isActive = activePack === pack;
+              return (
+                <Pressable
+                  key={pack}
+                  onPress={() => {
+                    if (editingContentId && pack !== activePack) cancelContentEdit();
+                    setActivePack(pack);
+                  }}
+                  accessibilityRole="tab"
+                  accessibilityLabel={`${pack}. ${meta.hint}`}
+                  accessibilityState={{ selected: isActive }}
+                  style={({ pressed }) => [
+                    themedStyles.packButton,
+                    isActive && themedStyles.packButtonActive,
+                    pressed && styles.packButtonPressed,
+                  ]}
+                >
+                  <Ionicons
+                    name={meta.icon}
+                    size={14}
+                    color={isActive ? theme.colors.text : theme.colors.subtext}
                   />
-                ))}
-              </ScrollView>
-            </View>
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.palette}>
-              <Pressable onPress={pickCustomSticker} style={({ pressed }) => [themedStyles.uploadPaletteItem, pressed && styles.pressed]}>
-                <View style={themedStyles.uploadIcon}>
-                  <Ionicons name="add" size={22} color={theme.colors.text} />
-                </View>
-                <Text style={themedStyles.paletteLabel}>Upload</Text>
-              </Pressable>
-              {customStickers.map((asset) => (
-                <View key={asset.id} style={themedStyles.customPaletteWrap}>
-                  <Pressable
-                    onPress={() => addSticker('custom', asset.id)}
-                    style={({ pressed }) => [themedStyles.paletteItem, pressed && styles.pressed]}
-                  >
-                    <StickerArt stickerId="custom" kind="custom_image" customUrl={asset.url} size={48} />
-                    <Text style={themedStyles.paletteLabel}>Yours</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => removeCustomAsset(asset)}
-                    hitSlop={6}
-                    style={themedStyles.removeUploadButton}
-                  >
-                    <Ionicons name="close" size={12} color="#fff" />
-                  </Pressable>
-                </View>
-              ))}
-            </ScrollView>
-          )}
+                  <Text style={[themedStyles.packText, isActive && themedStyles.packTextActive]}>{pack}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
-          <Text style={themedStyles.limitText}>
-            {stickers.length}/{MAX_DECORATION_STICKERS} decorations · {customStickers.length}/{MAX_CUSTOM_STICKER_ASSETS} image assets
-          </Text>
-        </View>
+          <Animated.View
+            style={[
+              styles.packContentMotion,
+              {
+                opacity: packContentAnim,
+                transform: [{
+                  translateY: packContentAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [5, 0],
+                  }),
+                }],
+              },
+            ]}
+          >
+            {activePack === 'Emoji' ? (
+              <View style={styles.typeComposerBlock}>
+                <View style={styles.typeComposerRow}>
+                  <TextInput
+                    ref={emojiInputRef}
+                    value={emojiInput}
+                    onChangeText={setEmojiInput}
+                    onSubmitEditing={() => addEmoji(emojiInput)}
+                    maxLength={MAX_EMOJI_DECORATION_LENGTH}
+                    placeholder="Type or paste emoji"
+                    accessibilityLabel="Emoji decoration"
+                    placeholderTextColor={theme.colors.subtext}
+                    style={themedStyles.emojiInput}
+                  />
+                  <Pressable
+                    onPress={() => addEmoji(emojiInput)}
+                    disabled={!String(emojiInput || '').trim()}
+                    accessibilityRole="button"
+                    accessibilityLabel={editingContentId ? 'Apply emoji decoration' : 'Add emoji decoration'}
+                    style={({ pressed }) => [
+                      themedStyles.addComposerButton,
+                      !String(emojiInput || '').trim() && styles.composerActionDisabled,
+                      pressed && String(emojiInput || '').trim() && styles.pressed,
+                    ]}
+                  >
+                    <Text style={themedStyles.addComposerText}>{editingContentId ? 'Apply' : 'Add'}</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.pickerLabelRow}>
+                  <Text style={themedStyles.pickerMiniLabel}>QUICK PICKS</Text>
+                  <Text style={themedStyles.pickerHelperText}>{editingContentId ? 'Tap to preview · Apply when ready' : 'Tap to place instantly'}</Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  keyboardShouldPersistTaps="always"
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.emojiPalette}
+                >
+                  {EMOJI_DECALS.map((emoji) => {
+                    const isPreviewing = editingContentId && emojiInput === emoji;
+                    return (
+                      <Pressable
+                        key={emoji}
+                        onPress={() => chooseEmojiPreset(emoji)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Use ${emoji} decoration`}
+                        style={({ pressed }) => [
+                          themedStyles.emojiPaletteItem,
+                          isPreviewing && themedStyles.emojiPaletteItemActive,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.emojiPaletteText}>{emoji}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            ) : activePack === 'Text' ? (
+              <View style={styles.typeComposerBlock}>
+                <View style={styles.typeComposerRow}>
+                  <TextInput
+                    ref={textInputRef}
+                    value={textInput}
+                    onChangeText={setTextInput}
+                    onSubmitEditing={addText}
+                    maxLength={MAX_TEXT_DECORATION_LENGTH}
+                    placeholder="Write something…"
+                    accessibilityLabel="Text decoration"
+                    placeholderTextColor={theme.colors.subtext}
+                    style={themedStyles.textDecorationInput}
+                  />
+                  <Pressable
+                    onPress={addText}
+                    disabled={!String(textInput || '').trim()}
+                    accessibilityRole="button"
+                    accessibilityLabel={editingContentId ? 'Apply text decoration' : 'Add text decoration'}
+                    style={({ pressed }) => [
+                      themedStyles.addComposerButton,
+                      !String(textInput || '').trim() && styles.composerActionDisabled,
+                      pressed && String(textInput || '').trim() && styles.pressed,
+                    ]}
+                  >
+                    <Text style={themedStyles.addComposerText}>{editingContentId ? 'Apply' : 'Add'}</Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.textToolRow}>
+                  <Text style={themedStyles.pickerMiniLabel}>STYLE</Text>
+                  <View style={styles.textStyleOptions}>
+                    {TEXT_DECORATION_STYLES.map((option) => (
+                      <Pressable
+                        key={option.id}
+                        onPress={() => setTextStyle(option.id)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: textStyle === option.id }}
+                        style={({ pressed }) => [
+                          themedStyles.textStyleChip,
+                          textStyle === option.id && themedStyles.textStyleChipActive,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={[themedStyles.textStyleChipText, textStyle === option.id && themedStyles.textStyleChipTextActive]}>{option.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
+                <View style={styles.textToolRow}>
+                  <Text style={themedStyles.pickerMiniLabel}>COLOR</Text>
+                  <ScrollView
+                    horizontal
+                    keyboardShouldPersistTaps="always"
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.textColorOptions}
+                  >
+                    {TEXT_DECORATION_COLORS.map((color) => {
+                      const isActive = textColor === color;
+                      const darkCheck = color === '#FFFFFF' || color === '#F2A93B';
+                      return (
+                        <Pressable
+                          key={color}
+                          onPress={() => setTextColor(color)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Use ${color} text color`}
+                          accessibilityState={{ selected: isActive }}
+                          style={({ pressed }) => [
+                            styles.textColorSwatch,
+                            { backgroundColor: color },
+                            color === '#FFFFFF' && styles.textColorSwatchLight,
+                            isActive && { borderColor: theme.circle.accent, borderWidth: 2.5 },
+                            pressed && styles.pressed,
+                          ]}
+                        >
+                          {isActive ? (
+                            <Ionicons name="checkmark" size={14} color={darkCheck ? '#0A1222' : '#FFFFFF'} />
+                          ) : null}
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.yoursBlock}>
+                <View style={styles.libraryHeaderRow}>
+                  <View style={styles.libraryHeaderCopy}>
+                    <Text style={themedStyles.libraryTitle}>Your sticker shelf</Text>
+                    <Text style={themedStyles.librarySubtitle}>
+                      {customStickers.length
+                        ? 'Tap a saved sticker to place another copy.'
+                        : Platform.OS === 'ios'
+                          ? 'Bring in an Apple Sticker or an image from Photos.'
+                          : 'Bring in an image from Photos to reuse here.'}
+                    </Text>
+                  </View>
+                  <View style={themedStyles.libraryCountPill}>
+                    <Text style={themedStyles.libraryCountText}>{customStickers.length}/{MAX_CUSTOM_STICKER_ASSETS}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.importActionRow}>
+                  {Platform.OS === 'ios' ? (
+                    <Pressable
+                      onPress={pickAppleSticker}
+                      disabled={importingAppleGlyph}
+                      accessibilityRole="button"
+                      accessibilityLabel="Import from Apple Stickers"
+                      style={({ pressed }) => [
+                        themedStyles.importActionButton,
+                        importingAppleGlyph && styles.paletteItemDisabled,
+                        pressed && !importingAppleGlyph && styles.pressed,
+                      ]}
+                    >
+                      <View style={themedStyles.importActionIcon}>
+                        {importingAppleGlyph ? (
+                          <ActivityIndicator size="small" color={theme.colors.text} />
+                        ) : (
+                          <Ionicons name="sparkles" size={17} color={theme.colors.text} />
+                        )}
+                      </View>
+                      <View style={styles.importActionCopy}>
+                        <Text style={themedStyles.importActionTitle}>{importingAppleGlyph ? 'Opening…' : 'Apple Sticker'}</Text>
+                        <Text style={themedStyles.importActionSubtitle}>Sticker · Memoji · Genmoji</Text>
+                      </View>
+                    </Pressable>
+                  ) : null}
+
+                  <Pressable
+                    onPress={pickCustomSticker}
+                    disabled={assetLibraryAtLimit}
+                    accessibilityRole="button"
+                    accessibilityLabel="Import sticker image from Photos"
+                    accessibilityState={{ disabled: assetLibraryAtLimit }}
+                    style={({ pressed }) => [
+                      themedStyles.importActionButton,
+                      assetLibraryAtLimit && styles.paletteItemDisabled,
+                      pressed && !assetLibraryAtLimit && styles.pressed,
+                    ]}
+                  >
+                    <View style={themedStyles.importActionIcon}>
+                      <Ionicons name="images-outline" size={17} color={theme.colors.text} />
+                    </View>
+                    <View style={styles.importActionCopy}>
+                      <Text style={themedStyles.importActionTitle}>Photos</Text>
+                      <Text style={themedStyles.importActionSubtitle}>{assetLibraryAtLimit ? 'Sticker shelf is full' : 'PNG / WebP works best'}</Text>
+                    </View>
+                  </Pressable>
+                </View>
+
+                {customStickers.length ? (
+                  <ScrollView
+                    horizontal
+                    keyboardShouldPersistTaps="always"
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.libraryPalette}
+                  >
+                    {customStickers.map((asset) => {
+                      const isApple = isAppleStickerAsset(asset);
+                      const isSelectedSource = selectedAssetId === asset.id;
+                      return (
+                        <View key={asset.id} style={themedStyles.customPaletteWrap}>
+                          <Pressable
+                            onPress={() => addLibraryAssetToCanvas(asset)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Place saved ${isApple ? 'Apple sticker' : 'image sticker'}`}
+                            style={({ pressed }) => [
+                              themedStyles.libraryAssetCard,
+                              isSelectedSource && themedStyles.libraryAssetCardActive,
+                              pressed && styles.libraryAssetPressed,
+                            ]}
+                          >
+                            <StickerArt
+                              stickerId="custom"
+                              kind={isApple ? 'apple_glyph' : 'custom_image'}
+                              customUrl={asset.url}
+                              size={54}
+                            />
+                            <View style={[themedStyles.librarySourceBadge, isApple && themedStyles.librarySourceBadgeApple]}>
+                              <Ionicons name={isApple ? 'sparkles' : 'image-outline'} size={9} color={theme.colors.text} />
+                            </View>
+                            {isSelectedSource ? (
+                              <View style={[styles.librarySelectedDot, { backgroundColor: theme.circle.accent }]}>
+                                <Ionicons name="checkmark" size={10} color="#fff" />
+                              </View>
+                            ) : null}
+                          </Pressable>
+                          <Pressable
+                            onPress={() => removeCustomAsset(asset)}
+                            hitSlop={7}
+                            accessibilityRole="button"
+                            accessibilityLabel="Remove saved sticker from this shelf"
+                            style={({ pressed }) => [themedStyles.removeUploadButton, pressed && styles.pressed]}
+                          >
+                            <Ionicons name="close" size={11} color="#fff" />
+                          </Pressable>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                ) : (
+                  <View style={themedStyles.libraryEmptyState}>
+                    <View style={themedStyles.libraryEmptyIcon}>
+                      <Ionicons name="sparkles-outline" size={19} color={theme.colors.text} />
+                    </View>
+                    <View style={styles.libraryEmptyCopy}>
+                      <Text style={themedStyles.libraryEmptyTitle}>Your reusable stickers will live here</Text>
+                      <Text style={themedStyles.libraryEmptyText}>Import once, then tap it anytime you decorate this space.</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+          </Animated.View>
+
+          <View style={styles.capacityRow}>
+            <View style={themedStyles.capacityPill}>
+              <Ionicons name="shapes-outline" size={11} color={canvasAtLimit ? '#B42318' : theme.colors.subtext} />
+              <Text style={[themedStyles.capacityText, canvasAtLimit && styles.capacityTextWarning]}>
+                {stickers.length}/{MAX_DECORATION_STICKERS} placed
+              </Text>
+            </View>
+            {activePack === 'Yours' ? (
+              <View style={themedStyles.capacityPill}>
+                <Ionicons name="albums-outline" size={11} color={assetLibraryAtLimit ? '#B42318' : theme.colors.subtext} />
+                <Text style={[themedStyles.capacityText, assetLibraryAtLimit && styles.capacityTextWarning]}>
+                  {customStickers.length}/{MAX_CUSTOM_STICKER_ASSETS} saved
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </Animated.View>
       )}
     </View>
   );
@@ -1103,11 +1922,23 @@ function SelectionControlGroup({ label, leftIcon, rightIcon, onLeft, onRight, th
   return (
     <View style={styles.selectionControlGroup}>
       <View style={[styles.selectionControlSegment, { backgroundColor: theme.circle.accentSoft }]}>
-        <Pressable onPress={onLeft} hitSlop={4} style={({ pressed }) => [styles.selectionControlHalf, pressed && styles.pressed]}>
+        <Pressable
+          onPress={onLeft}
+          hitSlop={4}
+          accessibilityRole="button"
+          accessibilityLabel={`${label}: decrease`}
+          style={({ pressed }) => [styles.selectionControlHalf, pressed && styles.pressed]}
+        >
           <Ionicons name={leftIcon} size={16} color={theme.colors.text} />
         </Pressable>
         <View style={styles.selectionControlDivider} />
-        <Pressable onPress={onRight} hitSlop={4} style={({ pressed }) => [styles.selectionControlHalf, pressed && styles.pressed]}>
+        <Pressable
+          onPress={onRight}
+          hitSlop={4}
+          accessibilityRole="button"
+          accessibilityLabel={`${label}: increase`}
+          style={({ pressed }) => [styles.selectionControlHalf, pressed && styles.pressed]}
+        >
           <Ionicons name={rightIcon} size={16} color={theme.colors.text} />
         </Pressable>
       </View>
@@ -1133,7 +1964,7 @@ const styles = StyleSheet.create({
   canvas: { flex: 1, overflow: 'hidden' },
   canvasTint: { ...StyleSheet.absoluteFillObject },
   editorSticker: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  editorStickerSelected: { zIndex: 65 },
+  editorStickerSelected: { zIndex: 96 },
   editorStickerFloating: {
     zIndex: 92,
     shadowColor: '#0A1222',
@@ -1146,8 +1977,19 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: 999,
     borderWidth: 1.5,
-    borderColor: 'rgba(10,18,34,0.72)',
     borderStyle: 'dashed',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+  },
+  selectionRingText: { borderRadius: 14 },
+  selectionDot: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   livePreviewLayer: { ...StyleSheet.absoluteFillObject, zIndex: 70 },
   editorTopBar: {
@@ -1267,8 +2109,10 @@ const styles = StyleSheet.create({
   circlePreviewGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   circlePreviewPostSlot: { alignItems: 'center', justifyContent: 'center' },
   circlePreviewPost: { overflow: 'hidden', borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.42)' },
-  controlPanelHandleRow: { flexDirection: 'row', alignItems: 'center', minHeight: 26 },
-  collapseButton: { width: 34, alignItems: 'flex-end', justifyContent: 'center' },
+  controlPanelHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 42, marginBottom: 7 },
+  panelDragZone: { flex: 1, minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  panelHeaderCopy: { flex: 1, minWidth: 0 },
+  editingBannerCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
   editControls: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8, gap: 6 },
   selectionControlGroup: { flex: 1, maxWidth: 86, alignItems: 'center' },
   selectionControlSegment: {
@@ -1292,17 +2136,47 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(180,35,24,0.10)',
   },
   selectionDeleteLabel: { marginTop: 2, color: '#B42318', fontFamily: 'Manrope_600SemiBold', fontSize: 8.2, textAlign: 'center' },
-  packRow: { paddingVertical: 3, gap: 6, alignItems: 'center' },
+  selectionQuickActions: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: -1, marginBottom: 7 },
+  packContentMotion: { minHeight: 1 },
+  packButtonPressed: { transform: [{ scale: 0.985 }] },
+  composerActionDisabled: { opacity: 0.38 },
+  pickerLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingTop: 7 },
+  textToolRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingTop: 8 },
+  textStyleOptions: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  textColorOptions: { flexGrow: 1, alignItems: 'center', gap: 7, paddingRight: 2 },
+  yoursBlock: { paddingTop: 8, paddingBottom: 1 },
+  libraryHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  libraryHeaderCopy: { flex: 1, minWidth: 0 },
+  importActionRow: { flexDirection: 'row', gap: 7, marginTop: 9 },
+  importActionCopy: { flex: 1, minWidth: 0 },
+  libraryPalette: { gap: 8, paddingTop: 10, paddingRight: 4, paddingBottom: 3 },
+  libraryAssetPressed: { transform: [{ scale: 0.96 }], opacity: 0.82 },
+  librarySelectedDot: {
+    position: 'absolute',
+    right: 5,
+    bottom: 5,
+    width: 17,
+    height: 17,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  libraryEmptyCopy: { flex: 1, minWidth: 0 },
+  capacityRow: { minHeight: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6, paddingTop: 4 },
+  capacityTextWarning: { color: '#B42318' },
   palette: { paddingTop: 8, paddingBottom: 3, gap: 8 },
   typeComposerBlock: { paddingTop: 7, paddingBottom: 2 },
   typeComposerRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  emojiPalette: { gap: 6, paddingTop: 7, paddingBottom: 2 },
+  emojiPalette: { gap: 6, paddingTop: 6, paddingBottom: 2 },
   emojiPaletteText: { fontSize: 27, lineHeight: 32 },
   textOptionsRow: { gap: 6, paddingTop: 7, paddingBottom: 2, alignItems: 'center' },
   colorDivider: { width: 1, height: 22, marginHorizontal: 2, backgroundColor: 'rgba(10,18,34,0.10)' },
-  textColorSwatch: { width: 25, height: 25, borderRadius: 13, borderWidth: 1, borderColor: 'rgba(10,18,34,0.12)' },
+  textColorSwatch: { width: 29, height: 29, borderRadius: 15, borderWidth: 1, borderColor: 'rgba(10,18,34,0.12)', alignItems: 'center', justifyContent: 'center' },
   textColorSwatchLight: { borderColor: 'rgba(10,18,34,0.20)' },
   pressed: { opacity: 0.62 },
+  paletteItemDisabled: { opacity: 0.55 },
 });
 
 function createThemedStyles(theme) {
@@ -1383,36 +2257,103 @@ function createThemedStyles(theme) {
     savePhaseText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 9.5 },
     controlPanel: {
       position: 'absolute',
-      left: 8,
-      right: 8,
-      bottom: 8,
+      top: 0,
+      left: 10,
+      right: 10,
       zIndex: 120,
-      paddingHorizontal: 10,
-      paddingTop: 6,
-      borderRadius: 22,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: 'rgba(255,255,255,0.88)',
-      backgroundColor: 'rgba(255,255,255,0.91)',
-      shadowColor: '#0A1222',
-      shadowOpacity: 0.14,
-      shadowRadius: 15,
-      shadowOffset: { width: 0, height: 6 },
-      elevation: 9,
-    },
-    selectionHint: { flex: 1, color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 9.5 },
-    packButton: {
-      minHeight: 29,
       paddingHorizontal: 11,
-      borderRadius: 15,
+      paddingTop: 8,
+      borderRadius: 24,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.94)',
+      backgroundColor: 'rgba(255,255,255,0.94)',
+      shadowColor: '#0A1222',
+      shadowOpacity: 0.12,
+      shadowRadius: 18,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 10,
+    },
+    panelGrabber: {
+      width: 27,
+      height: 5,
+      borderRadius: 3,
+      backgroundColor: 'rgba(10,18,34,0.18)',
+    },
+    panelEyebrow: {
+      marginBottom: 1,
+      color: theme.colors.text,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 8.5,
+      letterSpacing: 0.65,
+    },
+    panelHeaderButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: theme.colors.surfaceSoft,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(10,18,34,0.06)',
     },
-    packButtonActive: { backgroundColor: theme.circle.accentSoft },
-    packText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10 },
+    selectionHint: { flex: 1, color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 9.5 },
+    packSwitcher: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      padding: 4,
+      borderRadius: 18,
+      backgroundColor: theme.colors.surfaceSoft,
+    },
+    packButton: {
+      flex: 1,
+      minHeight: 32,
+      paddingHorizontal: 8,
+      borderRadius: 14,
+      flexDirection: 'row',
+      gap: 5,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'transparent',
+    },
+    packButtonActive: {
+      backgroundColor: 'rgba(255,255,255,0.90)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(10,18,34,0.07)',
+    },
+    packText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.2 },
     packTextActive: { color: theme.colors.text, fontFamily: 'Manrope_700Bold' },
     clearButton: { minHeight: 29, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center' },
     clearText: { color: '#B42318', fontFamily: 'Manrope_600SemiBold', fontSize: 9.5 },
+    selectionQuickAction: {
+      minHeight: 30,
+      paddingHorizontal: 11,
+      borderRadius: 15,
+      flexDirection: 'row',
+      gap: 5,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surfaceSoft,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(10,18,34,0.08)',
+    },
+    selectionQuickActionText: { color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 9.5 },
+    editingBanner: {
+      minHeight: 34,
+      marginBottom: 7,
+      paddingLeft: 10,
+      paddingRight: 5,
+      borderRadius: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: theme.circle.accentSoft,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: rgba(theme.circle.accent, 0.18),
+    },
+    editingBannerText: { flex: 1, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 9.5 },
+    editingCancelButton: { minHeight: 26, paddingHorizontal: 9, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.68)' },
+    editingCancelText: { color: theme.colors.subtext, fontFamily: 'Manrope_700Bold', fontSize: 9 },
     emojiInput: {
       flex: 1,
       minHeight: 38,
@@ -1453,6 +2394,164 @@ function createThemedStyles(theme) {
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: theme.colors.surfaceSoft,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(10,18,34,0.04)',
+    },
+    emojiPaletteItemActive: {
+      backgroundColor: theme.circle.accentSoft,
+      borderColor: rgba(theme.circle.accent, 0.36),
+    },
+    pickerMiniLabel: {
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 8.2,
+      letterSpacing: 0.6,
+    },
+    pickerHelperText: {
+      flexShrink: 1,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 8.5,
+      textAlign: 'right',
+    },
+    libraryTitle: {
+      color: theme.colors.text,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 11.5,
+    },
+    librarySubtitle: {
+      marginTop: 2,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 9,
+      lineHeight: 12.5,
+    },
+    libraryCountPill: {
+      minWidth: 42,
+      minHeight: 24,
+      paddingHorizontal: 8,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surfaceSoft,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(10,18,34,0.06)',
+    },
+    libraryCountText: {
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 8.5,
+    },
+    importActionButton: {
+      flex: 1,
+      minHeight: 48,
+      paddingHorizontal: 8,
+      borderRadius: 15,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+      backgroundColor: theme.circle.accentSoft,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: rgba(theme.circle.accent, 0.18),
+    },
+    importActionIcon: {
+      width: 31,
+      height: 31,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.66)',
+    },
+    importActionTitle: {
+      color: theme.colors.text,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 9.5,
+    },
+    importActionSubtitle: {
+      marginTop: 1,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 7.5,
+    },
+    libraryAssetCard: {
+      width: 72,
+      height: 72,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surfaceSoft,
+      borderWidth: 1.25,
+      borderColor: 'rgba(10,18,34,0.055)',
+      overflow: 'hidden',
+    },
+    libraryAssetCardActive: {
+      borderWidth: 2,
+      borderColor: theme.circle.accent,
+      backgroundColor: theme.circle.accentSoft,
+    },
+    librarySourceBadge: {
+      position: 'absolute',
+      left: 5,
+      bottom: 5,
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.86)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(10,18,34,0.08)',
+    },
+    librarySourceBadgeApple: {
+      backgroundColor: rgba(theme.circle.accent, 0.14),
+      borderColor: rgba(theme.circle.accent, 0.22),
+    },
+    libraryEmptyState: {
+      minHeight: 62,
+      marginTop: 9,
+      paddingHorizontal: 10,
+      paddingVertical: 9,
+      borderRadius: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+      backgroundColor: theme.colors.surfaceSoft,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(10,18,34,0.055)',
+    },
+    libraryEmptyIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.circle.accentSoft,
+    },
+    libraryEmptyTitle: {
+      color: theme.colors.text,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 9.5,
+    },
+    libraryEmptyText: {
+      marginTop: 1,
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_400Regular',
+      fontSize: 8.3,
+      lineHeight: 11.5,
+    },
+    capacityPill: {
+      minHeight: 21,
+      paddingHorizontal: 7,
+      borderRadius: 11,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(255,255,255,0.54)',
+    },
+    capacityText: {
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_600SemiBold',
+      fontSize: 8,
     },
     textStyleChip: {
       minHeight: 28,
