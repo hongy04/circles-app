@@ -33,6 +33,7 @@ import {
   TEXT_DECORATION_STYLES,
   StickerArt,
   getDecorationRenderBox,
+  getSafeDecorationPosition,
   makeDecorationInstance,
   makeStickerInstance,
   normalizeCustomStickerAssets,
@@ -88,12 +89,16 @@ function EditorSticker({
   onSelect,
   onMove,
   onBeginDrag,
+  onGuideChange,
 }) {
   const startRef = useRef({ x: sticker.x, y: sticker.y });
   const positionRef = useRef({ x: sticker.x, y: sticker.y });
   const hasStartedDragRef = useRef(false);
   positionRef.current = { x: sticker.x, y: sticker.y };
   const box = getDecorationRenderBox(sticker, STICKER_BASE_SIZE);
+  const safePosition = getSafeDecorationPosition(sticker, canvasSize, sticker.x, sticker.y, STICKER_BASE_SIZE);
+
+  const clearGuides = () => onGuideChange?.({ vertical: false, horizontal: false });
 
   const panResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
@@ -102,6 +107,7 @@ function EditorSticker({
     onPanResponderGrant: () => {
       startRef.current = positionRef.current;
       hasStartedDragRef.current = false;
+      clearGuides();
       onSelect(sticker.id);
     },
     onPanResponderMove: (_, gesture) => {
@@ -110,11 +116,31 @@ function EditorSticker({
         hasStartedDragRef.current = true;
         onBeginDrag?.(sticker.id);
       }
-      const nextX = clamp(startRef.current.x + (gesture.dx / canvasSize.width), 0.04, 0.96);
-      const nextY = clamp(startRef.current.y + (gesture.dy / canvasSize.height), 0.04, 0.96);
-      onMove(sticker.id, { x: nextX, y: nextY });
+
+      const rawX = startRef.current.x + (gesture.dx / canvasSize.width);
+      const rawY = startRef.current.y + (gesture.dy / canvasSize.height);
+      let next = getSafeDecorationPosition(sticker, canvasSize, rawX, rawY, STICKER_BASE_SIZE);
+      const snapX = 13 / canvasSize.width;
+      const snapY = 13 / canvasSize.height;
+      const vertical = Math.abs(next.x - 0.5) <= snapX;
+      const horizontal = Math.abs(next.y - 0.5) <= snapY;
+
+      if (vertical || horizontal) {
+        next = getSafeDecorationPosition(
+          sticker,
+          canvasSize,
+          vertical ? 0.5 : next.x,
+          horizontal ? 0.5 : next.y,
+          STICKER_BASE_SIZE
+        );
+      }
+
+      onGuideChange?.({ vertical, horizontal });
+      onMove(sticker.id, next);
     },
-  }), [canvasSize.height, canvasSize.width, onBeginDrag, onMove, onSelect, sticker.id]);
+    onPanResponderRelease: clearGuides,
+    onPanResponderTerminate: clearGuides,
+  }), [box.height, box.width, canvasSize.height, canvasSize.width, onBeginDrag, onGuideChange, onMove, onSelect, sticker.id, sticker.rotation, sticker.scale]);
 
   return (
     <View
@@ -124,8 +150,8 @@ function EditorSticker({
         {
           width: box.width,
           height: box.height,
-          left: (canvasSize.width * sticker.x) - (box.width / 2),
-          top: (canvasSize.height * sticker.y) - (box.height / 2),
+          left: (canvasSize.width * safePosition.x) - (box.width / 2),
+          top: (canvasSize.height * safePosition.y) - (box.height / 2),
           zIndex: 10 + sticker.z,
           transform: [{ rotate: `${sticker.rotation}deg` }],
         },
@@ -349,6 +375,71 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
   const [decoration, setDecoration] = useState(null);
   const [controlsCollapsed, setControlsCollapsed] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [alignmentGuides, setAlignmentGuides] = useState({ vertical: false, horizontal: false });
+  const [, setHistoryVersion] = useState(0);
+  const historyRef = useRef({ undo: [], redo: [] });
+  const stickersRef = useRef(stickers);
+  const customStickersRef = useRef(customStickers);
+  stickersRef.current = stickers;
+  customStickersRef.current = customStickers;
+
+  const cloneEditorSnapshot = useCallback(() => ({
+    stickers: stickersRef.current.map((item) => ({ ...item })),
+    customStickers: customStickersRef.current.map((item) => ({ ...item })),
+  }), []);
+
+  const refreshHistoryControls = useCallback(() => {
+    setHistoryVersion((value) => value + 1);
+  }, []);
+
+  const resetHistory = useCallback(() => {
+    historyRef.current = { undo: [], redo: [] };
+    refreshHistoryControls();
+  }, [refreshHistoryControls]);
+
+  const recordHistory = useCallback(() => {
+    const nextUndo = [...historyRef.current.undo, cloneEditorSnapshot()].slice(-40);
+    historyRef.current = { undo: nextUndo, redo: [] };
+    refreshHistoryControls();
+  }, [cloneEditorSnapshot, refreshHistoryControls]);
+
+  const applyEditorSnapshot = useCallback((snapshot) => {
+    const nextStickers = (snapshot?.stickers || []).map((item) => ({ ...item }));
+    const nextCustom = (snapshot?.customStickers || []).map((item) => ({ ...item }));
+    stickersRef.current = nextStickers;
+    customStickersRef.current = nextCustom;
+    setStickers(nextStickers);
+    setCustomStickers(nextCustom);
+    setFloatingSpawnIds(new Set());
+    setAlignmentGuides({ vertical: false, horizontal: false });
+    setSelectedId((current) => nextStickers.some((item) => item.id === current) ? current : null);
+  }, []);
+
+  const undo = useCallback(() => {
+    const undoStack = historyRef.current.undo;
+    if (!undoStack.length) return;
+    const previous = undoStack[undoStack.length - 1];
+    const current = cloneEditorSnapshot();
+    historyRef.current = {
+      undo: undoStack.slice(0, -1),
+      redo: [...historyRef.current.redo, current].slice(-40),
+    };
+    applyEditorSnapshot(previous);
+    refreshHistoryControls();
+  }, [applyEditorSnapshot, cloneEditorSnapshot, refreshHistoryControls]);
+
+  const redo = useCallback(() => {
+    const redoStack = historyRef.current.redo;
+    if (!redoStack.length) return;
+    const next = redoStack[redoStack.length - 1];
+    const current = cloneEditorSnapshot();
+    historyRef.current = {
+      undo: [...historyRef.current.undo, current].slice(-40),
+      redo: redoStack.slice(0, -1),
+    };
+    applyEditorSnapshot(next);
+    refreshHistoryControls();
+  }, [applyEditorSnapshot, cloneEditorSnapshot, refreshHistoryControls]);
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', (event) => {
@@ -365,6 +456,8 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     setLoading(true);
     setError('');
     setFloatingSpawnIds(new Set());
+    setAlignmentGuides({ vertical: false, horizontal: false });
+    resetHistory();
     try {
       if (mode === 'circle') {
         if (!conversationId) throw new Error('Circle not found.');
@@ -405,7 +498,7 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     } finally {
       setLoading(false);
     }
-  }, [conversationId, mode, theme.circle.profileBackground, theme.colors.bg]);
+  }, [conversationId, mode, resetHistory, theme.circle.profileBackground, theme.colors.bg]);
 
   useFocusEffect(useCallback(() => {
     load();
@@ -416,14 +509,25 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
     [customStickers]
   );
   const selected = stickers.find((item) => item.id === selectedId) || null;
+  const canUndo = historyRef.current.undo.length > 0;
+  const canRedo = historyRef.current.redo.length > 0;
 
   const updateSticker = useCallback((id, patch) => {
-    setStickers((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+    setStickers((current) => {
+      const next = current.map((item) => item.id === id ? { ...item, ...patch } : item);
+      stickersRef.current = next;
+      return next;
+    });
   }, []);
 
-  const appendSticker = (next) => {
+  const appendSticker = (next, { record = true } = {}) => {
+    if (record) recordHistory();
     next.z = stickers.reduce((max, item) => Math.max(max, item.z), -1) + 1;
-    setStickers((current) => [...current, next]);
+    setStickers((current) => {
+      const updated = [...current, next];
+      stickersRef.current = updated;
+      return updated;
+    });
     setFloatingSpawnIds((current) => {
       const nextIds = new Set(current);
       nextIds.add(next.id);
@@ -440,6 +544,11 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
       return nextIds;
     });
   }, []);
+
+  const beginStickerDrag = useCallback((id) => {
+    recordHistory();
+    settleSpawnedSticker(id);
+  }, [recordHistory, settleSpawnedSticker]);
 
   const addSticker = (stickerId, assetId = null) => {
     if (stickers.length >= MAX_DECORATION_STICKERS) {
@@ -509,20 +618,34 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
       url: asset.uri,
       mimeType: asset.mimeType || 'image/png',
     };
-    setCustomStickers((current) => [...current, custom]);
+    recordHistory();
+    setCustomStickers((current) => {
+      const next = [...current, custom];
+      customStickersRef.current = next;
+      return next;
+    });
     setActivePack('Yours');
     if (stickers.length < MAX_DECORATION_STICKERS) {
-      appendSticker(makeStickerInstance('custom', stickers.length, id));
+      appendSticker(makeStickerInstance('custom', stickers.length, id), { record: false });
     }
   };
 
   const removeCustomAsset = (asset) => {
     const usageCount = stickers.filter((item) => (item.kind === 'custom_image' || item.kind === 'apple_glyph' || item.sticker === 'custom') && item.asset_id === asset.id).length;
     const perform = () => {
+      recordHistory();
       const selectedUsesAsset = (selected?.kind === 'custom_image' || selected?.kind === 'apple_glyph' || selected?.sticker === 'custom') && selected?.asset_id === asset.id;
-      setCustomStickers((current) => current.filter((item) => item.id !== asset.id));
+      setCustomStickers((current) => {
+        const next = current.filter((item) => item.id !== asset.id);
+        customStickersRef.current = next;
+        return next;
+      });
       const removedIds = stickers.filter((item) => item.asset_id === asset.id).map((item) => item.id);
-      setStickers((current) => current.filter((item) => item.asset_id !== asset.id));
+      setStickers((current) => {
+        const next = current.filter((item) => item.asset_id !== asset.id);
+        stickersRef.current = next;
+        return next;
+      });
       setFloatingSpawnIds((current) => {
         if (!removedIds.some((id) => current.has(id))) return current;
         const nextIds = new Set(current);
@@ -549,8 +672,13 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
 
   const deleteSelected = () => {
     if (!selected) return;
+    recordHistory();
     const id = selected.id;
-    setStickers((current) => current.filter((item) => item.id !== id));
+    setStickers((current) => {
+      const next = current.filter((item) => item.id !== id);
+      stickersRef.current = next;
+      return next;
+    });
     setFloatingSpawnIds((current) => {
       if (!current.has(id)) return current;
       const nextIds = new Set(current);
@@ -562,15 +690,22 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
 
   const scaleSelected = (delta) => {
     if (!selected) return;
-    updateSticker(selected.id, { scale: clamp(selected.scale + delta, 0.55, 2.2) });
+    recordHistory();
+    const nextScale = clamp(selected.scale + delta, 0.55, 2.2);
+    const nextSticker = { ...selected, scale: nextScale };
+    const safe = getSafeDecorationPosition(nextSticker, canvasSize, selected.x, selected.y, STICKER_BASE_SIZE);
+    updateSticker(selected.id, { scale: nextScale, ...safe });
   };
 
   const rotateSelected = (delta) => {
     if (!selected) return;
+    recordHistory();
     let next = selected.rotation + delta;
     if (next > 180) next -= 360;
     if (next < -180) next += 360;
-    updateSticker(selected.id, { rotation: next });
+    const nextSticker = { ...selected, rotation: next };
+    const safe = getSafeDecorationPosition(nextSticker, canvasSize, selected.x, selected.y, STICKER_BASE_SIZE);
+    updateSticker(selected.id, { rotation: next, ...safe });
   };
 
   const moveLayer = (direction) => {
@@ -581,19 +716,30 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
       ? Math.min(ordered.length - 1, index + 1)
       : Math.max(0, index - 1);
     if (swapIndex === index) return;
+    recordHistory();
     const other = ordered[swapIndex];
-    setStickers((current) => current.map((item) => {
-      if (item.id === selected.id) return { ...item, z: other.z };
-      if (item.id === other.id) return { ...item, z: selected.z };
-      return item;
-    }));
+    setStickers((current) => {
+      const next = current.map((item) => {
+        if (item.id === selected.id) return { ...item, z: other.z };
+        if (item.id === other.id) return { ...item, z: selected.z };
+        return item;
+      });
+      stickersRef.current = next;
+      return next;
+    });
   };
 
   const clearAll = () => {
     if (!stickers.length) return;
     Alert.alert('Remove all placed decorations?', 'Your uploaded image library, header, and background will stay unchanged.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove all', style: 'destructive', onPress: () => { setStickers([]); setSelectedId(null); setFloatingSpawnIds(new Set()); } },
+      { text: 'Remove all', style: 'destructive', onPress: () => {
+        recordHistory();
+        stickersRef.current = [];
+        setStickers([]);
+        setSelectedId(null);
+        setFloatingSpawnIds(new Set());
+      } },
     ]);
   };
 
@@ -706,11 +852,25 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
             canvasSize={canvasSize}
             onSelect={setSelectedId}
             onMove={updateSticker}
-            onBeginDrag={settleSpawnedSticker}
+            onBeginDrag={beginStickerDrag}
+            onGuideChange={setAlignmentGuides}
           />
         ))
         : null}
       {previewContent}
+      {alignmentGuides.vertical || alignmentGuides.horizontal ? (
+        <View pointerEvents="none" style={styles.alignmentGuideLayer}>
+          {alignmentGuides.vertical ? (
+            <View style={[styles.alignmentGuideVertical, { backgroundColor: rgba(theme.circle.accent, 0.72) }]} />
+          ) : null}
+          {alignmentGuides.horizontal ? (
+            <View style={[styles.alignmentGuideHorizontal, { backgroundColor: rgba(theme.circle.accent, 0.72) }]} />
+          ) : null}
+          {alignmentGuides.vertical && alignmentGuides.horizontal ? (
+            <View style={[styles.alignmentGuideDot, { backgroundColor: theme.circle.accent }]} />
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 
@@ -723,9 +883,27 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
       ) : canvas}
 
       <View pointerEvents="box-none" style={[styles.editorTopBar, { top: insets.top + 5 }]}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={10} style={themedStyles.floatingEditorButton}>
-          <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
-        </Pressable>
+        <View style={styles.editorTopLeftControls}>
+          <Pressable onPress={() => navigation.goBack()} hitSlop={10} style={themedStyles.floatingEditorButton}>
+            <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
+          </Pressable>
+          <Pressable
+            onPress={undo}
+            disabled={!canUndo || saving}
+            hitSlop={8}
+            style={[themedStyles.historyButton, (!canUndo || saving) && styles.historyButtonDisabled]}
+          >
+            <Ionicons name="arrow-undo" size={17} color={theme.colors.text} />
+          </Pressable>
+          <Pressable
+            onPress={redo}
+            disabled={!canRedo || saving}
+            hitSlop={8}
+            style={[themedStyles.historyButton, (!canRedo || saving) && styles.historyButtonDisabled]}
+          >
+            <Ionicons name="arrow-redo" size={17} color={theme.colors.text} />
+          </Pressable>
+        </View>
         <View style={themedStyles.livePill}>
           <Text style={themedStyles.livePillTitle}>LIVE PROFILE</Text>
           <Text style={themedStyles.livePillSubtitle}>what you place is what people see</Text>
@@ -757,7 +935,7 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
                 ? 'Selected decoration'
                 : stickers.length
                   ? 'Tap a decoration to edit it'
-                  : 'Add a decal, emoji, text, or image below'}
+                  : 'Add an emoji, text, or image below'}
             </Text>
             <Pressable onPress={() => setControlsCollapsed(true)} hitSlop={8} style={styles.collapseButton}>
               <Ionicons name="chevron-down" size={20} color={theme.colors.subtext} />
@@ -766,13 +944,36 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
 
           {selected ? (
             <View style={styles.editControls}>
-              <ControlButton icon="remove" label="Smaller" onPress={() => scaleSelected(-0.12)} theme={theme} />
-              <ControlButton icon="add" label="Larger" onPress={() => scaleSelected(0.12)} theme={theme} />
-              <ControlButton icon="arrow-undo" label="Rotate" onPress={() => rotateSelected(-15)} theme={theme} />
-              <ControlButton icon="arrow-redo" label="Rotate" onPress={() => rotateSelected(15)} theme={theme} />
-              <ControlButton icon="arrow-down" label="Back" onPress={() => moveLayer('back')} theme={theme} />
-              <ControlButton icon="arrow-up" label="Front" onPress={() => moveLayer('front')} theme={theme} />
-              <ControlButton icon="trash-outline" label="Delete" danger onPress={deleteSelected} theme={theme} />
+              <SelectionControlGroup
+                label="Size"
+                leftIcon="remove"
+                rightIcon="add"
+                onLeft={() => scaleSelected(-0.12)}
+                onRight={() => scaleSelected(0.12)}
+                theme={theme}
+              />
+              <SelectionControlGroup
+                label="Rotate"
+                leftIcon="arrow-undo"
+                rightIcon="arrow-redo"
+                onLeft={() => rotateSelected(-15)}
+                onRight={() => rotateSelected(15)}
+                theme={theme}
+              />
+              <SelectionControlGroup
+                label="Layer"
+                leftIcon="arrow-down"
+                rightIcon="arrow-up"
+                onLeft={() => moveLayer('back')}
+                onRight={() => moveLayer('front')}
+                theme={theme}
+              />
+              <Pressable onPress={deleteSelected} style={({ pressed }) => [styles.selectionDeleteButton, pressed && styles.pressed]}>
+                <View style={styles.selectionDeleteIcon}>
+                  <Ionicons name="trash-outline" size={17} color="#B42318" />
+                </View>
+                <Text style={styles.selectionDeleteLabel}>Delete</Text>
+              </Pressable>
             </View>
           ) : null}
 
@@ -898,14 +1099,20 @@ function StickerEditorContent({ route, navigation, forcedMode }) {
   );
 }
 
-function ControlButton({ icon, label, onPress, theme, danger = false }) {
+function SelectionControlGroup({ label, leftIcon, rightIcon, onLeft, onRight, theme }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.controlButton, pressed && styles.pressed]}>
-      <View style={[styles.controlIcon, { backgroundColor: danger ? 'rgba(180,35,24,0.10)' : theme.circle.accentSoft }]}>
-        <Ionicons name={icon} size={17} color={danger ? '#B42318' : theme.colors.text} />
+    <View style={styles.selectionControlGroup}>
+      <View style={[styles.selectionControlSegment, { backgroundColor: theme.circle.accentSoft }]}>
+        <Pressable onPress={onLeft} hitSlop={4} style={({ pressed }) => [styles.selectionControlHalf, pressed && styles.pressed]}>
+          <Ionicons name={leftIcon} size={16} color={theme.colors.text} />
+        </Pressable>
+        <View style={styles.selectionControlDivider} />
+        <Pressable onPress={onRight} hitSlop={4} style={({ pressed }) => [styles.selectionControlHalf, pressed && styles.pressed]}>
+          <Ionicons name={rightIcon} size={16} color={theme.colors.text} />
+        </Pressable>
       </View>
-      <Text style={[styles.controlLabel, { color: danger ? '#B42318' : theme.colors.subtext }]}>{label}</Text>
-    </Pressable>
+      <Text style={[styles.selectionControlLabel, { color: theme.colors.subtext }]}>{label}</Text>
+    </View>
   );
 }
 
@@ -951,6 +1158,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  editorTopLeftControls: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  historyButtonDisabled: { opacity: 0.34 },
+  alignmentGuideLayer: { ...StyleSheet.absoluteFillObject, zIndex: 105 },
+  alignmentGuideVertical: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: '50%',
+    width: StyleSheet.hairlineWidth,
+  },
+  alignmentGuideHorizontal: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '50%',
+    height: StyleSheet.hairlineWidth,
+  },
+  alignmentGuideDot: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: 6,
+    height: 6,
+    marginLeft: -3,
+    marginTop: -3,
+    borderRadius: 3,
   },
   previewTopControl: {
     position: 'absolute',
@@ -1035,10 +1269,29 @@ const styles = StyleSheet.create({
   circlePreviewPost: { overflow: 'hidden', borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.42)' },
   controlPanelHandleRow: { flexDirection: 'row', alignItems: 'center', minHeight: 26 },
   collapseButton: { width: 34, alignItems: 'flex-end', justifyContent: 'center' },
-  editControls: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  controlButton: { width: 43, alignItems: 'center' },
-  controlIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  controlLabel: { marginTop: 2, fontFamily: 'Manrope_600SemiBold', fontSize: 7.5, textAlign: 'center' },
+  editControls: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8, gap: 6 },
+  selectionControlGroup: { flex: 1, maxWidth: 86, alignItems: 'center' },
+  selectionControlSegment: {
+    width: '100%',
+    height: 34,
+    borderRadius: 17,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  selectionControlHalf: { flex: 1, height: 34, alignItems: 'center', justifyContent: 'center' },
+  selectionControlDivider: { width: StyleSheet.hairlineWidth, height: 19, backgroundColor: 'rgba(10,18,34,0.13)' },
+  selectionControlLabel: { marginTop: 2, fontFamily: 'Manrope_600SemiBold', fontSize: 8.2, textAlign: 'center' },
+  selectionDeleteButton: { width: 47, alignItems: 'center' },
+  selectionDeleteIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(180,35,24,0.10)',
+  },
+  selectionDeleteLabel: { marginTop: 2, color: '#B42318', fontFamily: 'Manrope_600SemiBold', fontSize: 8.2, textAlign: 'center' },
   packRow: { paddingVertical: 3, gap: 6, alignItems: 'center' },
   palette: { paddingTop: 8, paddingBottom: 3, gap: 8 },
   typeComposerBlock: { paddingTop: 7, paddingBottom: 2 },
@@ -1083,6 +1336,16 @@ function createThemedStyles(theme) {
       backgroundColor: 'rgba(255,255,255,0.82)',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'rgba(255,255,255,0.9)',
+    },
+    historyButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.78)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.88)',
     },
     livePill: {
       minHeight: 38,

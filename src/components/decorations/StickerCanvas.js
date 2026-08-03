@@ -184,6 +184,31 @@ export function getDecorationRenderBox(sticker, baseSize = STICKER_BASE_SIZE) {
   return { width: height * widthFactor, height };
 }
 
+export function getSafeDecorationPosition(
+  sticker,
+  layout,
+  proposedX = sticker?.x ?? 0.5,
+  proposedY = sticker?.y ?? 0.5,
+  baseSize = STICKER_BASE_SIZE,
+  margin = 6
+) {
+  const width = Math.max(1, Number(layout?.width) || 1);
+  const height = Math.max(1, Number(layout?.height) || 1);
+  const box = getDecorationRenderBox(sticker, baseSize);
+  const radians = ((Number(sticker?.rotation) || 0) * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(radians));
+  const sin = Math.abs(Math.sin(radians));
+  const rotatedWidth = (box.width * cos) + (box.height * sin);
+  const rotatedHeight = (box.width * sin) + (box.height * cos);
+  const minX = clamp(((rotatedWidth / 2) + margin) / width, 0.04, 0.48);
+  const minY = clamp(((rotatedHeight / 2) + margin) / height, 0.04, 0.48);
+
+  return {
+    x: clamp(proposedX, minX, 1 - minX),
+    y: clamp(proposedY, minY, 1 - minY),
+  };
+}
+
 function GlassIconSticker({ item, size }) {
   const iconSize = size * 0.47;
   return (
@@ -431,6 +456,7 @@ export function StickerCanvas({ stickers, customStickers = [], style, baseSize =
         const customUrl = (sticker.kind === 'custom_image' || sticker.kind === 'apple_glyph')
           ? assetMap[sticker.asset_id]?.url
           : null;
+        const safePosition = getSafeDecorationPosition(sticker, layout, sticker.x, sticker.y, baseSize);
         return (
           <View
             key={sticker.id}
@@ -438,8 +464,8 @@ export function StickerCanvas({ stickers, customStickers = [], style, baseSize =
               position: 'absolute',
               width: box.width,
               height: box.height,
-              left: (layout.width * sticker.x) - (box.width / 2),
-              top: (layout.height * sticker.y) - (box.height / 2),
+              left: (layout.width * safePosition.x) - (box.width / 2),
+              top: (layout.height * safePosition.y) - (box.height / 2),
               transform: [{ rotate: `${sticker.rotation}deg` }],
             }}
           >
