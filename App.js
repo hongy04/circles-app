@@ -540,8 +540,19 @@ function AppTabs({ navigation, route }) {
         </Pressable>
       ) : null}
       <Tabs.Navigator
-        tabBar={(props) => (
-          usesAeroTabStation ? (
+        tabBar={(props) => {
+          const activeTabRoute = props.state.routes[props.state.index];
+          const nestedState = activeTabRoute?.state;
+          const activeNestedRoute = nestedState?.routes?.[
+            nestedState.index ?? 0
+          ];
+          const chatIsFocused =
+            activeTabRoute?.name === 'Circles' &&
+            activeNestedRoute?.name === 'Chat';
+
+          if (chatIsFocused) return null;
+
+          return usesAeroTabStation ? (
             <FrutigerAeroTabBar
               {...props}
               theme={theme}
@@ -550,8 +561,8 @@ function AppTabs({ navigation, route }) {
             />
           ) : (
             <BottomTabBar {...props} />
-          )
-        )}
+          );
+        }}
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarActiveTintColor: theme.circle.accent,
