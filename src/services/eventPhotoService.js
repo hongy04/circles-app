@@ -5,39 +5,22 @@ import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
 import { FEATURE_FLAGS, requireFeature } from './featureFlagService';
 import { compressIfImage } from './uploadService';
+import {
+  getCachedSignedUrls,
+  removeStorageSignedUrlCacheEntries,
+} from './storageSignedUrlCacheService';
 
 export const EVENT_PHOTO_BUCKET = 'event-media';
 export const EVENT_PHOTO_SELECTION_LIMIT = 10;
 export const EVENT_PHOTO_SOURCE_LIMIT_BYTES = 48 * 1024 * 1024;
 export const EVENT_PHOTO_SIGNED_URL_TTL_SECONDS = 10 * 60;
 
-function signedUrlFromRow(row = {}) {
-  return row.signedUrl || row.signedURL || null;
-}
-
 async function createSignedUrlMap(storagePaths = []) {
-  const uniquePaths = [...new Set(
-    storagePaths
-      .map((path) => String(path || '').trim())
-      .filter(Boolean)
-  )];
-
-  if (uniquePaths.length === 0) return new Map();
-
-  const { data, error } = await supabase.storage
-    .from(EVENT_PHOTO_BUCKET)
-    .createSignedUrls(uniquePaths, EVENT_PHOTO_SIGNED_URL_TTL_SECONDS);
-
-  if (error) throw error;
-
-  const signedByPath = new Map();
-  for (const row of data || []) {
-    const path = String(row?.path || '').trim();
-    const signedUrl = signedUrlFromRow(row);
-    if (path && signedUrl) signedByPath.set(path, signedUrl);
-  }
-
-  return signedByPath;
+  return getCachedSignedUrls(
+    EVENT_PHOTO_BUCKET,
+    storagePaths,
+    EVENT_PHOTO_SIGNED_URL_TTL_SECONDS
+  );
 }
 
 function mapPhoto(photo = {}, signedByPath = new Map()) {
@@ -239,6 +222,7 @@ export async function deleteEventPhoto(photo) {
     .remove([photo.storagePath]);
 
   if (storageError) throw storageError;
+  removeStorageSignedUrlCacheEntries(EVENT_PHOTO_BUCKET, [photo.storagePath]);
 
   const { data, error } = await supabase.rpc('delete_event_photo', {
     p_photo_id: photo.id,

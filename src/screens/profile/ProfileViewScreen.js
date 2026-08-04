@@ -390,46 +390,56 @@ export function ProfileViewScreen({
 
     try {
       const result = await fetchProfilePage(userId);
-      const isOwnProfile =
-        isSelf || result.profile?.relationship_status === 'self';
-      const previewPostId = isOwnProfile
-        ? await fetchMyMutualPreviewPostId()
-        : null;
-      const connected = result.profile?.relationship_status === 'connected';
-      const [romanticStatus, proposalStatus] = connected
-        ? await Promise.all([
-            fetchRomanticInterestStatus(result.profile.id),
-            fetchTwoPersonCircleProposalStatus(result.profile.id),
-          ])
-        : [
-            {
-              available: false,
-              channelOpen: false,
-              selectedByMe: false,
-              mutualRevealed: false,
-              focusAvailable: false,
-              focusSelectedByMe: false,
-              focusMutualRevealed: false,
-              focusActive: false,
-            },
-            {
-              available: false,
-              state: 'unavailable',
-              canPropose: false,
-              accepted: false,
-              focusActive: false,
-              circleEnabled: false,
-              existingCircle: false,
-              reopening: false,
-              circleLocked: false,
-              circleAccessActive: false,
-              conversationId: null,
-            },
-          ];
 
+      // Identity, decoration and posts are the profile. Private preview and
+      // romantic/proposal state are secondary controls. Paint the actual
+      // profile as soon as its core payload arrives instead of making it wait
+      // for several unrelated RPCs to finish.
       setProfile((current) => preserveProfileDecorationImageUrls(current, result.profile));
       setPosts(result.posts);
       setSocialStats(result.socialStats || null);
+      setLoading(false);
+
+      const isOwnProfile =
+        isSelf || result.profile?.relationship_status === 'self';
+      const connected = result.profile?.relationship_status === 'connected';
+      const previewPromise = isOwnProfile
+        ? fetchMyMutualPreviewPostId()
+        : Promise.resolve(null);
+      const romanticPromise = connected
+        ? fetchRomanticInterestStatus(result.profile.id)
+        : Promise.resolve({
+            available: false,
+            channelOpen: false,
+            selectedByMe: false,
+            mutualRevealed: false,
+            focusAvailable: false,
+            focusSelectedByMe: false,
+            focusMutualRevealed: false,
+            focusActive: false,
+          });
+      const proposalPromise = connected
+        ? fetchTwoPersonCircleProposalStatus(result.profile.id)
+        : Promise.resolve({
+            available: false,
+            state: 'unavailable',
+            canPropose: false,
+            accepted: false,
+            focusActive: false,
+            circleEnabled: false,
+            existingCircle: false,
+            reopening: false,
+            circleLocked: false,
+            circleAccessActive: false,
+            conversationId: null,
+          });
+
+      const [previewPostId, romanticStatus, proposalStatus] = await Promise.all([
+        previewPromise,
+        romanticPromise,
+        proposalPromise,
+      ]);
+
       setMutualPreviewPostId(previewPostId);
       setRomanticStatus(romanticStatus);
       setCircleProposalStatus(proposalStatus);

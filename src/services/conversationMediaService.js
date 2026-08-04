@@ -2,6 +2,11 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
+import {
+  getCachedSignedUrl,
+  getCachedSignedUrls,
+  removeStorageSignedUrlCacheEntries,
+} from './storageSignedUrlCacheService';
 import { compressIfImage, normalizeMime } from './uploadService';
 
 export const CONVERSATION_MEDIA_BUCKET = 'conversation-media';
@@ -62,35 +67,22 @@ export async function createConversationMediaSignedUrl(
   storagePath,
   expiresIn = 3600
 ) {
-  if (!storagePath) return null;
-
-  const { data, error } = await supabase.storage
-    .from(CONVERSATION_MEDIA_BUCKET)
-    .createSignedUrl(storagePath, expiresIn);
-
-  if (error) throw error;
-  return data?.signedUrl || null;
+  return getCachedSignedUrl(
+    CONVERSATION_MEDIA_BUCKET,
+    storagePath,
+    expiresIn
+  );
 }
 
 export async function createConversationMediaSignedUrls(
   storagePaths,
   expiresIn = 3600
 ) {
-  const uniquePaths = Array.from(new Set((storagePaths || []).filter(Boolean)));
-  if (!uniquePaths.length) return new Map();
-
-  const { data, error } = await supabase.storage
-    .from(CONVERSATION_MEDIA_BUCKET)
-    .createSignedUrls(uniquePaths, expiresIn);
-
-  if (error) throw error;
-
-  const map = new Map();
-  (data || []).forEach((item, index) => {
-    const path = item.path || uniquePaths[index];
-    if (path && item.signedUrl) map.set(path, item.signedUrl);
-  });
-  return map;
+  return getCachedSignedUrls(
+    CONVERSATION_MEDIA_BUCKET,
+    storagePaths,
+    expiresIn
+  );
 }
 
 export async function hydrateConversationMediaItems(items = []) {
@@ -113,5 +105,6 @@ export async function removeConversationMedia(storagePaths = []) {
     .remove(paths);
 
   if (error) throw error;
+  removeStorageSignedUrlCacheEntries(CONVERSATION_MEDIA_BUCKET, paths);
   return data || [];
 }

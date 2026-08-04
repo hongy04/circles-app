@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
 import {
   createConversationMediaSignedUrl,
+  createConversationMediaSignedUrls,
   hydrateConversationMediaItems,
   removeConversationMedia,
 } from './conversationMediaService';
@@ -110,19 +111,20 @@ async function hydrateMessages(messages) {
   }));
 }
 
-async function hydrateConversationAvatar(conversation) {
-  if (!conversation.avatarPath) return conversation;
+async function hydrateConversationAvatars(conversations = []) {
+  const paths = conversations.map((conversation) => conversation.avatarPath).filter(Boolean);
+  if (!paths.length) return conversations;
 
   try {
-    const signed = await createConversationMediaSignedUrl(
-      conversation.avatarPath
-    );
-    return {
+    const signedUrls = await createConversationMediaSignedUrls(paths);
+    return conversations.map((conversation) => ({
       ...conversation,
-      avatarUri: signed || conversation.avatarUri,
-    };
+      avatarUri: conversation.avatarPath
+        ? signedUrls.get(conversation.avatarPath) || conversation.avatarUri
+        : conversation.avatarUri,
+    }));
   } catch {
-    return conversation;
+    return conversations;
   }
 }
 
@@ -136,9 +138,7 @@ export async function listMyConversations() {
   const { data, error } = await supabase.rpc('get_my_conversations');
   if (error) throw error;
 
-  return Promise.all((data || []).map((row) =>
-    hydrateConversationAvatar(mapConversation(row))
-  ));
+  return hydrateConversationAvatars((data || []).map(mapConversation));
 }
 
 export async function listConversationInvitations() {

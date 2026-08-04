@@ -11,6 +11,7 @@ import { fetchProfileSocialStats } from './profileDirectoryService';
 import { unregisterCurrentPushDevice } from './pushNotificationService';
 import { fetchProfileDecoration } from './profileDecorationService';
 import { setNavigationCacheScope } from './navigationCacheService';
+import { clearStorageSignedUrlCache } from './storageSignedUrlCacheService';
 
 const REMOTE_URI_PATTERN = /^https?:\/\//i;
 
@@ -346,4 +347,5 @@ export async function signOut() {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
   setNavigationCacheScope(null);
+  clearStorageSignedUrlCache();
 }

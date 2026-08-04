@@ -238,7 +238,18 @@ function CircleProfileContent({ route, navigation }) {
     setError('');
 
     try {
-      const detailRows = await getConversationDetails(conversationId);
+      // Circle identity, posts/timeline, and decoration are independent reads.
+      // Starting them together removes an entire network round trip from a
+      // cold Circle open instead of waiting for identity before asking for the
+      // content we already know this route will need.
+      const detailPromise = getConversationDetails(conversationId);
+      const coreContentPromise = Promise.all([
+        listConversationTimeline(conversationId),
+        listCirclePosts(conversationId),
+        fetchCircleDecoration(conversationId).catch(() => null),
+      ]);
+
+      const detailRows = await detailPromise;
       const conversation = detailRows?.conversation;
       const hasCircle = conversation?.kind === 'group'
         || Boolean(conversation?.circle_enabled);
@@ -292,6 +303,9 @@ function CircleProfileContent({ route, navigation }) {
         conversation?.kind === 'direct'
         && !conversation?.circle_access_active
       ) {
+        // Consume the already-started promise so a denied/locked secondary
+        // read can never surface later as an unhandled rejection.
+        await coreContentPromise.catch(() => null);
         setTimeline([]);
         setPosts([]);
         setPlans([]);
@@ -301,21 +315,26 @@ function CircleProfileContent({ route, navigation }) {
         return;
       }
 
-      const [timelineRows, postRows, decorationRows] = await Promise.all([
-        listConversationTimeline(conversationId),
-        listCirclePosts(conversationId),
-        fetchCircleDecoration(conversationId).catch(() => null),
-      ]);
+      const [timelineRows, postRows, decorationRows] = await coreContentPromise;
 
       setDecoration((current) => preserveDecorationImageUrls(current, decorationRows));
       if (decorationRows) {
         writeNavigationCache(navigationCacheKeys.circleDecoration(conversationId), decorationRows);
       }
 
-      let planRows = [];
-      let importantDateRows = [];
-      let albumRows = [];
-      let thoughtRows = [];
+      // Core Circle content should become interactive as soon as it is ready.
+      // Relationship-depth modules (plans/dates/albums/thoughts) are useful, but
+      // they must not hold posts or timeline hostage on Our Circle.
+      setTimeline(timelineRows);
+      setPosts(postRows);
+      writeNavigationCache(navigationCacheKeys.circleTimeline(conversationId), timelineRows);
+      writeNavigationCache(navigationCacheKeys.circlePosts(conversationId), postRows);
+      postRows.forEach((post) => {
+        writeNavigationCache(navigationCacheKeys.circlePost(post.id), post);
+      });
+      setContentResolved(true);
+      setLoading(false);
+
       if (conversation?.kind === 'direct') {
         const [plansResult, datesResult, albumsResult, thoughtsResult] = await Promise.allSettled([
           listTwoPersonPlans(conversationId),
@@ -324,24 +343,14 @@ function CircleProfileContent({ route, navigation }) {
           listTwoPersonThoughts(conversationId),
         ]);
         // Optional relationship-depth modules must never block the Circle itself.
-        planRows = plansResult.status === 'fulfilled' ? plansResult.value : [];
-        importantDateRows = datesResult.status === 'fulfilled' ? datesResult.value : [];
-        albumRows = albumsResult.status === 'fulfilled' ? albumsResult.value : [];
-        thoughtRows = thoughtsResult.status === 'fulfilled' ? thoughtsResult.value : [];
-      }
+        const planRows = plansResult.status === 'fulfilled' ? plansResult.value : [];
+        const importantDateRows = datesResult.status === 'fulfilled' ? datesResult.value : [];
+        const albumRows = albumsResult.status === 'fulfilled' ? albumsResult.value : [];
+        const thoughtRows = thoughtsResult.status === 'fulfilled' ? thoughtsResult.value : [];
 
-      setTimeline(timelineRows);
-      setPosts(postRows);
-      setPlans(planRows);
-      setImportantDates(importantDateRows);
-      setAlbums(albumRows);
-
-      // The Circle profile already paid the network cost for these destinations.
-      // Seed their in-memory snapshots so opening a deeper page can render
-      // immediately and quietly revalidate instead of showing another loader.
-      writeNavigationCache(navigationCacheKeys.circleTimeline(conversationId), timelineRows);
-      writeNavigationCache(navigationCacheKeys.circlePosts(conversationId), postRows);
-      if (conversation?.kind === 'direct') {
+        setPlans(planRows);
+        setImportantDates(importantDateRows);
+        setAlbums(albumRows);
         writeNavigationCache(navigationCacheKeys.twoPersonPlans(conversationId), planRows);
         writeNavigationCache(navigationCacheKeys.twoPersonDates(conversationId), importantDateRows);
         writeNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId), albumRows);
@@ -356,9 +365,6 @@ function CircleProfileContent({ route, navigation }) {
           writeNavigationCache(navigationCacheKeys.thought(thought.id), thought);
         });
       }
-      postRows.forEach((post) => {
-        writeNavigationCache(navigationCacheKeys.circlePost(post.id), post);
-      });
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this private Circle.');
     } finally {

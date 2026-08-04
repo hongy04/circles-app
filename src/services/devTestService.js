@@ -5,6 +5,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { unregisterCurrentPushDevice } from './pushNotificationService';
 import { setNavigationCacheScope } from './navigationCacheService';
+import { clearStorageSignedUrlCache } from './storageSignedUrlCacheService';
 
 function assertDevelopment() {
   if (!IS_DEVELOPMENT) {
@@ -109,6 +110,7 @@ export async function switchDevAccount(account) {
   await unregisterCurrentPushDevice({ bestEffort: true });
   await supabase.auth.signOut();
   setNavigationCacheScope(null);
+  clearStorageSignedUrlCache();
 
   try {
     const session = await signInConfiguredAccount(account);

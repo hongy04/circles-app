@@ -95,12 +95,30 @@ function mapComment(row) {
   };
 }
 
-async function hydratePost(post) {
-  const media = await hydrateConversationMediaItems(post.media || []);
-  return {
+async function hydratePosts(posts = []) {
+  const flatMedia = posts.flatMap((post) =>
+    (post.media || []).map((item) => ({ ...item, postId: post.id }))
+  );
+  const hydratedMedia = await hydrateConversationMediaItems(flatMedia);
+  const mediaByPost = new Map();
+
+  hydratedMedia.forEach((item) => {
+    const current = mediaByPost.get(item.postId) || [];
+    current.push(item);
+    mediaByPost.set(item.postId, current);
+  });
+
+  return posts.map((post) => ({
     ...post,
-    media: media.sort((a, b) => a.sortOrder - b.sortOrder),
-  };
+    media: (mediaByPost.get(post.id) || [])
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(({ postId, ...item }) => item),
+  }));
+}
+
+async function hydratePost(post) {
+  const [hydrated] = await hydratePosts([post]);
+  return hydrated || post;
 }
 
 export async function listCirclePosts(conversationId) {
@@ -112,8 +130,16 @@ export async function listCirclePosts(conversationId) {
   });
   if (error) throw error;
 
-  const hydrated = await Promise.all((data || []).map((row) => hydratePost(mapPost(row))));
-  return attachPostPresentations(hydrated);
+  const mapped = (data || []).map(mapPost);
+  const hydrated = await hydratePosts(mapped);
+
+  // Migration 077 adds presentation metadata directly to the RPC result. Keep
+  // the legacy enrichment only as a compatibility fallback for a backend that
+  // has not received that migration yet.
+  const hasInlinePresentation = (data || []).every((row) =>
+    Object.prototype.hasOwnProperty.call(row, 'media_presentations')
+  );
+  return hasInlinePresentation ? hydrated : attachPostPresentations(hydrated);
 }
 
 export async function getCirclePost(postId) {
@@ -126,6 +152,8 @@ export async function getCirclePost(postId) {
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error('This Circle post is unavailable.');
   const hydrated = await hydratePost(mapPost(row));
+  const hasInlinePresentation = Object.prototype.hasOwnProperty.call(row, 'media_presentations');
+  if (hasInlinePresentation) return hydrated;
   const [withPresentation] = await attachPostPresentations([hydrated]);
   return withPresentation || hydrated;
 }

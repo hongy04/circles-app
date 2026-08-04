@@ -24,15 +24,31 @@ const DEFAULT_SETTINGS = {
 // world immediately instead of flashing a full-screen loader for each route.
 // Permissions are still revalidated whenever a boundary gains focus.
 const circleThemeSnapshots = new Map();
+const THEME_REVALIDATE_AFTER_MS = 60 * 1000;
 
-function readThemeSnapshot(conversationId) {
+function readThemeSnapshotEntry(conversationId) {
   if (!conversationId) return null;
   return circleThemeSnapshots.get(String(conversationId)) || null;
 }
 
+function readThemeSnapshot(conversationId) {
+  return readThemeSnapshotEntry(conversationId)?.settings || null;
+}
+
+function isThemeSnapshotFresh(conversationId) {
+  const entry = readThemeSnapshotEntry(conversationId);
+  return Boolean(
+    entry?.settings
+    && Date.now() - Number(entry.savedAt || 0) < THEME_REVALIDATE_AFTER_MS
+  );
+}
+
 function writeThemeSnapshot(conversationId, settings) {
   if (!conversationId || !settings) return;
-  circleThemeSnapshots.set(String(conversationId), settings);
+  circleThemeSnapshots.set(String(conversationId), {
+    settings,
+    savedAt: Date.now(),
+  });
 }
 
 const CircleThemeContext = createContext({
@@ -82,13 +98,20 @@ export function CircleThemeBoundary({ conversationId, children }) {
 
   useFocusEffect(
     useCallback(() => {
-      // Crucially, focusing a Circle route never swaps its children for a
-      // loading screen. The existing screen remains mounted and the theme is
-      // revalidated quietly around it.
+      // Realtime subscriptions already catch actual Circle changes. Repeating
+      // the theme RPC on every quick Profile -> Plans -> Back hop only competes
+      // with the destination's useful data requests, so reuse a fresh snapshot
+      // for one minute and revalidate after longer absences.
+      if (isThemeSnapshotFresh(conversationId)) {
+        setLoading(false);
+        return undefined;
+      }
+
       refreshCircleTheme().catch(() => {
         setLoading(false);
       });
-    }, [refreshCircleTheme])
+      return undefined;
+    }, [conversationId, refreshCircleTheme])
   );
 
   useFocusEffect(

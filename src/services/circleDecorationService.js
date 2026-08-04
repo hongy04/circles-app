@@ -1,6 +1,10 @@
 import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
 import { uploadPathToBucket } from './uploadService';
+import {
+  getCachedSignedUrls,
+  removeStorageSignedUrlCacheEntries,
+} from './storageSignedUrlCacheService';
 
 const BUCKET = 'circle-decor';
 const SIGNED_URL_TTL_SECONDS = 60 * 60 * 6;
@@ -12,26 +16,30 @@ function normalizeStickerMime(mime) {
   return 'image/jpeg';
 }
 
-async function signDecorationPath(path) {
-  const cleanPath = String(path || '').trim();
-  if (!cleanPath) return null;
+async function signDecorationAssets({ headerPath, backgroundPath, customAssets = [] }) {
+  const cleanCustomAssets = Array.isArray(customAssets) ? customAssets : [];
+  const paths = [
+    headerPath,
+    backgroundPath,
+    ...cleanCustomAssets.map((asset) => asset?.path),
+  ].filter(Boolean);
 
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrl(cleanPath, SIGNED_URL_TTL_SECONDS);
+  const signedUrls = await getCachedSignedUrls(
+    BUCKET,
+    paths,
+    SIGNED_URL_TTL_SECONDS
+  );
 
-  if (error) throw error;
-  return data?.signedUrl || null;
-}
-
-async function signCustomStickerAssets(assets = []) {
-  const cleanAssets = Array.isArray(assets) ? assets : [];
-  return Promise.all(cleanAssets.map(async (asset) => ({
-    id: String(asset?.id || ''),
-    path: asset?.path || null,
-    mimeType: asset?.mime_type || asset?.mimeType || 'image/png',
-    url: asset?.path ? await signDecorationPath(asset.path) : null,
-  })));
+  return {
+    headerUrl: headerPath ? signedUrls.get(headerPath) || null : null,
+    backgroundUrl: backgroundPath ? signedUrls.get(backgroundPath) || null : null,
+    customStickers: cleanCustomAssets.map((asset) => ({
+      id: String(asset?.id || ''),
+      path: asset?.path || null,
+      mimeType: asset?.mime_type || asset?.mimeType || 'image/png',
+      url: asset?.path ? signedUrls.get(asset.path) || null : null,
+    })),
+  };
 }
 
 export async function fetchCircleDecoration(conversationId) {
@@ -43,11 +51,11 @@ export async function fetchCircleDecoration(conversationId) {
 
   if (error) throw error;
 
-  const [headerUrl, backgroundUrl, customStickers] = await Promise.all([
-    signDecorationPath(data?.circle_header_path),
-    signDecorationPath(data?.circle_background_path),
-    signCustomStickerAssets(data?.circle_custom_stickers),
-  ]);
+  const { headerUrl, backgroundUrl, customStickers } = await signDecorationAssets({
+    headerPath: data?.circle_header_path,
+    backgroundPath: data?.circle_background_path,
+    customAssets: data?.circle_custom_stickers,
+  });
 
   return {
     circle_header_path: data?.circle_header_path || null,
@@ -147,6 +155,7 @@ async function removeDecorationPaths(paths = []) {
 
   const { error } = await supabase.storage.from(BUCKET).remove(cleanPaths);
   if (error) throw error;
+  removeStorageSignedUrlCacheEntries(BUCKET, cleanPaths);
 }
 
 export async function saveCircleDecoration({
