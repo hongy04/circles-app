@@ -27,6 +27,8 @@ import {
 } from '../../services/eventPhotoService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
+const EVENT_GALLERY_FOCUS_FRESH_MS = 12_000;
+
 function formatAddedAt(value) {
   if (!value) return '';
   const date = new Date(value);
@@ -119,6 +121,7 @@ function EventPhotoGalleryContent({ route }) {
   const [loading, setLoading] = useState(!cachedGallery);
   const [refreshing, setRefreshing] = useState(false);
   const hasLoadedRef = useRef(Boolean(cachedGallery));
+  const lastRefreshAtRef = useRef(cachedGallery ? Date.now() : 0);
   const [uploading, setUploading] = useState(false);
   const [uploadStage, setUploadStage] = useState('');
   const [selectedPhoto, setSelectedPhoto] = useState(null);
@@ -142,6 +145,7 @@ function EventPhotoGalleryContent({ route }) {
       const next = await listEventPhotos(eventId);
       setGallery(next);
       writeNavigationCache(navigationCacheKeys.eventPhotos(eventId), next);
+      lastRefreshAtRef.current = Date.now();
     } catch (loadError) {
       setError(loadError?.message || 'Could not load event photos.');
     } finally {
@@ -152,9 +156,13 @@ function EventPhotoGalleryContent({ route }) {
 
   useFocusEffect(
     useCallback(() => {
-      void load({ quiet: hasLoadedRef.current }).finally(() => {
-        hasLoadedRef.current = true;
-      });
+      const isFresh = hasLoadedRef.current
+        && Date.now() - lastRefreshAtRef.current < EVENT_GALLERY_FOCUS_FRESH_MS;
+      if (!isFresh) {
+        void load({ quiet: hasLoadedRef.current }).finally(() => {
+          hasLoadedRef.current = true;
+        });
+      }
     }, [load])
   );
 
@@ -297,6 +305,10 @@ function EventPhotoGalleryContent({ route }) {
         key={columns}
         numColumns={columns}
         keyExtractor={(item) => item.id}
+        initialNumToRender={18}
+        maxToRenderPerBatch={18}
+        windowSize={7}
+        removeClippedSubviews
         ListHeaderComponent={header}
         ListEmptyComponent={(
           <View style={styles.emptyCard}>

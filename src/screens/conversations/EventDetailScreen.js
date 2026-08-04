@@ -14,6 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
+import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
 import { EventRepeatCard } from '../../components/events/EventRepeatCard';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
@@ -35,6 +36,8 @@ import {
   revokeEventGuestInvitation,
 } from '../../services/eventGuestInviteService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+
+const EVENT_DETAIL_FOCUS_FRESH_MS = 10_000;
 
 const RSVP_OPTIONS = [
   { status: 'going', label: 'Going', icon: 'checkmark-circle-outline' },
@@ -302,7 +305,7 @@ function GuestInvitationRow({ invitation, busy, sharing, onShare, onRevoke }) {
 }
 
 function EventDetailContent({ route, navigation }) {
-  const { eventId, conversationId, circleName = 'Circle' } = route.params || {};
+  const { eventId, eventTitle = 'Event', conversationId, circleName = 'Circle' } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const initialSnapshot = useMemo(() => {
@@ -317,6 +320,8 @@ function EventDetailContent({ route, navigation }) {
   const [details, setDetails] = useState(initialDetails || null);
   const [loading, setLoading] = useState(!initialSnapshot.hasFullDetails);
   const hasLoadedRef = useRef(initialSnapshot.hasFullDetails);
+  const lastRefreshAtRef = useRef(initialSnapshot.hasFullDetails ? Date.now() : 0);
+  const loadInFlightRef = useRef(null);
   const [refreshing, setRefreshing] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState('');
   const [updatingGuestId, setUpdatingGuestId] = useState('');
@@ -333,11 +338,13 @@ function EventDetailContent({ route, navigation }) {
   const [planningRepeatEvent, setPlanningRepeatEvent] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  const load = useCallback(async ({ quiet = false, force = false } = {}) => {
     if (!eventId) return;
+    if (loadInFlightRef.current) return loadInFlightRef.current;
     if (!quiet) setLoading(true);
     setError('');
 
+    const request = (async () => {
     try {
       const [
         nextDetails,
@@ -357,6 +364,7 @@ function EventDetailContent({ route, navigation }) {
         isFeatureEnabled(FEATURE_FLAGS.EVENT_REPEAT_SIGNALS),
       ]);
       setDetails(nextDetails);
+      lastRefreshAtRef.current = Date.now();
       writeNavigationCache(navigationCacheKeys.eventDetails(eventId), nextDetails);
       setOutsideGuestControlsEnabled(guestControlsEnabled);
       setGuestInviteLinksEnabled(inviteLinksEnabled);
@@ -380,13 +388,23 @@ function EventDetailContent({ route, navigation }) {
       setLoading(false);
       setRefreshing(false);
     }
+    })();
+
+    loadInFlightRef.current = request.finally(() => {
+      loadInFlightRef.current = null;
+    });
+    return loadInFlightRef.current;
   }, [eventId]);
 
   useFocusEffect(
     useCallback(() => {
-      void load({ quiet: hasLoadedRef.current || Boolean(initialDetails) }).finally(() => {
-        hasLoadedRef.current = true;
-      });
+      const isFresh = hasLoadedRef.current
+        && Date.now() - lastRefreshAtRef.current < EVENT_DETAIL_FOCUS_FRESH_MS;
+      if (!isFresh) {
+        void load({ quiet: hasLoadedRef.current || Boolean(initialDetails) }).finally(() => {
+          hasLoadedRef.current = true;
+        });
+      }
     }, [initialDetails, load])
   );
 
@@ -592,23 +610,32 @@ function EventDetailContent({ route, navigation }) {
   );
   const eventLocked = event?.status === 'completed' || event?.status === 'cancelled';
 
-  if (loading && !event) {
+  if (!event) {
     return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.stateText}>Opening event…</Text>
-      </SafeAreaView>
-    );
-  }
+      <SafeAreaView edges={['bottom']} style={styles.screen}>
+        <View style={styles.content}>
+          <View style={styles.heroCard}>
+            <View style={styles.privacyRow}>
+              <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
+              <Text style={styles.privacyText}>{circleName}</Text>
+            </View>
+            <Text style={styles.title}>{eventTitle}</Text>
+            <View style={styles.detailRow}>
+              <View style={styles.detailIcon}>
+                <Ionicons name="calendar-outline" size={20} color={theme.colors.text} />
+              </View>
+              <Text style={styles.detailText}>Loading event details…</Text>
+            </View>
+          </View>
 
-  if (error && !event) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="calendar-outline" size={38} color={theme.colors.text} />
-        <Text style={styles.errorText}>{error}</Text>
-        <Pressable onPress={() => load()} style={styles.retryButton}>
-          <Text style={styles.retryText}>Try again</Text>
-        </Pressable>
+          <ContinuityLoadingCard
+            label="Opening event…"
+            body="The event page is already visible while RSVP and attendee details load."
+            icon="calendar-outline"
+            error={error}
+            onRetry={error ? () => load() : undefined}
+          />
+        </View>
       </SafeAreaView>
     );
   }
@@ -862,7 +889,7 @@ function EventDetailContent({ route, navigation }) {
         <View style={styles.guestActionRow}>
           {event.canManage ? (
             <Pressable
-              onPress={() => navigation.navigate('EventGuestSettings', { eventId, conversationId, circleName })}
+              onPress={() => navigation.navigate('EventGuestSettings', { eventId, eventTitle: event.title, conversationId, circleName })}
               style={({ pressed }) => [styles.secondaryGuestButton, pressed && styles.pressed]}
             >
               <Ionicons name="options-outline" size={18} color={theme.colors.text} />

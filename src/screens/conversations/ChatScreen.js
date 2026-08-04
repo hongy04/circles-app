@@ -24,6 +24,7 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../../theme/colors';
 import { ConversationHeaderTitle } from '../../components/conversations/ConversationHeaderTitle';
+import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { getTheme } from '../../theme/themes';
@@ -50,6 +51,8 @@ import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '
 const MAX_ATTACHMENTS = 6;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_DURATION_MS = 30 * 1000;
+const CHAT_FOCUS_FRESH_MS = 12_000;
+const CHAT_REALTIME_DEBOUNCE_MS = 180;
 
 function MutualInterestRevealModal({ visible, onContinue }) {
   return (
@@ -299,6 +302,26 @@ export function ChatScreen({ route, navigation }) {
   const [mutualRevealVisible, setMutualRevealVisible] = useState(false);
   const [focusRevealVisible, setFocusRevealVisible] = useState(false);
   const [sharedChatThemeId, setSharedChatThemeId] = useState(null);
+  const conversationRef = useRef(conversation);
+  const messagesRef = useRef(messages);
+  const currentUserIdRef = useRef(currentUserId);
+  const lastFullLoadAtRef = useRef(cachedChat ? Date.now() : 0);
+  const loadInFlightRef = useRef(null);
+  const realtimeRefreshTimerRef = useRef(null);
+  const realtimeRefreshModeRef = useRef('messages');
+  const realtimeRefreshPendingRef = useRef(false);
+
+  useEffect(() => {
+    conversationRef.current = conversation;
+  }, [conversation]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
 
   const isCircle = conversation?.is_circle == null
     ? conversation?.kind === 'group'
@@ -307,57 +330,172 @@ export function ChatScreen({ route, navigation }) {
     ? getTheme(sharedChatThemeId)
     : globalTheme;
 
+  const revealRomanticState = useCallback(async (targetConversation) => {
+    if (targetConversation?.kind !== 'direct') return;
+
+    const mutualReveal = await openRomanticMutualReveal(conversationId);
+    if (mutualReveal.shouldReveal) {
+      setMutualRevealVisible(true);
+      return;
+    }
+
+    const focusReveal = await openRomanticFocusReveal(conversationId);
+    if (focusReveal.shouldReveal) {
+      setFocusRevealVisible(true);
+    }
+  }, [conversationId]);
+
+  const markReadIfVisible = useCallback(async () => {
+    if (
+      screenFocusedRef.current
+      && appStateRef.current === 'active'
+    ) {
+      await markConversationRead(conversationId);
+    }
+  }, [conversationId]);
+
+  const persistChatSnapshot = useCallback(({
+    nextConversation = conversationRef.current,
+    nextCurrentUserId = currentUserIdRef.current,
+    nextMessages = messagesRef.current,
+  } = {}) => {
+    writeNavigationCache(navigationCacheKeys.chat(conversationId), {
+      conversation: nextConversation,
+      currentUserId: nextCurrentUserId,
+      messages: nextMessages,
+    });
+  }, [conversationId]);
+
   const load = useCallback(async ({
     quiet = false,
     checkRomanticReveal = false,
+    messagesOnly = false,
+    force = false,
   } = {}) => {
     if (!conversationId) return;
+
+    const hasFreshFullLoad = hasLoadedRef.current
+      && Date.now() - lastFullLoadAtRef.current < CHAT_FOCUS_FRESH_MS;
+
+    if (!force && !messagesOnly && hasFreshFullLoad) {
+      if (checkRomanticReveal) {
+        await revealRomanticState(conversationRef.current);
+      }
+      await markReadIfVisible();
+      return;
+    }
+
+    if (loadInFlightRef.current) {
+      return loadInFlightRef.current;
+    }
+
     if (!quiet) setLoading(true);
     setError(null);
 
-    try {
-      const [user, rows, details] = await Promise.all([
-        getCurrentConversationUser(),
-        listConversationMessages(conversationId),
-        getConversationDetails(conversationId),
-      ]);
-      setCurrentUserId(user.id);
-      setMessages(rows);
-      const nextConversation = details?.conversation || cachedChat?.conversation || routeConversation;
-      setConversation(nextConversation);
-      if (details?.conversation) {
-        writeNavigationCache(navigationCacheKeys.conversationDetails(conversationId), details);
-      }
-      writeNavigationCache(navigationCacheKeys.chat(conversationId), {
-        conversation: nextConversation,
-        currentUserId: user.id,
-        messages: rows,
-      });
-
-      if (checkRomanticReveal && details?.conversation?.kind === 'direct') {
-        const mutualReveal = await openRomanticMutualReveal(conversationId);
-        if (mutualReveal.shouldReveal) {
-          setMutualRevealVisible(true);
-        } else {
-          const focusReveal = await openRomanticFocusReveal(conversationId);
-          if (focusReveal.shouldReveal) {
-            setFocusRevealVisible(true);
-          }
+    const request = (async () => {
+      try {
+        if (messagesOnly) {
+          const rows = await listConversationMessages(conversationId);
+          setMessages(rows);
+          messagesRef.current = rows;
+          persistChatSnapshot({ nextMessages: rows });
+          await markReadIfVisible();
+          return;
         }
+
+        const userPromise = currentUserIdRef.current
+          ? Promise.resolve({ id: currentUserIdRef.current })
+          : getCurrentConversationUser();
+
+        const [user, rows, details] = await Promise.all([
+          userPromise,
+          listConversationMessages(conversationId),
+          getConversationDetails(conversationId),
+        ]);
+
+        const nextConversation = details?.conversation
+          || conversationRef.current
+          || cachedChat?.conversation
+          || routeConversation;
+
+        setCurrentUserId(user.id);
+        currentUserIdRef.current = user.id;
+        setMessages(rows);
+        messagesRef.current = rows;
+        setConversation(nextConversation);
+        conversationRef.current = nextConversation;
+        lastFullLoadAtRef.current = Date.now();
+
+        if (details?.conversation) {
+          writeNavigationCache(
+            navigationCacheKeys.conversationDetails(conversationId),
+            details
+          );
+        }
+        persistChatSnapshot({
+          nextConversation,
+          nextCurrentUserId: user.id,
+          nextMessages: rows,
+        });
+
+        if (checkRomanticReveal) {
+          await revealRomanticState(nextConversation);
+        }
+
+        await markReadIfVisible();
+      } catch (loadError) {
+        if (!quiet || messagesRef.current.length === 0) {
+          setError(loadError?.message || 'Could not load this private conversation.');
+        }
+      } finally {
+        setLoading(false);
+      }
+    })();
+
+    loadInFlightRef.current = request.finally(() => {
+      loadInFlightRef.current = null;
+    });
+
+    return loadInFlightRef.current;
+  }, [
+    conversationId,
+    markReadIfVisible,
+    persistChatSnapshot,
+    revealRomanticState,
+  ]);
+
+  const scheduleRealtimeRefresh = useCallback((mode = 'messages') => {
+    if (mode === 'full') realtimeRefreshModeRef.current = 'full';
+    if (realtimeRefreshTimerRef.current) {
+      clearTimeout(realtimeRefreshTimerRef.current);
+    }
+
+    const runRefresh = () => {
+      if (loadInFlightRef.current) {
+        realtimeRefreshPendingRef.current = true;
+        void loadInFlightRef.current.finally(() => {
+          if (!realtimeRefreshPendingRef.current) return;
+          realtimeRefreshPendingRef.current = false;
+          realtimeRefreshTimerRef.current = setTimeout(runRefresh, 0);
+        });
+        return;
       }
 
-      if (
-        screenFocusedRef.current
-        && appStateRef.current === 'active'
-      ) {
-        await markConversationRead(conversationId);
-      }
-    } catch (loadError) {
-      setError(loadError?.message || 'Could not load this private conversation.');
-    } finally {
-      setLoading(false);
-    }
-  }, [conversationId]);
+      const nextMode = realtimeRefreshModeRef.current;
+      realtimeRefreshModeRef.current = 'messages';
+      realtimeRefreshTimerRef.current = null;
+      void load({
+        quiet: true,
+        messagesOnly: nextMode !== 'full',
+        force: true,
+      });
+    };
+
+    realtimeRefreshTimerRef.current = setTimeout(
+      runRefresh,
+      CHAT_REALTIME_DEBOUNCE_MS
+    );
+  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -398,7 +536,7 @@ export function ChatScreen({ route, navigation }) {
       appStateRef.current = nextState;
 
       if (nextState === 'active' && screenFocusedRef.current) {
-        load({ quiet: true, checkRomanticReveal: true });
+        void load({ quiet: true, checkRomanticReveal: true });
       }
     });
 
@@ -407,13 +545,30 @@ export function ChatScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!conversationId) return undefined;
-    return subscribeToConversationChanges({
+    const unsubscribe = subscribeToConversationChanges({
       conversationId,
-      onMessage: () => load({ quiet: true }),
-      onMediaChange: () => load({ quiet: true }),
-      onConversationChange: () => load({ quiet: true }),
+      onMessage: () => scheduleRealtimeRefresh('messages'),
+      onReadChange: (payload) => {
+        const messageId = payload?.new?.message_id || payload?.old?.message_id;
+        if (
+          !messageId
+          || messagesRef.current.some((message) => message.id === messageId)
+        ) {
+          scheduleRealtimeRefresh('messages');
+        }
+      },
+      onConversationChange: () => scheduleRealtimeRefresh('full'),
     });
-  }, [conversationId, load]);
+
+    return () => {
+      unsubscribe();
+      if (realtimeRefreshTimerRef.current) {
+        clearTimeout(realtimeRefreshTimerRef.current);
+        realtimeRefreshTimerRef.current = null;
+      }
+      realtimeRefreshPendingRef.current = false;
+    };
+  }, [conversationId, scheduleRealtimeRefresh]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -689,7 +844,11 @@ export function ChatScreen({ route, navigation }) {
   };
 
   const openDirectDetails = () => {
-    navigation.navigate('DirectConversationDetails', { conversationId });
+    navigation.navigate('DirectConversationDetails', {
+      conversationId,
+      name: conversation?.title || name,
+      avatarUri: conversation?.avatar_url || initialAvatarUri,
+    });
   };
 
   const renderMessage = ({ item }) => {
@@ -844,17 +1003,20 @@ export function ChatScreen({ route, navigation }) {
         keyboardVerticalOffset={0}
       >
         {loading ? (
-          <View style={styles.centerState}>
-            <ActivityIndicator />
-            <Text style={styles.stateText}>Opening private conversation…</Text>
+          <View style={styles.continuityState}>
+            <ContinuityLoadingCard
+              label="Loading messages…"
+              body="The conversation is already open while the private message history catches up."
+              icon="chatbubble-ellipses-outline"
+            />
           </View>
         ) : error ? (
-          <View style={styles.centerState}>
-            <Ionicons name="lock-closed-outline" size={34} color={COLORS.text} />
-            <Text style={styles.errorText}>{error}</Text>
-            <Pressable onPress={() => load()} style={styles.retryButton}>
-              <Text style={styles.retryText}>Try again</Text>
-            </Pressable>
+          <View style={styles.continuityState}>
+            <ContinuityLoadingCard
+              error={error}
+              icon="lock-closed-outline"
+              onRetry={() => load()}
+            />
           </View>
         ) : messages.length === 0 ? (
           <View style={styles.emptyState}>
@@ -878,6 +1040,11 @@ export function ChatScreen({ route, navigation }) {
             data={messages}
             keyExtractor={(item) => item.id}
             renderItem={renderMessage}
+            initialNumToRender={18}
+            maxToRenderPerBatch={14}
+            updateCellsBatchingPeriod={35}
+            windowSize={9}
+            removeClippedSubviews
             inverted
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={
@@ -1083,6 +1250,12 @@ const styles = StyleSheet.create({
   chatBody: {
     flex: 1,
     minHeight: 0,
+  },
+  continuityState: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    paddingHorizontal: 16,
+    paddingTop: 18,
   },
   centerState: {
     flex: 1,

@@ -131,10 +131,17 @@ import {
   getMyAccountEnforcementState,
   subscribeToMyAccountEnforcement,
 } from './src/services/accountEnforcementService';
-import { setNavigationCacheScope } from './src/services/navigationCacheService';
+import {
+  navigationCacheKeys,
+  readNavigationCache,
+  setNavigationCacheScope,
+  writeNavigationCache,
+} from './src/services/navigationCacheService';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W } = Dimensions.get('window');
+const MUTUALS_FOCUS_FRESH_MS = 20_000;
+const MUTUALS_REALTIME_DEBOUNCE_MS = 240;
 
 function themeRgba(hex, alpha) {
   const normalized = String(hex || '').replace('#', '');
@@ -1108,9 +1115,10 @@ function MutualsScreen({ navigation, route }) {
   const glassStrong = 'rgba(255,255,255,0.86)';
   const glassBorder = themeRgba(theme.circle.accent, 0.16);
   const accentMist = themeRgba(theme.circle.accent, 0.055);
-  const [loading, setLoading] = useState(true);
-  const [candidates, setCandidates] = useState([]);
-  const [incoming, setIncoming] = useState([]);
+  const cachedMutuals = readNavigationCache(navigationCacheKeys.mutuals());
+  const [loading, setLoading] = useState(!cachedMutuals);
+  const [candidates, setCandidates] = useState(cachedMutuals?.candidates || []);
+  const [incoming, setIncoming] = useState(cachedMutuals?.incoming || []);
   const [sending, setSending] = useState({});
   const [responding, setResponding] = useState({});
   const [tab, setTab] = useState(
@@ -1119,10 +1127,13 @@ function MutualsScreen({ navigation, route }) {
   const [authed, setAuthed] = useState(false);
   const [enforcement, setEnforcement] = useState(null);
   const [enforcementLoading, setEnforcementLoading] = useState(true);
-  const [trustedRankingActive, setTrustedRankingActive] = useState(true);
+  const [trustedRankingActive, setTrustedRankingActive] = useState(cachedMutuals?.trustedRankingActive ?? true);
   const [refreshing, setRefreshing] = useState(false);
   const hasTrackedOpen = useRef(false);
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(Boolean(cachedMutuals));
+  const lastRefreshAtRef = useRef(Number(cachedMutuals?.refreshedAt || 0));
+  const loadInFlightRef = useRef(null);
+  const realtimeTimerRef = useRef(null);
 
   useEffect(() => {
     if (route?.params?.initialTab) {
@@ -1137,91 +1148,122 @@ function MutualsScreen({ navigation, route }) {
     })();
   }, []);
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  const load = useCallback(async ({ quiet = false, force = false } = {}) => {
+    if (loadInFlightRef.current) return loadInFlightRef.current;
     if (!quiet && !hasLoadedRef.current) setLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        if (IS_DEVELOPMENT) {
-          setCandidates(MOCK_CANDIDATES);
-          setIncoming(MOCK_INCOMING);
+
+    const request = (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          if (IS_DEVELOPMENT) {
+            setCandidates(MOCK_CANDIDATES);
+            setIncoming(MOCK_INCOMING);
+          }
+          return;
         }
-        return;
-      }
 
-      const featureFlags = await loadFeatureFlags();
-      const trustedRankingEnabled =
-        featureFlags[FEATURE_FLAGS.TRUSTED_MUTUALS_RANKING] !== false;
-      const preferredCandidateRpc = trustedRankingEnabled
-        ? 'trusted_mutual_candidates'
-        : 'mutual_candidates';
+        const featureFlags = await loadFeatureFlags();
+        const trustedRankingEnabled =
+          featureFlags[FEATURE_FLAGS.TRUSTED_MUTUALS_RANKING] !== false;
+        const preferredCandidateRpc = trustedRankingEnabled
+          ? 'trusted_mutual_candidates'
+          : 'mutual_candidates';
 
-      let [candidateResult, requestResult] = await Promise.all([
-        supabase.rpc(preferredCandidateRpc),
-        supabase.rpc('incoming_requests'),
-      ]);
+        let [candidateResult, requestResult] = await Promise.all([
+          supabase.rpc(preferredCandidateRpc),
+          supabase.rpc('incoming_requests'),
+        ]);
 
-      let usingTrustedRanking = trustedRankingEnabled;
-      if (candidateResult.error && trustedRankingEnabled) {
-        candidateResult = await supabase.rpc('mutual_candidates');
-        usingTrustedRanking = false;
-      }
+        let usingTrustedRanking = trustedRankingEnabled;
+        if (candidateResult.error && trustedRankingEnabled) {
+          candidateResult = await supabase.rpc('mutual_candidates');
+          usingTrustedRanking = false;
+        }
 
-      if (candidateResult.error) throw candidateResult.error;
-      if (requestResult.error) throw requestResult.error;
+        if (candidateResult.error) throw candidateResult.error;
+        if (requestResult.error) throw requestResult.error;
 
-      setTrustedRankingActive(usingTrustedRanking);
+        setTrustedRankingActive(usingTrustedRanking);
 
-      const previewEnabled =
-        featureFlags[FEATURE_FLAGS.MUTUAL_PREVIEW_POSTS] !== false;
-      const nextCandidates = (candidateResult.data || []).map((candidate) =>
-        previewEnabled
-          ? candidate
-          : {
-              ...candidate,
-              preview_post_id: null,
-              preview_caption: null,
-              preview_url: null,
-              preview_media_type: null,
-              preview_created_at: null,
-              preview_media_count: 0,
-            }
-      );
-      const nextRequests = requestResult.data || [];
-      setCandidates(nextCandidates);
-      setIncoming(nextRequests);
-      if (!hasTrackedOpen.current) {
-        hasTrackedOpen.current = true;
-        void trackLaunchEvent('mutuals_opened', {
-          surface: 'mutuals',
-          candidate_count: nextCandidates.length,
-          request_count: nextRequests.length,
+        const previewEnabled =
+          featureFlags[FEATURE_FLAGS.MUTUAL_PREVIEW_POSTS] !== false;
+        const nextCandidates = (candidateResult.data || []).map((candidate) =>
+          previewEnabled
+            ? candidate
+            : {
+                ...candidate,
+                preview_post_id: null,
+                preview_caption: null,
+                preview_url: null,
+                preview_media_type: null,
+                preview_created_at: null,
+                preview_media_count: 0,
+              }
+        );
+        const nextRequests = requestResult.data || [];
+        setCandidates(nextCandidates);
+        setIncoming(nextRequests);
+        lastRefreshAtRef.current = Date.now();
+        writeNavigationCache(navigationCacheKeys.mutuals(), {
+          candidates: nextCandidates,
+          incoming: nextRequests,
+          trustedRankingActive: usingTrustedRanking,
+          refreshedAt: lastRefreshAtRef.current,
         });
+        if (!hasTrackedOpen.current) {
+          hasTrackedOpen.current = true;
+          void trackLaunchEvent('mutuals_opened', {
+            surface: 'mutuals',
+            candidate_count: nextCandidates.length,
+            request_count: nextRequests.length,
+          });
+        }
+      } catch (err) {
+        Alert.alert('Could not load people', err?.message || 'Please try again.');
+      } finally {
+        hasLoadedRef.current = true;
+        setLoading(false);
+        setRefreshing(false);
       }
-    } catch (err) {
-      Alert.alert('Could not load people', err?.message || 'Please try again.');
-    } finally {
-      hasLoadedRef.current = true;
-      setLoading(false);
-      setRefreshing(false);
-    }
+    })();
+
+    loadInFlightRef.current = request.finally(() => {
+      loadInFlightRef.current = null;
+    });
+    return loadInFlightRef.current;
   }, []);
+
+  const scheduleRealtimeLoad = useCallback(() => {
+    if (realtimeTimerRef.current) clearTimeout(realtimeTimerRef.current);
+    realtimeTimerRef.current = setTimeout(() => {
+      realtimeTimerRef.current = null;
+      void load({ quiet: true, force: true });
+    }, MUTUALS_REALTIME_DEBOUNCE_MS);
+  }, [load]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    if (!authed) return;
+    if (!authed) return undefined;
     const ch = supabase
       .channel('people_relationship_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests' }, () => load({ quiet: true }))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, () => load({ quiet: true }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'connection_requests' }, scheduleRealtimeLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'connections' }, scheduleRealtimeLoad)
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [authed, load]);
+    return () => {
+      supabase.removeChannel(ch);
+      if (realtimeTimerRef.current) {
+        clearTimeout(realtimeTimerRef.current);
+        realtimeTimerRef.current = null;
+      }
+    };
+  }, [authed, scheduleRealtimeLoad]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       if (!hasLoadedRef.current) return;
-      load({ quiet: true });
+      if (Date.now() - lastRefreshAtRef.current < MUTUALS_FOCUS_FRESH_MS) return;
+      void load({ quiet: true });
     });
     return unsubscribe;
   }, [load, navigation]);

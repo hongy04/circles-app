@@ -1,6 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -13,6 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
+import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { listCircleEvents } from '../../services/eventService';
@@ -35,6 +35,8 @@ function rgba(hex, alpha) {
   const b = value & 255;
   return `rgba(${r},${g},${b},${alpha})`;
 }
+
+const CIRCLE_EVENTS_FOCUS_FRESH_MS = 10_000;
 
 const RSVP_LABELS = {
   pending: 'No response',
@@ -201,54 +203,76 @@ function CircleEventsContent({ route, navigation }) {
   const [error, setError] = useState('');
   const [pollError, setPollError] = useState('');
   const hasLoadedRef = useRef(hasWarmSnapshot);
+  const lastRefreshAtRef = useRef(hasWarmSnapshot ? Date.now() : 0);
+  const loadInFlightRef = useRef(null);
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  const load = useCallback(async ({ quiet = false, force = false } = {}) => {
     if (!conversationId) return;
+    if (loadInFlightRef.current) return loadInFlightRef.current;
     if (!quiet) setLoading(true);
     setError('');
     setPollError('');
 
-    const availabilityEnabled = await isFeatureEnabled(
-      FEATURE_FLAGS.EVENT_AVAILABILITY_POLLS
-    );
-    setPollsEnabled(availabilityEnabled);
+    const request = (async () => {
+      try {
+        const availabilityEnabled = await isFeatureEnabled(
+          FEATURE_FLAGS.EVENT_AVAILABILITY_POLLS
+        );
+        setPollsEnabled(availabilityEnabled);
 
-    const results = await Promise.allSettled([
-      listCircleEvents(conversationId),
-      availabilityEnabled
-        ? listCircleAvailabilityPolls(conversationId)
-        : Promise.resolve([]),
-    ]);
+        const results = await Promise.allSettled([
+          listCircleEvents(conversationId),
+          availabilityEnabled
+            ? listCircleAvailabilityPolls(conversationId)
+            : Promise.resolve([]),
+        ]);
 
-    if (results[0].status === 'fulfilled') {
-      setEvents(results[0].value);
-      writeNavigationCache(navigationCacheKeys.circleEvents(conversationId), results[0].value);
-      results[0].value.forEach((event) => {
-        writeNavigationCache(navigationCacheKeys.eventSummary(event.id), event);
-      });
-    } else {
-      setError(results[0].reason?.message || 'Could not load this Circle’s events.');
-    }
+        if (results[0].status === 'fulfilled') {
+          setEvents(results[0].value);
+          writeNavigationCache(navigationCacheKeys.circleEvents(conversationId), results[0].value);
+          results[0].value.forEach((event) => {
+            writeNavigationCache(navigationCacheKeys.eventSummary(event.id), event);
+          });
+        } else {
+          setError(results[0].reason?.message || 'Could not load this Circle’s events.');
+        }
 
-    if (results[1].status === 'fulfilled') {
-      setPolls(results[1].value);
-      writeNavigationCache(navigationCacheKeys.circlePolls(conversationId), results[1].value);
-      results[1].value.forEach((poll) => {
-        writeNavigationCache(navigationCacheKeys.pollSummary(poll.id), poll);
-      });
-    } else {
-      setPollError(results[1].reason?.message || 'Availability polls could not load.');
-    }
+        if (results[1].status === 'fulfilled') {
+          setPolls(results[1].value);
+          writeNavigationCache(navigationCacheKeys.circlePolls(conversationId), results[1].value);
+          results[1].value.forEach((poll) => {
+            writeNavigationCache(navigationCacheKeys.pollSummary(poll.id), poll);
+          });
+        } else {
+          setPollError(results[1].reason?.message || 'Availability polls could not load.');
+        }
 
-    setLoading(false);
-    setRefreshing(false);
+        if (results.some((result) => result.status === 'fulfilled')) {
+          lastRefreshAtRef.current = Date.now();
+        }
+      } catch (loadError) {
+        setError(loadError?.message || 'Could not load this Circle’s events.');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    })();
+
+    loadInFlightRef.current = request.finally(() => {
+      loadInFlightRef.current = null;
+    });
+    return loadInFlightRef.current;
   }, [conversationId]);
 
   useFocusEffect(
     useCallback(() => {
-      void load({ quiet: hasLoadedRef.current }).finally(() => {
-        hasLoadedRef.current = true;
-      });
+      const isFresh = hasLoadedRef.current
+        && Date.now() - lastRefreshAtRef.current < CIRCLE_EVENTS_FOCUS_FRESH_MS;
+      if (!isFresh) {
+        void load({ quiet: hasLoadedRef.current }).finally(() => {
+          hasLoadedRef.current = true;
+        });
+      }
     }, [load])
   );
 
@@ -285,7 +309,7 @@ function CircleEventsContent({ route, navigation }) {
       circle_count: event.circleCount,
     });
     writeNavigationCache(navigationCacheKeys.eventSummary(event.id), event);
-    navigation.navigate('EventDetail', { eventId: event.id, conversationId, circleName });
+    navigation.navigate('EventDetail', { eventId: event.id, eventTitle: event.title, conversationId, circleName });
   };
 
   const openPoll = (poll) => {
@@ -334,7 +358,13 @@ function CircleEventsContent({ route, navigation }) {
             <Text style={styles.sectionCount}>{openPollCount} open</Text>
           </View>
 
-          {pollError ? (
+          {loading && polls.length === 0 && !pollError ? (
+            <ContinuityLoadingCard
+              compact
+              label="Loading date polls…"
+              icon="options-outline"
+            />
+          ) : pollError ? (
             <View style={styles.inlineError}>
               <Ionicons name="alert-circle-outline" size={18} color={theme.colors.subtext} />
               <Text style={styles.inlineErrorText}>{pollError}</Text>
@@ -356,35 +386,6 @@ function CircleEventsContent({ route, navigation }) {
     </View>
   );
 
-  if (loading && events.length === 0 && polls.length === 0) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ThemeAtmosphere theme={theme} strength={0.78} decals />
-        <View style={styles.stateCard}>
-          <ActivityIndicator color={theme.circle.accent} />
-          <Text style={styles.stateText}>Loading plans…</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (error && events.length === 0 && polls.length === 0) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ThemeAtmosphere theme={theme} strength={0.78} decals />
-        <View style={styles.stateCard}>
-          <View style={styles.stateIcon}>
-            <Ionicons name="calendar-outline" size={28} color={theme.colors.text} />
-          </View>
-          <Text style={styles.errorText}>{error}</Text>
-          <Pressable onPress={() => load()} style={styles.retryButton}>
-            <Text style={styles.retryText}>Try again</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
       <ThemeAtmosphere theme={theme} strength={0.82} decals />
@@ -400,7 +401,19 @@ function CircleEventsContent({ route, navigation }) {
         ) : (
           <EventCard event={item.event} onPress={() => openEvent(item.event)} styles={styles} theme={theme} />
         )}
-        ListEmptyComponent={(
+        ListEmptyComponent={loading ? (
+          <ContinuityLoadingCard
+            label="Loading Circle events…"
+            body="You can stay on this page while the event list catches up."
+            icon="calendar-outline"
+          />
+        ) : error ? (
+          <ContinuityLoadingCard
+            error={error}
+            icon="calendar-outline"
+            onRetry={() => load()}
+          />
+        ) : (
           <View style={styles.emptyState}>
             <Ionicons name="calendar-outline" size={42} color={theme.colors.subtext} />
             <Text style={styles.emptyTitle}>No events yet</Text>

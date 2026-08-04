@@ -9,6 +9,7 @@ import {
 
 
 let realtimeSubscriptionCounter = 0;
+let optimizedConversationMessagesAvailable = true;
 
 function createRealtimeChannelName(prefix, scope = 'inbox') {
   realtimeSubscriptionCounter += 1;
@@ -186,9 +187,12 @@ export async function createGroupConversation({ title, inviteeIds }) {
   return data;
 }
 
-export async function listConversationMessages(conversationId) {
-  await ensureAuthed();
+function isMissingConversationMessagesV2(error) {
+  return error?.code === 'PGRST202'
+    || /get_conversation_messages_v2/i.test(error?.message || '');
+}
 
+async function listConversationMessagesLegacy(conversationId) {
   const [{ data: messageRows, error: messageError }, {
     data: readRows,
     error: readError,
@@ -213,7 +217,7 @@ export async function listConversationMessages(conversationId) {
     })
   );
 
-  const mapped = (messageRows || []).map((row) => {
+  return (messageRows || []).map((row) => {
     const message = mapMessage(row);
     const state = readStates.get(message.id);
 
@@ -225,6 +229,35 @@ export async function listConversationMessages(conversationId) {
       }
       : message;
   });
+}
+
+export async function listConversationMessages(conversationId) {
+  await ensureAuthed();
+
+  let mapped = null;
+
+  if (optimizedConversationMessagesAvailable) {
+    const { data, error } = await supabase.rpc(
+      'get_conversation_messages_v2',
+      {
+        p_conversation_id: conversationId,
+        p_limit_count: 100,
+        p_before: new Date().toISOString(),
+      }
+    );
+
+    if (!error) {
+      mapped = (data || []).map(mapMessage);
+    } else if (isMissingConversationMessagesV2(error)) {
+      optimizedConversationMessagesAvailable = false;
+    } else {
+      throw error;
+    }
+  }
+
+  if (!mapped) {
+    mapped = await listConversationMessagesLegacy(conversationId);
+  }
 
   return hydrateMessages(mapped);
 }
@@ -360,19 +393,21 @@ export function subscribeToConversationChanges({
   onMessage,
   onConversationChange,
   onMediaChange,
+  onReadChange,
 }) {
   const channels = [];
 
-  if (onMessage || onMediaChange) {
+  if (onMessage || onMediaChange || onReadChange) {
     const messageFilter = conversationId
       ? { filter: `conversation_id=eq.${conversationId}` }
       : {};
-    const messageChannel = supabase
-      .channel(createRealtimeChannelName(
-        'conversation_messages',
-        conversationId || 'inbox'
-      ))
-      .on(
+    let messageChannel = supabase.channel(createRealtimeChannelName(
+      'conversation_messages',
+      conversationId || 'inbox'
+    ));
+
+    if (onMessage) {
+      messageChannel = messageChannel.on(
         'postgres_changes',
         {
           event: '*',
@@ -380,31 +415,53 @@ export function subscribeToConversationChanges({
           table: 'messages',
           ...messageFilter,
         },
-        onMessage || onMediaChange
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'message_media',
-        },
-        onMediaChange || onMessage
-      )
-      .on(
+        onMessage
+      );
+    }
+
+    // Read receipts do not include conversation_id, so callers opt in
+    // separately and can discard receipts for messages they are not showing.
+    // This prevents every Circle/profile/media screen that listens for message
+    // changes from refetching when any conversation is merely marked read.
+    if (onReadChange) {
+      messageChannel = messageChannel.on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'conversation_message_reads',
         },
-        onMessage || onMediaChange
-      )
-      .subscribe();
+        onReadChange
+      );
+    }
+
+    // message_media does not carry conversation_id, so attaching this listener
+    // to every Chat/Inbox subscriber caused unrelated media activity anywhere
+    // in the account to refresh all open conversation surfaces. Only screens
+    // that truly need media-only mutations opt into this global listener.
+    if (onMediaChange) {
+      messageChannel = messageChannel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'message_media',
+        },
+        onMediaChange
+      );
+    }
+
+    messageChannel = messageChannel.subscribe();
     channels.push(messageChannel);
   }
 
   if (onConversationChange) {
+    const conversationFilter = conversationId
+      ? { filter: `conversation_id=eq.${conversationId}` }
+      : {};
+    const conversationRowFilter = conversationId
+      ? { filter: `id=eq.${conversationId}` }
+      : {};
     const membershipChannel = supabase
       .channel(
         createRealtimeChannelName(
@@ -414,17 +471,32 @@ export function subscribeToConversationChanges({
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'conversation_members' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversation_members',
+          ...conversationFilter,
+        },
         onConversationChange
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'conversation_invitations' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversation_invitations',
+          ...conversationFilter,
+        },
         onConversationChange
       )
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'conversations' },
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'conversations',
+          ...conversationRowFilter,
+        },
         onConversationChange
       )
       .subscribe();

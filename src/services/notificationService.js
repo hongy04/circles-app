@@ -53,11 +53,14 @@ function mapSettings(data) {
   };
 }
 
-export async function listNotifications() {
+export async function listNotifications({
+  limit = 40,
+  before = new Date().toISOString(),
+} = {}) {
   await ensureAuthed();
   const { data, error } = await supabase.rpc('get_my_notifications', {
-    p_limit_count: 150,
-    p_before: new Date().toISOString(),
+    p_limit_count: Math.max(1, Math.min(Number(limit || 40), 150)),
+    p_before: before,
   });
   if (error) throw error;
   return (data || []).map(mapNotification);

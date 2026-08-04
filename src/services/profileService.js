@@ -14,6 +14,7 @@ import { setNavigationCacheScope } from './navigationCacheService';
 import { clearStorageSignedUrlCache } from './storageSignedUrlCacheService';
 
 const REMOTE_URI_PATTERN = /^https?:\/\//i;
+let optimizedProfilePostsAvailable = true;
 
 export function normalizeUsername(value = '') {
   return value
@@ -92,6 +93,50 @@ export async function fetchProfilePosts(userId) {
   }));
 }
 
+function isMissingProfilePostsV2(error) {
+  return error?.code === 'PGRST202'
+    || /get_profile_posts_v2/i.test(error?.message || '');
+}
+
+function mapDetailedProfilePost(row) {
+  return {
+    post: {
+      id: row.id,
+      user_id: row.user_id,
+      caption: row.caption || '',
+      image_url: row.image_url || null,
+      created_at: row.created_at,
+      display_aspect_ratio: row.display_aspect_ratio,
+      media_crop_points: Array.isArray(row.media_crop_points) ? row.media_crop_points : [],
+      media_presentations: Array.isArray(row.media_presentations) ? row.media_presentations : [],
+    },
+    author: {
+      id: row.user_id,
+      display_name: row.author_name || 'Unknown',
+      avatar_url: row.author_avatar || null,
+    },
+    media: Array.isArray(row.media) ? row.media : [],
+    likes: Number(row.likes_count || 0),
+    commentCount: Number(row.comment_count || 0),
+    likedByMe: Boolean(row.liked_by_me),
+  };
+}
+
+export async function fetchDetailedProfilePosts(userId) {
+  if (!optimizedProfilePostsAvailable) return null;
+
+  const { data, error } = await supabase.rpc('get_profile_posts_v2', {
+    profile_user_id: userId,
+  });
+
+  if (!error) return (data || []).map(mapDetailedProfilePost);
+  if (isMissingProfilePostsV2(error)) {
+    optimizedProfilePostsAvailable = false;
+    return null;
+  }
+  throw error;
+}
+
 export async function fetchPreConnectionProfileShell(userId) {
   await ensureAuthed();
   await requireFeature(
@@ -148,15 +193,21 @@ export async function fetchPreConnectionProfileShell(userId) {
   return shell;
 }
 
-export async function fetchProfilePage(userId) {
+export async function fetchProfilePage(userId, { detailedPosts = false } = {}) {
   const profile = await fetchProfileOverview(userId);
 
   if (profile.can_view_posts) {
-    const [posts, socialStats, decoration] = await Promise.all([
-      fetchProfilePosts(profile.id),
+    const [requestedPosts, socialStats, decoration] = await Promise.all([
+      detailedPosts
+        ? fetchDetailedProfilePosts(profile.id)
+        : fetchProfilePosts(profile.id),
       fetchProfileSocialStats(profile.id),
       fetchProfileDecoration(profile.id),
     ]);
+    const postsAreDetailed = detailedPosts && Array.isArray(requestedPosts);
+    const posts = detailedPosts
+      ? (postsAreDetailed ? requestedPosts : await fetchProfilePosts(profile.id))
+      : requestedPosts;
 
     return {
       profile: {
@@ -164,6 +215,7 @@ export async function fetchProfilePage(userId) {
         ...decoration,
       },
       posts,
+      postsAreDetailed,
       socialStats,
     };
   }
@@ -179,6 +231,7 @@ export async function fetchProfilePage(userId) {
       connection_count: 0,
     },
     posts: [],
+    postsAreDetailed: false,
     socialStats: null,
   };
 }

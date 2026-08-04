@@ -4,8 +4,10 @@ import { supabase } from '../lib/supabase';
 // expiry, so there is no value in repeatedly asking Supabase Storage to sign
 // the exact same private object while the user moves between nearby screens.
 const cache = new Map();
+const pending = new Map();
 const DEFAULT_SAFETY_WINDOW_MS = 5 * 60 * 1000;
 const SIGN_BATCH_SIZE = 100;
+let cacheGeneration = 0;
 
 function cacheKey(bucket, path) {
   return `${String(bucket || '')}:${String(path || '')}`;
@@ -33,14 +35,48 @@ function writeCached(bucket, path, url, expiresInSeconds) {
 }
 
 export function clearStorageSignedUrlCache() {
+  cacheGeneration += 1;
   cache.clear();
+  pending.clear();
 }
 
 export function removeStorageSignedUrlCacheEntries(bucket, paths = []) {
   for (const path of Array.isArray(paths) ? paths : []) {
     if (!path) continue;
-    cache.delete(cacheKey(bucket, path));
+    const key = cacheKey(bucket, path);
+    cache.delete(key);
+    pending.delete(key);
   }
+}
+
+function startSigningBatch(bucket, batch, expiresInSeconds) {
+  const requestGeneration = cacheGeneration;
+  const batchPromise = (async () => {
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .createSignedUrls(batch, expiresInSeconds);
+    if (error) throw error;
+
+    const byPath = new Map();
+    (data || []).forEach((item, index) => {
+      const path = item?.path || batch[index];
+      const url = item?.signedUrl || null;
+      if (!path || !url || requestGeneration !== cacheGeneration) return;
+      writeCached(bucket, path, url, expiresInSeconds);
+      byPath.set(path, url);
+    });
+    return byPath;
+  })();
+
+  batch.forEach((path) => {
+    const key = cacheKey(bucket, path);
+    const pathPromise = batchPromise
+      .then((byPath) => byPath.get(path) || null)
+      .finally(() => {
+        if (pending.get(key) === pathPromise) pending.delete(key);
+      });
+    pending.set(key, pathPromise);
+  });
 }
 
 export async function getCachedSignedUrls(bucket, paths = [], expiresInSeconds = 3600) {
@@ -53,34 +89,31 @@ export async function getCachedSignedUrls(bucket, paths = [], expiresInSeconds =
 
   uniquePaths.forEach((path) => {
     const cached = readCached(bucket, path);
-    if (cached) result.set(path, cached);
-    else missing.push(path);
+    if (cached) {
+      result.set(path, cached);
+      return;
+    }
+
+    if (!pending.has(cacheKey(bucket, path))) {
+      missing.push(path);
+    }
   });
 
-  if (!missing.length) return result;
-
-  const batches = [];
   for (let index = 0; index < missing.length; index += SIGN_BATCH_SIZE) {
-    batches.push(missing.slice(index, index + SIGN_BATCH_SIZE));
+    startSigningBatch(
+      bucket,
+      missing.slice(index, index + SIGN_BATCH_SIZE),
+      expiresInSeconds
+    );
   }
 
-  const signedBatches = await Promise.all(batches.map(async (batch) => {
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .createSignedUrls(batch, expiresInSeconds);
-    if (error) throw error;
-    return { batch, data: data || [] };
+  await Promise.all(uniquePaths.map(async (path) => {
+    if (result.has(path)) return;
+    const promise = pending.get(cacheKey(bucket, path));
+    if (!promise) return;
+    const url = await promise;
+    if (url) result.set(path, url);
   }));
-
-  signedBatches.forEach(({ batch, data }) => {
-    data.forEach((item, index) => {
-      const path = item?.path || batch[index];
-      const url = item?.signedUrl || null;
-      if (!path || !url) return;
-      writeCached(bucket, path, url, expiresInSeconds);
-      result.set(path, url);
-    });
-  });
 
   return result;
 }

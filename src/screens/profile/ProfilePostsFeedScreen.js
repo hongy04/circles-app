@@ -36,6 +36,8 @@ import {
 } from '../../services/feedService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
+const PROFILE_POSTS_FOCUS_FRESH_MS = 12_000;
+
 function normalizeMedia(detail) {
   const rows = detail?.media || [];
   if (rows.length) {
@@ -243,6 +245,8 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
   const [mutualPreviewPostId, setMutualPreviewPostId] = useState(cachedFeed?.mutualPreviewPostId || null);
   const [previewSaving, setPreviewSaving] = useState(false);
   const hasLoadedRef = useRef(Boolean(cachedFeed));
+  const lastRefreshAtRef = useRef(Number(cachedFeed?.refreshedAt || 0));
+  const loadInFlightRef = useRef(null);
   const listRef = useRef(null);
   const didInitialScrollRef = useRef(false);
 
@@ -252,53 +256,77 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState('');
 
-  const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
+  const load = useCallback(async ({
+    refresh = false,
+    quiet = false,
+    force = false,
+  } = {}) => {
+    if (loadInFlightRef.current) return loadInFlightRef.current;
     if (refresh) setRefreshing(true);
     else if (!quiet) setLoading(true);
     setError('');
 
-    try {
-      const page = await fetchProfilePage(userId);
-      const ownProfile = page.profile?.relationship_status === 'self';
-      const nextResolvedName = page.profile?.display_name || profileName || 'Posts';
-      let nextPreviewPostId = null;
-      if (ownProfile) {
-        try {
-          nextPreviewPostId = await fetchMyMutualPreviewPostId();
-        } catch {
-          nextPreviewPostId = null;
+    const request = (async () => {
+      try {
+        const page = await fetchProfilePage(userId, { detailedPosts: true });
+        const ownProfile = page.profile?.relationship_status === 'self';
+        const nextResolvedName = page.profile?.display_name || profileName || 'Posts';
+        let nextPreviewPostId = null;
+        if (ownProfile) {
+          try {
+            nextPreviewPostId = await fetchMyMutualPreviewPostId();
+          } catch {
+            nextPreviewPostId = null;
+          }
         }
-      }
 
-      const results = await Promise.allSettled(
-        (page.posts || []).map((post) => fetchPostDetail(post.id))
-      );
-      const nextPosts = results
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => mapDetail(result.value));
-      setResolvedName(nextResolvedName);
-      setIsSelfProfile(ownProfile);
-      setMutualPreviewPostId(nextPreviewPostId);
-      setPosts(nextPosts);
-      writeNavigationCache(navigationCacheKeys.profilePostsFeed(userId), {
-        posts: nextPosts,
-        resolvedName: nextResolvedName,
-        isSelfProfile: ownProfile,
-        mutualPreviewPostId: nextPreviewPostId,
-      });
-    } catch (loadError) {
-      setError(loadError?.message || 'Could not load these posts.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+        let nextPosts;
+        if (page.postsAreDetailed) {
+          nextPosts = (page.posts || []).map(mapDetail);
+        } else {
+          const results = await Promise.allSettled(
+            (page.posts || []).map((post) => fetchPostDetail(post.id))
+          );
+          nextPosts = results
+            .filter((result) => result.status === 'fulfilled')
+            .map((result) => mapDetail(result.value));
+        }
+
+        setResolvedName(nextResolvedName);
+        setIsSelfProfile(ownProfile);
+        setMutualPreviewPostId(nextPreviewPostId);
+        setPosts(nextPosts);
+        lastRefreshAtRef.current = Date.now();
+        writeNavigationCache(navigationCacheKeys.profilePostsFeed(userId), {
+          posts: nextPosts,
+          resolvedName: nextResolvedName,
+          isSelfProfile: ownProfile,
+          mutualPreviewPostId: nextPreviewPostId,
+          refreshedAt: lastRefreshAtRef.current,
+        });
+      } catch (loadError) {
+        setError(loadError?.message || 'Could not load these posts.');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    })();
+
+    loadInFlightRef.current = request.finally(() => {
+      loadInFlightRef.current = null;
+    });
+    return loadInFlightRef.current;
   }, [profileName, userId]);
 
   useFocusEffect(
     useCallback(() => {
-      void load({ quiet: hasLoadedRef.current }).finally(() => {
-        hasLoadedRef.current = true;
-      });
+      const isFresh = hasLoadedRef.current
+        && Date.now() - lastRefreshAtRef.current < PROFILE_POSTS_FOCUS_FRESH_MS;
+      if (!isFresh) {
+        void load({ quiet: hasLoadedRef.current }).finally(() => {
+          hasLoadedRef.current = true;
+        });
+      }
     }, [load])
   );
 
@@ -454,7 +482,11 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
           ref={listRef}
           data={posts}
           keyExtractor={(item) => item.id}
-          onScrollToIndexFailed={({ index, averageItemLength }) => {
+          initialNumToRender={3}
+          maxToRenderPerBatch={3}
+          updateCellsBatchingPeriod={45}
+          windowSize={6}
+            onScrollToIndexFailed={({ index, averageItemLength }) => {
             listRef.current?.scrollToOffset?.({ offset: Math.max(0, averageItemLength * index), animated: false });
             setTimeout(() => listRef.current?.scrollToIndex?.({ index, animated: false }), 80);
           }}

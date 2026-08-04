@@ -1,6 +1,8 @@
 import { supabase } from '../lib/supabase';
 import { timeAgo } from '../utils/timeAgo';
 
+let optimizedFeedAvailable = true;
+
 function fallbackMedia(row) {
   if (!row.image_url) return [];
 
@@ -17,10 +19,24 @@ function fallbackMedia(row) {
   ];
 }
 
+function normalizeMedia(media, row) {
+  if (!Array.isArray(media) || media.length === 0) {
+    return fallbackMedia(row);
+  }
+
+  return media.map((item, index) => ({
+    id: item.id || `${row.id}-media-${index}`,
+    post_id: item.post_id || row.id,
+    url: item.url || null,
+    media_type: item.media_type || 'image',
+    created_at: item.created_at || row.created_at,
+  })).filter((item) => item.url);
+}
+
 export function mapFeedRow(row, enrichment = {}) {
   const media = enrichment.mediaByPost?.get(row.id) || fallbackMedia(row);
   const postMeta = enrichment.postMetaByPost?.get(row.id) || {};
-  const authorId = postMeta.user_id || null;
+  const authorId = postMeta.user_id || row.user_id || null;
 
   return {
     id: row.id,
@@ -38,11 +54,46 @@ export function mapFeedRow(row, enrichment = {}) {
     uri: media[0]?.url || row.image_url || null,
     liked: Boolean(row.liked_by_me),
     likes: Number(row.likes_count || 0),
-    commentCount: enrichment.commentCountByPost?.get(row.id) || 0,
+    commentCount: Number(
+      enrichment.commentCountByPost?.get(row.id)
+      ?? row.comment_count
+      ?? 0
+    ),
     caption: row.caption || '',
     time: timeAgo(row.created_at),
     created_at: row.created_at,
   };
+}
+
+function mapOptimizedFeedRow(row) {
+  const media = normalizeMedia(row.media, row);
+
+  return {
+    id: row.id,
+    user: {
+      id: row.user_id || null,
+      name: row.author_name || 'Unknown',
+      avatarUri: row.author_avatar || null,
+    },
+    media,
+    presentation: {
+      mediaPresentations: Array.isArray(row.media_presentations) ? row.media_presentations : [],
+      aspectRatio: row.display_aspect_ratio == null ? null : Number(row.display_aspect_ratio),
+      cropPoints: Array.isArray(row.media_crop_points) ? row.media_crop_points : [],
+    },
+    uri: media[0]?.url || row.image_url || null,
+    liked: Boolean(row.liked_by_me),
+    likes: Number(row.likes_count || 0),
+    commentCount: Number(row.comment_count || 0),
+    caption: row.caption || '',
+    time: timeAgo(row.created_at),
+    created_at: row.created_at,
+  };
+}
+
+function isMissingFunctionError(error, functionName) {
+  return error?.code === 'PGRST202'
+    || new RegExp(functionName, 'i').test(error?.message || '');
 }
 
 async function fetchFeedEnrichment(postIds) {
@@ -93,10 +144,7 @@ async function fetchFeedEnrichment(postIds) {
   return { mediaByPost, postMetaByPost, commentCountByPost };
 }
 
-export async function fetchFeedPage({
-  limit = 10,
-  before = new Date().toISOString(),
-} = {}) {
+async function fetchLegacyFeedPage({ limit, before }) {
   const { data, error } = await supabase.rpc('get_feed', {
     limit_count: limit,
     before,
@@ -108,7 +156,34 @@ export async function fetchFeedPage({
   const enrichment = await fetchFeedEnrichment(
     rows.map((row) => row.id)
   );
-  const posts = rows.map((row) => mapFeedRow(row, enrichment));
+
+  return rows.map((row) => mapFeedRow(row, enrichment));
+}
+
+export async function fetchFeedPage({
+  limit = 10,
+  before = new Date().toISOString(),
+} = {}) {
+  let posts = null;
+
+  if (optimizedFeedAvailable) {
+    const { data, error } = await supabase.rpc('get_feed_v2', {
+      limit_count: limit,
+      before,
+    });
+
+    if (!error) {
+      posts = (data || []).map(mapOptimizedFeedRow);
+    } else if (isMissingFunctionError(error, 'get_feed_v2')) {
+      optimizedFeedAvailable = false;
+    } else {
+      throw error;
+    }
+  }
+
+  if (!posts) {
+    posts = await fetchLegacyFeedPage({ limit, before });
+  }
 
   return {
     posts,

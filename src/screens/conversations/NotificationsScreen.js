@@ -36,6 +36,10 @@ import {
 } from '../../services/notificationService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
+const NOTIFICATION_PAGE_SIZE = 40;
+const NOTIFICATION_FOCUS_FRESH_MS = 15_000;
+const NOTIFICATION_REALTIME_DEBOUNCE_MS = 240;
+
 function notificationCopy(notification) {
   switch (notification.type) {
     case 'personal_like':
@@ -142,40 +146,123 @@ export function NotificationsScreen({ navigation }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const cachedNotifications = readNavigationCache(navigationCacheKeys.notifications());
-  const [notifications, setNotifications] = useState(cachedNotifications || []);
+  const cachedRows = Array.isArray(cachedNotifications)
+    ? cachedNotifications
+    : cachedNotifications?.items || [];
+  const [notifications, setNotifications] = useState(cachedRows);
   const [loading, setLoading] = useState(!cachedNotifications);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(
+    cachedNotifications?.hasMore ?? cachedRows.length >= NOTIFICATION_PAGE_SIZE
+  );
   const [error, setError] = useState('');
   const hasLoadedRef = useRef(Boolean(cachedNotifications));
+  const lastRefreshAtRef = useRef(Number(cachedNotifications?.refreshedAt || 0));
+  const loadInFlightRef = useRef(null);
+  const realtimeTimerRef = useRef(null);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.isRead).length,
     [notifications]
   );
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  const persistNotifications = useCallback((items, nextHasMore) => {
+    writeNavigationCache(navigationCacheKeys.notifications(), {
+      items,
+      hasMore: nextHasMore,
+      refreshedAt: lastRefreshAtRef.current,
+    });
+  }, []);
+
+  const load = useCallback(async ({
+    quiet = false,
+    force = false,
+  } = {}) => {
+    if (loadInFlightRef.current) return loadInFlightRef.current;
     if (!quiet) setLoading(true);
     setError('');
 
+    const request = (async () => {
+      try {
+        const nextNotifications = await listNotifications({
+          limit: NOTIFICATION_PAGE_SIZE,
+          before: new Date().toISOString(),
+        });
+        const nextHasMore = nextNotifications.length === NOTIFICATION_PAGE_SIZE;
+        setNotifications(nextNotifications);
+        setHasMore(nextHasMore);
+        lastRefreshAtRef.current = Date.now();
+        persistNotifications(nextNotifications, nextHasMore);
+      } catch (loadError) {
+        setError(loadError?.message || 'Could not load notifications.');
+      } finally {
+        hasLoadedRef.current = true;
+        setLoading(false);
+        setRefreshing(false);
+      }
+    })();
+
+    loadInFlightRef.current = request.finally(() => {
+      loadInFlightRef.current = null;
+    });
+    return loadInFlightRef.current;
+  }, [persistNotifications]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || notifications.length === 0) return;
+    const cursor = notifications[notifications.length - 1]?.createdAt;
+    if (!cursor) return;
+
+    setLoadingMore(true);
     try {
-      const nextNotifications = await listNotifications();
-      setNotifications(nextNotifications);
-      writeNavigationCache(navigationCacheKeys.notifications(), nextNotifications);
+      const nextPage = await listNotifications({
+        limit: NOTIFICATION_PAGE_SIZE,
+        before: cursor,
+      });
+      const seen = new Set(notifications.map((item) => item.id));
+      const uniqueRows = nextPage.filter((item) => !seen.has(item.id));
+      const merged = [...notifications, ...uniqueRows];
+      const nextHasMore = nextPage.length === NOTIFICATION_PAGE_SIZE;
+      setNotifications(merged);
+      setHasMore(nextHasMore);
+      persistNotifications(merged, nextHasMore);
     } catch (loadError) {
-      setError(loadError?.message || 'Could not load notifications.');
+      setError(loadError?.message || 'Could not load more notifications.');
     } finally {
-      hasLoadedRef.current = true;
-      setLoading(false);
-      setRefreshing(false);
+      setLoadingMore(false);
     }
-  }, []);
+  }, [hasMore, loadingMore, notifications, persistNotifications]);
+
+  const scheduleRealtimeLoad = useCallback(() => {
+    if (realtimeTimerRef.current) clearTimeout(realtimeTimerRef.current);
+    realtimeTimerRef.current = setTimeout(() => {
+      realtimeTimerRef.current = null;
+      void load({ quiet: true, force: true });
+    }, NOTIFICATION_REALTIME_DEBOUNCE_MS);
+  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
-      load({ quiet: hasLoadedRef.current });
-      return subscribeToNotificationChanges(() => load({ quiet: true }));
+      const isFresh = hasLoadedRef.current
+        && Date.now() - lastRefreshAtRef.current < NOTIFICATION_FOCUS_FRESH_MS;
+      if (!isFresh) {
+        void load({ quiet: hasLoadedRef.current });
+      }
+      return undefined;
     }, [load])
   );
+
+  useEffect(() => {
+    const unsubscribe = subscribeToNotificationChanges(scheduleRealtimeLoad);
+    return () => {
+      unsubscribe();
+      if (realtimeTimerRef.current) {
+        clearTimeout(realtimeTimerRef.current);
+        realtimeTimerRef.current = null;
+      }
+    };
+  }, [scheduleRealtimeLoad]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -184,11 +271,15 @@ export function NotificationsScreen({ navigation }) {
           onPress={async () => {
             try {
               await markAllNotificationsRead();
-              setNotifications((current) => current.map((item) => ({
-                ...item,
-                isRead: true,
-                readAt: item.readAt || new Date().toISOString(),
-              })));
+              setNotifications((current) => {
+                const next = current.map((item) => ({
+                  ...item,
+                  isRead: true,
+                  readAt: item.readAt || new Date().toISOString(),
+                }));
+                persistNotifications(next, hasMore);
+                return next;
+              });
             } catch (markError) {
               Alert.alert(
                 'Could not mark notifications read',
@@ -202,16 +293,20 @@ export function NotificationsScreen({ navigation }) {
         </Pressable>
       ) : null,
     });
-  }, [navigation, unreadCount]);
+  }, [hasMore, navigation, persistNotifications, unreadCount]);
 
   const markReadLocally = (notification) => {
     if (notification.isRead) return;
 
-    setNotifications((current) => current.map((item) => (
-      item.id === notification.id
-        ? { ...item, isRead: true, readAt: new Date().toISOString() }
-        : item
-    )));
+    setNotifications((current) => {
+      const next = current.map((item) => (
+        item.id === notification.id
+          ? { ...item, isRead: true, readAt: new Date().toISOString() }
+          : item
+      ));
+      persistNotifications(next, hasMore);
+      return next;
+    });
     markNotificationRead(notification.id).catch(() => {});
   };
 
@@ -281,6 +376,12 @@ export function NotificationsScreen({ navigation }) {
       <FlatList
         data={notifications}
         keyExtractor={(item) => item.id}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews
+        onEndReachedThreshold={0.35}
+        onEndReached={loadMore}
         renderItem={({ item }) => (
           <NotificationRow notification={item} onOpen={openNotification} styles={styles} theme={theme} />
         )}
@@ -300,6 +401,11 @@ export function NotificationsScreen({ navigation }) {
             <Pressable onPress={() => load()}>
               <Text style={styles.retryText}>Retry</Text>
             </Pressable>
+          </View>
+        ) : null}
+        ListFooterComponent={loadingMore ? (
+          <View style={{ paddingVertical: 18 }}>
+            <ActivityIndicator color={theme.circle.accent} />
           </View>
         ) : null}
         ListEmptyComponent={(

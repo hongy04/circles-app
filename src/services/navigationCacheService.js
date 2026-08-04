@@ -63,6 +63,8 @@ export function removeNavigationCache(key) {
 }
 
 export const navigationCacheKeys = {
+  feed: () => 'feed',
+  mutuals: () => 'mutuals',
   inbox: () => 'inbox',
   notifications: () => 'notifications',
   conversationDetails: (conversationId) => `conversation-details:${conversationId}`,

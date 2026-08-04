@@ -18,6 +18,9 @@ import { UnreadBadge } from '../../components/UnreadBadge';
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+
+const INBOX_FOCUS_FRESH_MS = 12_000;
+const INBOX_REALTIME_DEBOUNCE_MS = 220;
 import { timeAgo } from '../../utils/timeAgo';
 import {
   listConversationInvitations,
@@ -247,37 +250,58 @@ export function InboxScreen({ navigation }) {
   const [respondingId, setRespondingId] = useState(null);
   const [notificationCount, setNotificationCount] = useState(Number(cachedInbox?.notificationCount || 0));
   const hasLoadedRef = useRef(Boolean(cachedInbox));
+  const lastRefreshAtRef = useRef(Number(cachedInbox?.refreshedAt || 0));
+  const loadInFlightRef = useRef(null);
+  const realtimeTimerRef = useRef(null);
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  const load = useCallback(async ({ quiet = false, force = false } = {}) => {
+    if (loadInFlightRef.current) return loadInFlightRef.current;
     if (!quiet) setLoading(true);
     setError(null);
 
-    try {
-      const [
-        conversationRows,
-        invitationRows,
-        nextNotificationCount,
-      ] = await Promise.all([
-        listMyConversations(),
-        listConversationInvitations(),
-        getNotificationCenterUnreadCount(),
-      ]);
-      setConversations(conversationRows);
-      setInvitations(invitationRows);
-      setNotificationCount(nextNotificationCount);
-      writeNavigationCache(navigationCacheKeys.inbox(), {
-        conversations: conversationRows,
-        invitations: invitationRows,
-        notificationCount: nextNotificationCount,
-      });
-    } catch (loadError) {
-      setError(loadError?.message || 'Could not load private conversations.');
-    } finally {
-      hasLoadedRef.current = true;
-      setLoading(false);
-      setRefreshing(false);
-    }
+    const request = (async () => {
+      try {
+        const [
+          conversationRows,
+          invitationRows,
+          nextNotificationCount,
+        ] = await Promise.all([
+          listMyConversations(),
+          listConversationInvitations(),
+          getNotificationCenterUnreadCount(),
+        ]);
+        setConversations(conversationRows);
+        setInvitations(invitationRows);
+        setNotificationCount(nextNotificationCount);
+        lastRefreshAtRef.current = Date.now();
+        writeNavigationCache(navigationCacheKeys.inbox(), {
+          conversations: conversationRows,
+          invitations: invitationRows,
+          notificationCount: nextNotificationCount,
+          refreshedAt: lastRefreshAtRef.current,
+        });
+      } catch (loadError) {
+        setError(loadError?.message || 'Could not load private conversations.');
+      } finally {
+        hasLoadedRef.current = true;
+        setLoading(false);
+        setRefreshing(false);
+      }
+    })();
+
+    loadInFlightRef.current = request.finally(() => {
+      loadInFlightRef.current = null;
+    });
+    return loadInFlightRef.current;
   }, []);
+
+  const scheduleRealtimeLoad = useCallback(() => {
+    if (realtimeTimerRef.current) clearTimeout(realtimeTimerRef.current);
+    realtimeTimerRef.current = setTimeout(() => {
+      realtimeTimerRef.current = null;
+      void load({ quiet: true, force: true });
+    }, INBOX_REALTIME_DEBOUNCE_MS);
+  }, [load]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -325,24 +349,33 @@ export function InboxScreen({ navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load({ quiet: hasLoadedRef.current });
+      const isFresh = hasLoadedRef.current
+        && Date.now() - lastRefreshAtRef.current < INBOX_FOCUS_FRESH_MS;
+      if (!isFresh) {
+        void load({ quiet: hasLoadedRef.current });
+      }
     }, [load])
   );
 
   useEffect(() => {
     const unsubscribeConversations = subscribeToConversationChanges({
-      onMessage: () => load({ quiet: true }),
-      onConversationChange: () => load({ quiet: true }),
+      onMessage: scheduleRealtimeLoad,
+      onReadChange: scheduleRealtimeLoad,
+      onConversationChange: scheduleRealtimeLoad,
     });
     const unsubscribeNotifications = subscribeToNotificationChanges(
-      () => load({ quiet: true })
+      scheduleRealtimeLoad
     );
 
     return () => {
       unsubscribeConversations();
       unsubscribeNotifications();
+      if (realtimeTimerRef.current) {
+        clearTimeout(realtimeTimerRef.current);
+        realtimeTimerRef.current = null;
+      }
     };
-  }, [load]);
+  }, [scheduleRealtimeLoad]);
 
   const sortedConversations = useMemo(
     () => [...conversations].sort((a, b) => {

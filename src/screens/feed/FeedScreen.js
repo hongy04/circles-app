@@ -42,9 +42,15 @@ import { StoryViewer } from '../../components/stories/StoryViewer';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { timeAgo } from '../../utils/timeAgo';
-import { navigationCacheKeys, writeNavigationCache } from '../../services/navigationCacheService';
+import {
+  navigationCacheKeys,
+  readNavigationCache,
+  writeNavigationCache,
+} from '../../services/navigationCacheService';
 
 const PAGE_SIZE = 10;
+const FEED_FOCUS_FRESH_MS = 15_000;
+const FEED_REALTIME_DEBOUNCE_MS = 240;
 
 function rgba(hex, alpha) {
   const normalized = String(hex || '').replace('#', '');
@@ -71,18 +77,19 @@ function localCommentId() {
 export function FeedScreen({ navigation }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [posts, setPosts] = useState([]);
+  const cachedFeed = readNavigationCache(navigationCacheKeys.feed());
+  const [posts, setPosts] = useState(cachedFeed?.posts || []);
   const [stories, setStories] = useState([]);
   const [authed, setAuthed] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
 
-  const [initialLoading, setInitialLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(!cachedFeed);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [feedError, setFeedError] = useState(null);
   const [storyError, setStoryError] = useState(null);
-  const [cursor, setCursor] = useState(null);
-  const [hasMore, setHasMore] = useState(true);
+  const [cursor, setCursor] = useState(cachedFeed?.cursor || null);
+  const [hasMore, setHasMore] = useState(cachedFeed?.hasMore ?? true);
 
   const [openPostId, setOpenPostId] = useState(null);
   const [activeComments, setActiveComments] = useState([]);
@@ -102,8 +109,14 @@ export function FeedScreen({ navigation }) {
   const [visiblePostIds, setVisiblePostIds] = useState(() => new Set());
 
   const mountedRef = useRef(true);
-  const postsRef = useRef([]);
-  const initialLoadFinishedRef = useRef(false);
+  const postsRef = useRef(cachedFeed?.posts || []);
+  const storiesRef = useRef([]);
+  const initialLoadFinishedRef = useRef(Boolean(cachedFeed));
+  const lastFeedRefreshAtRef = useRef(Number(cachedFeed?.refreshedAt || 0));
+  const lastStoryRefreshAtRef = useRef(0);
+  const feedRequestRef = useRef(null);
+  const feedRealtimeTimerRef = useRef(null);
+  const storyRealtimeTimerRef = useRef(null);
   const likeRequestsRef = useRef(new Set());
   const viewabilityConfigRef = useRef({
     itemVisiblePercentThreshold: 60,
@@ -122,34 +135,55 @@ export function FeedScreen({ navigation }) {
     postsRef.current = posts;
   }, [posts]);
 
+  useEffect(() => {
+    storiesRef.current = stories;
+  }, [stories]);
+
   const refreshFeed = useCallback(async (mode = 'silent') => {
+    if (feedRequestRef.current) return feedRequestRef.current;
     if (mode === 'initial') setInitialLoading(true);
     if (mode === 'refresh') setRefreshing(true);
 
     setFeedError(null);
 
-    try {
-      const page = await fetchFeedPage({
-        limit: PAGE_SIZE,
-        before: new Date().toISOString(),
-      });
+    const request = (async () => {
+      try {
+        const page = await fetchFeedPage({
+          limit: PAGE_SIZE,
+          before: new Date().toISOString(),
+        });
 
-      if (!mountedRef.current) return;
+        if (!mountedRef.current) return;
 
-      setPosts(page.posts);
-      setCursor(page.cursor);
-      setHasMore(page.posts.length === PAGE_SIZE);
-    } catch (error) {
-      if (!mountedRef.current) return;
-      setFeedError(
-        errorMessage(error, 'The feed could not be loaded.')
-      );
-    } finally {
-      if (!mountedRef.current) return;
-      if (mode === 'initial') setInitialLoading(false);
-      if (mode === 'refresh') setRefreshing(false);
-      initialLoadFinishedRef.current = true;
-    }
+        const nextHasMore = page.posts.length === PAGE_SIZE;
+        setPosts(page.posts);
+        postsRef.current = page.posts;
+        setCursor(page.cursor);
+        setHasMore(nextHasMore);
+        lastFeedRefreshAtRef.current = Date.now();
+        writeNavigationCache(navigationCacheKeys.feed(), {
+          posts: page.posts,
+          cursor: page.cursor,
+          hasMore: nextHasMore,
+          refreshedAt: lastFeedRefreshAtRef.current,
+        });
+      } catch (error) {
+        if (!mountedRef.current) return;
+        setFeedError(
+          errorMessage(error, 'The feed could not be loaded.')
+        );
+      } finally {
+        if (!mountedRef.current) return;
+        if (mode === 'initial') setInitialLoading(false);
+        if (mode === 'refresh') setRefreshing(false);
+        initialLoadFinishedRef.current = true;
+      }
+    })();
+
+    feedRequestRef.current = request.finally(() => {
+      feedRequestRef.current = null;
+    });
+    return feedRequestRef.current;
   }, []);
 
   const refreshMutualPreview = useCallback(async () => {
@@ -168,7 +202,11 @@ export function FeedScreen({ navigation }) {
 
     try {
       const activeStories = await fetchActiveStories();
-      if (mountedRef.current) setStories(activeStories);
+      if (mountedRef.current) {
+        setStories(activeStories);
+        storiesRef.current = activeStories;
+        lastStoryRefreshAtRef.current = Date.now();
+      }
     } catch (error) {
       if (!mountedRef.current) return;
       setStoryError(
@@ -204,7 +242,7 @@ export function FeedScreen({ navigation }) {
         }
 
         await Promise.all([
-          refreshFeed('initial'),
+          refreshFeed(cachedFeed ? 'silent' : 'initial'),
           refreshStories(),
           refreshMutualPreview(),
         ]);
@@ -220,7 +258,13 @@ export function FeedScreen({ navigation }) {
               schema: 'public',
               table: 'posts',
             },
-            () => refreshFeed('silent')
+            () => {
+              if (feedRealtimeTimerRef.current) clearTimeout(feedRealtimeTimerRef.current);
+              feedRealtimeTimerRef.current = setTimeout(
+                () => refreshFeed('silent'),
+                FEED_REALTIME_DEBOUNCE_MS
+              );
+            }
           )
           .subscribe();
 
@@ -233,7 +277,13 @@ export function FeedScreen({ navigation }) {
               schema: 'public',
               table: 'stories',
             },
-            () => refreshStories()
+            () => {
+              if (storyRealtimeTimerRef.current) clearTimeout(storyRealtimeTimerRef.current);
+              storyRealtimeTimerRef.current = setTimeout(
+                () => refreshStories(),
+                FEED_REALTIME_DEBOUNCE_MS
+              );
+            }
           )
           .subscribe();
       } catch (error) {
@@ -252,6 +302,8 @@ export function FeedScreen({ navigation }) {
       mountedRef.current = false;
       if (feedChannel) supabase.removeChannel(feedChannel);
       if (storyChannel) supabase.removeChannel(storyChannel);
+      if (feedRealtimeTimerRef.current) clearTimeout(feedRealtimeTimerRef.current);
+      if (storyRealtimeTimerRef.current) clearTimeout(storyRealtimeTimerRef.current);
     };
   }, [refreshFeed, refreshMutualPreview, refreshStories]);
 
@@ -259,13 +311,17 @@ export function FeedScreen({ navigation }) {
     const unsubscribe = navigation.addListener('focus', () => {
       if (!initialLoadFinishedRef.current || !authed) return;
 
-      refreshFeed('silent');
-      refreshStories();
-      refreshMutualPreview();
+      const now = Date.now();
+      if (now - lastFeedRefreshAtRef.current >= FEED_FOCUS_FRESH_MS) {
+        void refreshFeed('silent');
+      }
+      if (now - lastStoryRefreshAtRef.current >= FEED_FOCUS_FRESH_MS) {
+        void refreshStories();
+      }
     });
 
     return unsubscribe;
-  }, [authed, navigation, refreshFeed, refreshMutualPreview, refreshStories]);
+  }, [authed, navigation, refreshFeed, refreshStories]);
 
 
   useEffect(() => {
@@ -670,6 +726,10 @@ export function FeedScreen({ navigation }) {
         style={styles.feedList}
         data={posts}
         keyExtractor={(post) => post.id}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        updateCellsBatchingPeriod={40}
+        windowSize={7}
         renderItem={({ item }) => (
           <PostCard
             post={item}
