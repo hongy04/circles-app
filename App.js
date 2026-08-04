@@ -325,9 +325,9 @@ function GateScreen({ navigation }) {
           return;
         }
 
-        // Theme hydration can happen behind the fixed Circles launch portal.
-        // Only the fluid particle color inherits the saved theme now, so the
-        // brand surface itself never flashes between appearance presets.
+        // Hydrate the saved theme before the launch portal becomes interactive.
+        // The portal atmosphere, particles, and bubble bloom all inherit the
+        // account palette, so this avoids a flash of the Default theme.
         await hydrateThemeForUser(session.user.id);
         if (!mounted) return;
 

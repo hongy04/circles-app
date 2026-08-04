@@ -17,16 +17,17 @@ const BRAND_MOTION = {
   fluidBreathOutMs: 4200,
 };
 
-const BRAND_FLUID = {
-  surfaceGradient: ['#F8FDFF', '#DDF4FF', '#ECFAFF'],
-  surfaceBackground: '#EAF8FF',
-  outline: '#0A1222',
-  boundaryRipple: 'rgba(70,186,233,0.72)',
-  shadow: '#62BFE8',
+const GLASS_SURFACE = {
+  surfaceGradient: [
+    'rgba(255,255,255,0.78)',
+    'rgba(255,255,255,0.28)',
+    'rgba(255,255,255,0.58)',
+  ],
+  surfaceBackground: 'rgba(255,255,255,0.16)',
   lightGradient: [
     'rgba(255,255,255,0)',
-    'rgba(255,255,255,0.82)',
-    'rgba(141,220,250,0.08)',
+    'rgba(255,255,255,0.76)',
+    'rgba(255,255,255,0.10)',
     'rgba(255,255,255,0)',
   ],
 };
@@ -311,14 +312,14 @@ export function FluidCircle({
             width: size,
             height: size,
             borderRadius: radius,
-            backgroundColor: BRAND_FLUID.surfaceBackground,
-            shadowColor: BRAND_FLUID.shadow,
+            backgroundColor: GLASS_SURFACE.surfaceBackground,
+            shadowColor: theme.fluid.shadow,
           },
           animatedSurfaceStyle,
         ]}
       >
         <LinearGradient
-          colors={BRAND_FLUID.surfaceGradient}
+          colors={GLASS_SURFACE.surfaceGradient}
           locations={[0, 0.52, 1]}
           start={{ x: 0.12, y: 0.03 }}
           end={{ x: 0.9, y: 0.98 }}
@@ -340,7 +341,7 @@ export function FluidCircle({
           ]}
         >
           <LinearGradient
-            colors={BRAND_FLUID.lightGradient}
+            colors={GLASS_SURFACE.lightGradient}
             locations={[0, 0.38, 0.67, 1]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
@@ -391,7 +392,7 @@ export function FluidCircle({
             {
               borderRadius: radius,
               borderWidth: Math.max(1.6, size * 0.0074),
-              borderColor: BRAND_FLUID.outline,
+              borderColor: theme.welcome.brandInk,
             },
           ]}
         />
@@ -404,7 +405,7 @@ export function FluidCircle({
               {
                 borderRadius: radius,
                 borderWidth: Math.max(1, size * 0.006),
-                borderColor: BRAND_FLUID.boundaryRipple,
+                borderColor: theme.fluid.boundaryRipple,
               },
               boundaryRippleStyle,
             ]}
@@ -422,10 +423,10 @@ const styles = StyleSheet.create({
   },
   surface: {
     overflow: 'hidden',
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
+    shadowOpacity: 0.12,
+    shadowRadius: 22,
     shadowOffset: { width: 0, height: 12 },
-    elevation: 8,
+    elevation: 5,
   },
   lightDrift: {
     position: 'absolute',

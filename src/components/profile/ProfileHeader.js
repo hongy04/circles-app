@@ -156,6 +156,15 @@ export function ProfileHeader({
 
   return (
     <View style={[styles.root, decorated && styles.decoratedRoot]}>
+      {decorated ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(255,255,255,0.80)', 'rgba(255,255,255,0.66)']}
+          start={{ x: 0.2, y: 0 }}
+          end={{ x: 0.8, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+      ) : null}
       {hasHeaderPhoto ? (
         <ImageBackground
           source={{ uri: profile.profile_header_url }}
@@ -252,7 +261,9 @@ function createStyles(theme) {
     paddingBottom: 10,
   },
   decoratedRoot: {
-    backgroundColor: 'rgba(255,255,255,0.88)',
+    backgroundColor: 'transparent',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.76)',
   },
   headerPhoto: {
     height: 104,

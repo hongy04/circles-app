@@ -529,7 +529,7 @@ function CircleProfileContent({ route, navigation }) {
       </View>
 
       {!isTwoPersonCircle ? (
-        <View style={styles.membersStrip}>
+        <View style={[styles.membersStrip, decorationActive && styles.decoratedMembersStrip]}>
           <View style={styles.membersHeadingRow}>
             <Text style={styles.membersHeading}>People</Text>
             <Pressable
@@ -570,7 +570,7 @@ function CircleProfileContent({ route, navigation }) {
         </View>
       ) : null}
 
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, decorationActive && styles.decoratedTabs]}>
         <Pressable
           onPress={() => setActiveTab('posts')}
           style={styles.tab}
@@ -834,7 +834,14 @@ function createStyles(theme) {
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.62)',
+    backgroundColor: 'rgba(255,255,255,0.70)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.86)',
+    shadowColor: '#0A1222',
+    shadowOpacity: 0.10,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   contentWidth: {
     flex: 1,
@@ -854,7 +861,9 @@ function createStyles(theme) {
     backgroundColor: 'transparent',
   },
   decoratedProfileHeader: {
-    backgroundColor: rgba(theme.circle.accentSoft, 0.76),
+    backgroundColor: rgba(theme.circle.accentSoft, 0.62),
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.64)',
   },
   decal: {
     position: 'absolute',
@@ -1060,6 +1069,11 @@ function createStyles(theme) {
     paddingTop: 7,
     paddingBottom: 8,
   },
+  decoratedMembersStrip: {
+    backgroundColor: 'rgba(255,255,255,0.34)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.52)',
+  },
   membersHeadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1100,6 +1114,12 @@ function createStyles(theme) {
     borderBottomWidth: 0,
     borderColor: 'transparent',
     backgroundColor: 'transparent',
+  },
+  decoratedTabs: {
+    backgroundColor: 'rgba(255,255,255,0.42)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.58)',
   },
   tab: {
     flex: 1,

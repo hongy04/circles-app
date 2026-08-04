@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -17,31 +17,190 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FluidCircle } from './FluidCircle';
 import { FloatingCircleField } from './FloatingCircleField';
+import { useThemeTokens } from '../theme/ThemeProvider';
 
 const BRAND_MOTION = {
   tapRippleMs: 840,
-  portalCopyFadeMs: 190,
-  portalExpansionDelayMs: 145,
-  portalSurfaceFadeMs: 275,
-  portalExpansionMs: 690,
-  portalOverlayFadeMs: 205,
+  portalCopyFadeMs: 180,
+  portalCircleFadeMs: 250,
+  portalBackdropDelayMs: 170,
+  portalBackdropFadeMs: 560,
+  portalOverlayFadeMs: 90,
   portalReducedFadeMs: 240,
 };
 
-const BRAND = {
-  ink: '#0A1222',
-  subtext: '#66717E',
-  promptLine: 'rgba(10,18,34,0.28)',
-  portalWash: ['#EAF9FF', '#CDEFFF', '#F4FCFF'],
-  portalShadow: '#8FD7F4',
-};
+const RIPPLE_SPECS = [
+  // The sequence deliberately behaves like a chain reaction rather than one
+  // shared zoom. Each ripple owns its own origin, timing and expansion.
+  { kind: 'ring', palette: 0, ratio: 0.23, x: 0.50, y: 0.50, scale: 2.75, delayMs: 0, durationMs: 620, driftX: -0.005, driftY: -0.012 },
+  { kind: 'ring', palette: 1, ratio: 0.18, x: 0.38, y: 0.43, scale: 2.55, delayMs: 92, durationMs: 600, driftX: -0.018, driftY: -0.012 },
+  { kind: 'glass', palette: 2, ratio: 0.15, x: 0.61, y: 0.56, scale: 2.35, delayMs: 152, durationMs: 560, driftX: 0.018, driftY: 0.014 },
+  { kind: 'ring', palette: 3, ratio: 0.20, x: 0.66, y: 0.37, scale: 2.65, delayMs: 218, durationMs: 610, driftX: 0.022, driftY: -0.020 },
+  { kind: 'ring', palette: 0, ratio: 0.17, x: 0.31, y: 0.62, scale: 2.85, delayMs: 284, durationMs: 630, driftX: -0.025, driftY: 0.024 },
+  { kind: 'disc', palette: 4, ratio: 0.13, x: 0.51, y: 0.27, scale: 2.45, delayMs: 342, durationMs: 540, driftX: 0.004, driftY: -0.026 },
+  { kind: 'ring', palette: 2, ratio: 0.15, x: 0.77, y: 0.58, scale: 2.95, delayMs: 402, durationMs: 600, driftX: 0.032, driftY: 0.012 },
+  { kind: 'glass', palette: 1, ratio: 0.12, x: 0.20, y: 0.43, scale: 2.55, delayMs: 458, durationMs: 560, driftX: -0.030, driftY: -0.004 },
+];
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function PortalRipple({ spec, index, progress, width, height, palette }) {
+  const minDimension = Math.min(width, height);
+  const size = Math.max(72, Math.min(190, minDimension * spec.ratio));
+  const color = palette[spec.palette % palette.length] || '#4DB9E5';
+  const isRing = spec.kind === 'ring';
+
+  const opacity = progress.interpolate({
+    inputRange: [0, 0.08, 0.34, 0.72, 1],
+    outputRange: isRing
+      ? [0, 0.74, 0.54, 0.24, 0]
+      : [0, 0.52, 0.40, 0.16, 0],
+    extrapolate: 'clamp',
+  });
+  const scale = progress.interpolate({
+    inputRange: [0, 0.12, 0.72, 1],
+    outputRange: [0.26, 0.48, spec.scale * 0.86, spec.scale],
+    extrapolate: 'clamp',
+  });
+  const translateX = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, spec.driftX * width],
+    extrapolate: 'clamp',
+  });
+  const translateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, spec.driftY * height],
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.rippleCircle,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          left: spec.x * width - size / 2,
+          top: spec.y * height - size / 2,
+          opacity,
+          transform: [{ translateX }, { translateY }, { scale }],
+        },
+      ]}
+    >
+      {isRing ? (
+        <>
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                borderRadius: size / 2,
+                borderWidth: Math.max(3, size * 0.055),
+                borderColor: rgba(color, index % 2 === 0 ? 0.30 : 0.24),
+                backgroundColor: rgba(color, 0.015),
+              },
+            ]}
+          />
+          <View
+            style={[
+              styles.rippleEcho,
+              {
+                borderRadius: size / 2,
+                borderColor: rgba(color, 0.13),
+              },
+            ]}
+          />
+        </>
+      ) : (
+        <LinearGradient
+          colors={spec.kind === 'glass'
+            ? [
+                'rgba(255,255,255,0.48)',
+                rgba(color, 0.19),
+                rgba(color, 0.055),
+              ]
+            : [
+                rgba(color, 0.28),
+                rgba(color, 0.11),
+                'rgba(255,255,255,0.025)',
+              ]}
+          locations={[0, 0.58, 1]}
+          start={{ x: 0.12, y: 0.08 }}
+          end={{ x: 0.88, y: 0.94 }}
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              borderRadius: size / 2,
+              borderWidth: Math.max(1, size * 0.008),
+              borderColor: spec.kind === 'glass'
+                ? 'rgba(255,255,255,0.52)'
+                : rgba(color, 0.09),
+            },
+          ]}
+        />
+      )}
+
+      {!isRing ? (
+        <View
+          style={[
+            styles.rippleHighlight,
+            {
+              width: size * 0.30,
+              height: size * 0.09,
+              borderRadius: size * 0.07,
+              left: size * 0.18,
+              top: size * 0.16,
+            },
+          ]}
+        />
+      ) : null}
+    </Animated.View>
+  );
+}
+
+function PortalRippleField({ progresses, width, height, palette }) {
+  return (
+    <View
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={styles.rippleLayer}
+    >
+      {RIPPLE_SPECS.map((spec, index) => (
+        <PortalRipple
+          key={`portal-ripple-${index}`}
+          spec={spec}
+          index={index}
+          progress={progresses[index]}
+          width={width}
+          height={height}
+          palette={palette}
+        />
+      ))}
+    </View>
+  );
+}
 
 export function LaunchPortal({ onComplete, ready = true }) {
+  const theme = useThemeTokens();
   const { width, height } = useWindowDimensions();
   const circleSize = Math.min(230, Math.max(176, width * 0.56));
   const pressScale = useRef(new Animated.Value(1)).current;
   const rippleProgress = useRef(new Animated.Value(0)).current;
-  const expansionScale = useRef(new Animated.Value(1)).current;
+  const portalRippleProgresses = useRef(
+    RIPPLE_SPECS.map(() => new Animated.Value(0))
+  ).current;
+  const backdropOpacity = useRef(new Animated.Value(1)).current;
   const circleOpacity = useRef(new Animated.Value(1)).current;
   const contentOpacity = useRef(new Animated.Value(1)).current;
   const overlayOpacity = useRef(new Animated.Value(1)).current;
@@ -52,6 +211,12 @@ export function LaunchPortal({ onComplete, ready = true }) {
   const [entering, setEntering] = useState(false);
   const reducedMotionRef = useRef(false);
   const completionRef = useRef(false);
+
+  const ripplePalette = useMemo(() => {
+    const palette = theme.circle?.decalPalette?.filter(Boolean) || [];
+    if (palette.length > 0) return palette;
+    return [theme.circle?.accent || theme.fluid?.particle || '#4DB9E5'];
+  }, [theme.circle?.accent, theme.circle?.decalPalette, theme.fluid?.particle]);
 
   useEffect(() => {
     let mounted = true;
@@ -141,7 +306,24 @@ export function LaunchPortal({ onComplete, ready = true }) {
       return;
     }
 
-    const coverScale = (Math.max(width, height) / circleSize) * 2.35;
+    portalRippleProgresses.forEach((progress) => {
+      progress.stopAnimation();
+      progress.setValue(0);
+    });
+    backdropOpacity.stopAnimation();
+    backdropOpacity.setValue(1);
+
+    const rippleAnimations = RIPPLE_SPECS.map((spec, index) =>
+      Animated.sequence([
+        Animated.delay(spec.delayMs),
+        Animated.timing(portalRippleProgresses[index], {
+          toValue: 1,
+          duration: spec.durationMs,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ])
+    );
 
     Animated.parallel([
       Animated.timing(contentOpacity, {
@@ -150,23 +332,22 @@ export function LaunchPortal({ onComplete, ready = true }) {
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
+      Animated.timing(circleOpacity, {
+        toValue: 0,
+        duration: BRAND_MOTION.portalCircleFadeMs,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
       Animated.sequence([
-        Animated.delay(BRAND_MOTION.portalExpansionDelayMs),
-        Animated.parallel([
-          Animated.timing(circleOpacity, {
-            toValue: 0,
-            duration: BRAND_MOTION.portalSurfaceFadeMs,
-            easing: Easing.in(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(expansionScale, {
-            toValue: coverScale,
-            duration: BRAND_MOTION.portalExpansionMs,
-            easing: Easing.inOut(Easing.cubic),
-            useNativeDriver: true,
-          }),
-        ]),
+        Animated.delay(BRAND_MOTION.portalBackdropDelayMs),
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: BRAND_MOTION.portalBackdropFadeMs,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
       ]),
+      ...rippleAnimations,
     ]).start(() => {
       Animated.timing(overlayOpacity, {
         toValue: 0,
@@ -182,14 +363,32 @@ export function LaunchPortal({ onComplete, ready = true }) {
       style={[styles.overlay, { opacity: overlayOpacity }]}
       accessibilityViewIsModal
     >
-      <FloatingCircleField variant="portal" />
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.portalBackdrop,
+          {
+            opacity: backdropOpacity,
+            backgroundColor: theme.welcome.portalBackground[0],
+          },
+        ]}
+      >
+        <FloatingCircleField variant="portal" />
+      </Animated.View>
+      <PortalRippleField
+        progresses={portalRippleProgresses}
+        width={width}
+        height={height}
+        palette={ripplePalette}
+      />
+
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <Animated.View style={[styles.copy, { opacity: contentOpacity }]}> 
           <View style={styles.brandRow}>
-            <View style={styles.brandMark} />
-            <Text style={styles.brand}>Circles</Text>
+            <View style={[styles.brandMark, { borderColor: theme.welcome.brandInk }]} />
+            <Text style={[styles.brand, { color: theme.welcome.brandInk }]}>Circles</Text>
           </View>
-          <Text style={styles.title}>Welcome back.</Text>
+          <Text style={[styles.title, { color: theme.welcome.brandInk }]}>Welcome back.</Text>
         </Animated.View>
 
         <Pressable
@@ -205,27 +404,6 @@ export function LaunchPortal({ onComplete, ready = true }) {
             { width: circleSize, height: circleSize },
           ]}
         >
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.portalWash,
-              {
-                width: circleSize,
-                height: circleSize,
-                borderRadius: circleSize / 2,
-                transform: [{ scale: expansionScale }],
-              },
-            ]}
-          >
-            <LinearGradient
-              colors={BRAND.portalWash}
-              locations={[0, 0.55, 1]}
-              start={{ x: 0.18, y: 0.08 }}
-              end={{ x: 0.86, y: 0.95 }}
-              style={StyleSheet.absoluteFill}
-            />
-          </Animated.View>
-
           <Animated.View style={{ opacity: circleOpacity }}>
             <FluidCircle
               size={circleSize}
@@ -238,12 +416,17 @@ export function LaunchPortal({ onComplete, ready = true }) {
 
         <Animated.View style={[styles.promptWrap, { opacity: contentOpacity }]}> 
           <View style={styles.promptRow}>
-            {!ready ? <ActivityIndicator size="small" color={BRAND.subtext} /> : null}
-            <Text style={styles.prompt}>
+            {!ready ? <ActivityIndicator size="small" color={theme.colors.subtext} /> : null}
+            <Text style={[styles.prompt, { color: theme.colors.subtext }]}>
               {ready ? 'Tap the circle to enter' : 'Getting your Circles ready…'}
             </Text>
           </View>
-          <View style={styles.promptLine} />
+          <View
+            style={[
+              styles.promptLine,
+              { backgroundColor: theme.welcome.promptLine },
+            ]}
+          />
         </Animated.View>
       </SafeAreaView>
     </Animated.View>
@@ -255,7 +438,32 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
     elevation: 1000,
-    backgroundColor: '#F3FAFF',
+  },
+  portalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  rippleLayer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+    zIndex: 3,
+  },
+  rippleCircle: {
+    position: 'absolute',
+    overflow: 'hidden',
+  },
+  rippleEcho: {
+    position: 'absolute',
+    left: '11%',
+    top: '11%',
+    right: '11%',
+    bottom: '11%',
+    borderWidth: 1,
+  },
+  rippleHighlight: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.27)',
+    transform: [{ rotate: '-18deg' }],
   },
   safeArea: {
     flex: 1,
@@ -279,17 +487,14 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 9,
     borderWidth: 2,
-    borderColor: BRAND.ink,
   },
   brand: {
-    color: BRAND.ink,
     fontFamily: 'Manrope_700Bold',
     fontSize: 18,
     letterSpacing: -0.4,
   },
   title: {
     marginTop: 16,
-    color: BRAND.ink,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 17,
     letterSpacing: -0.2,
@@ -298,14 +503,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'visible',
-  },
-  portalWash: {
-    position: 'absolute',
-    overflow: 'hidden',
-    shadowColor: BRAND.portalShadow,
-    shadowOpacity: 0.15,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 10 },
+    zIndex: 4,
   },
   promptWrap: {
     alignItems: 'center',
@@ -318,7 +516,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   prompt: {
-    color: BRAND.subtext,
     fontFamily: 'Manrope_600SemiBold',
     fontSize: 13,
     letterSpacing: 0.2,
@@ -327,6 +524,5 @@ const styles = StyleSheet.create({
     width: 28,
     height: StyleSheet.hairlineWidth,
     marginTop: 14,
-    backgroundColor: BRAND.promptLine,
   },
 });

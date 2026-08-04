@@ -56,6 +56,7 @@ function TopBar({
   romanceBusy = false,
   overlay = false,
   topInset = 0,
+  decorated = false,
 }) {
   const { theme, styles } = useProfileTheme();
 
@@ -64,6 +65,7 @@ function TopBar({
       pointerEvents="box-none"
       style={[
         styles.topBar,
+        decorated && !overlay && styles.decoratedTopBar,
         overlay && [styles.topBarOverlay, { height: topInset + 48, paddingTop: topInset }],
       ]}
     >
@@ -1015,6 +1017,7 @@ export function ProfileViewScreen({
             romanceBusy={romanticBusy || circleProposalBusy}
             overlay
             topInset={insets.top}
+            decorated={decorationActive}
           />
         </View>
       ) : (
@@ -1027,6 +1030,7 @@ export function ProfileViewScreen({
             romanceIcon={!resolvedIsSelf && profile.relationship_status === 'connected' && romanticStatus.channelOpen ? romanceAffordanceIcon : null}
             onRomancePress={() => setRomanceSheetVisible(true)}
             romanceBusy={romanticBusy || circleProposalBusy}
+            decorated={decorationActive}
           />
           {profileHeaderNode}
         </>
@@ -1213,10 +1217,12 @@ function createStyles(theme) {
     borderColor: theme.colors.border,
   },
   decoratedContentWidth: {
-    backgroundColor: 'rgba(255,255,255,0.24)',
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   decoratedSurface: {
-    backgroundColor: 'rgba(255,255,255,0.88)',
+    backgroundColor: 'rgba(255,255,255,0.74)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.72)',
   },
   listContent: {
     flexGrow: 1,
@@ -1233,6 +1239,10 @@ function createStyles(theme) {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colors.border,
     backgroundColor: theme.colors.bg,
+  },
+  decoratedTopBar: {
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderBottomColor: 'rgba(255,255,255,0.78)',
   },
   topBarOverlay: {
     position: 'absolute',
