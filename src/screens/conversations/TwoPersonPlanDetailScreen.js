@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -25,6 +26,18 @@ import {
   subscribeToTwoPersonPlanChanges,
 } from '../../services/twoPersonPlanService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function formatDateTime(value) {
   if (!value) return 'No date chosen yet';
@@ -246,6 +259,7 @@ function TwoPersonPlanDetailContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.10} />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -259,20 +273,22 @@ function TwoPersonPlanDetailContent({ route, navigation }) {
           automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           showsVerticalScrollIndicator={false}
         >
-        <View style={styles.contextRow}>
-          <Ionicons name="lock-closed" size={11} color={theme.colors.subtext} />
-          <Text style={styles.contextText}>{circleName} · private to the two of you</Text>
-        </View>
-
-        <Text style={styles.title}>{plan.title}</Text>
-
-        <View style={styles.statusCard}>
-          <View style={styles.statusIcon}>
-            <Ionicons name={status.icon} size={22} color={theme.colors.text} />
+        <View style={styles.heroCard}>
+          <View style={styles.contextRow}>
+            <Ionicons name="lock-closed" size={11} color={theme.colors.subtext} />
+            <Text style={styles.contextText}>{circleName} · private to the two of you</Text>
           </View>
-          <View style={styles.statusCopy}>
-            <Text style={styles.statusTitle}>{status.label}</Text>
-            <Text style={styles.statusBody}>{status.body}</Text>
+
+          <Text style={styles.title}>{plan.title}</Text>
+
+          <View style={styles.statusCard}>
+            <View style={styles.statusIcon}>
+              <Ionicons name={status.icon} size={22} color={theme.colors.text} />
+            </View>
+            <View style={styles.statusCopy}>
+              <Text style={styles.statusTitle}>{status.label}</Text>
+              <Text style={styles.statusBody}>{status.body}</Text>
+            </View>
           </View>
         </View>
 
@@ -489,10 +505,15 @@ export function TwoPersonPlanDetailScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentBorder = rgba(theme.circle.accent, 0.20);
+
   return StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   keyboardView: { flex: 1 },
   content: { width: '100%', maxWidth: 680, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 180 },
+  heroCard: { padding: 17, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glassStrong },
   contextRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   contextText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
   title: { marginTop: 10, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 27, lineHeight: 34 },
@@ -501,23 +522,23 @@ function createStyles(theme) {
   statusCopy: { flex: 1, marginLeft: 11 },
   statusTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
   statusBody: { marginTop: 3, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
-  detailsCard: { marginTop: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, overflow: 'hidden' },
+  detailsCard: { marginTop: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, overflow: 'hidden', backgroundColor: glassStrong },
   detailRow: { minHeight: 66, flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 13, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.circle.accentSoft },
   detailIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: theme.circle.accentSoft, alignItems: 'center', justifyContent: 'center' },
   detailCopy: { flex: 1, marginLeft: 11 },
   detailLabel: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
   detailValue: { marginTop: 3, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19 },
-  actionsCard: { marginTop: 16, padding: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.circle.accentSoft },
+  actionsCard: { marginTop: 16, padding: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glassStrong },
   actionsTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
   actionsBody: { marginTop: 4, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
   primaryButton: { minHeight: 44, marginTop: 11, borderRadius: 11, backgroundColor: theme.welcome.brandInk, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   primaryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  secondaryButton: { minHeight: 44, marginTop: 9, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.circle.accentSoft, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  secondaryButton: { minHeight: 44, marginTop: 9, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: theme.circle.accentSoft, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   secondaryButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
   linkButton: { minHeight: 36, marginTop: 5, alignItems: 'center', justifyContent: 'center' },
   linkButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12, textDecorationLine: 'underline' },
-  memoryInput: { minHeight: 100, marginTop: 11, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.colors.surface, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 13 },
-  memoryCard: { marginTop: 16, padding: 17, borderRadius: 16, backgroundColor: theme.circle.accentSoft, alignItems: 'center' },
+  memoryInput: { minHeight: 100, marginTop: 11, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glassStrong, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 13 },
+  memoryCard: { marginTop: 16, padding: 17, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glassStrong, alignItems: 'center' },
   memoryTitle: { marginTop: 8, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
   memoryBody: { marginTop: 5, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17, textAlign: 'center' },
   memoryLinkSummary: { width: '100%', marginTop: 13, flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 7 },

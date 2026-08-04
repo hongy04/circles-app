@@ -15,6 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
+import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
+import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { subscribeToConversationChanges } from '../../services/conversationService';
@@ -27,6 +29,18 @@ import {
   updateCircleMemberRole,
 } from '../../services/circlePeopleService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function roleLabel(role) {
   if (role === 'owner') return 'Owner';
@@ -284,27 +298,6 @@ function CirclePeopleContent({ route, navigation }) {
     );
   };
 
-  if (loading && !data) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.stateText}>Loading people…</Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (error && !data) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="people-outline" size={38} color={theme.colors.text} />
-        <Text style={styles.errorText}>{error}</Text>
-        <Pressable onPress={() => load()} style={styles.retryButton}>
-          <Text style={styles.retryText}>Try again</Text>
-        </Pressable>
-      </SafeAreaView>
-    );
-  }
-
   const members = data?.members || [];
   const invitations = data?.pendingInvitations || [];
   const title = data?.conversation?.title || circleName;
@@ -322,10 +315,9 @@ function CirclePeopleContent({ route, navigation }) {
           <View style={styles.privateLine}>
             <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
             <Text style={styles.privateText}>
-              {members.length} member{members.length === 1 ? '' : 's'}
-              {invitations.length
-                ? ` · ${invitations.length} pending`
-                : ''}
+              {data
+                ? `${members.length} member${members.length === 1 ? '' : 's'}${invitations.length ? ` · ${invitations.length} pending` : ''}`
+                : 'Loading Circle members…'}
             </Text>
           </View>
         </View>
@@ -357,12 +349,12 @@ function CirclePeopleContent({ route, navigation }) {
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>MEMBERS</Text>
-        <Text style={styles.sectionCount}>{members.length}</Text>
+        <Text style={styles.sectionCount}>{data ? members.length : '…'}</Text>
       </View>
     </>
   );
 
-  const footer = (
+  const footer = data ? (
     <>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>PENDING INVITATIONS</Text>
@@ -457,15 +449,29 @@ function CirclePeopleContent({ route, navigation }) {
         </Pressable>
       )}
     </>
-  );
+  ) : null;
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.12} />
       <FlatList
         data={members}
         keyExtractor={(member) => member.userId}
         ListHeaderComponent={header}
         ListFooterComponent={footer}
+        ListEmptyComponent={loading && !data ? (
+          <ContinuityLoadingCard
+            label="Loading Circle members…"
+            body="The Circle stays open while the member list catches up."
+            icon="people-outline"
+          />
+        ) : error && !data ? (
+          <ContinuityLoadingCard
+            error={error}
+            icon="people-outline"
+            onRetry={() => load()}
+          />
+        ) : null}
         refreshControl={(
           <RefreshControl
             refreshing={refreshing}
@@ -557,6 +563,11 @@ export function CirclePeopleScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.82);
+  const glassStrong = rgba(theme.colors.surface, 0.92);
+  const glassSoft = rgba(theme.colors.surface, 0.70);
+  const accentBorder = rgba(theme.circle.accent, 0.20);
+
   return StyleSheet.create({
   screen: {
     flex: 1,
@@ -601,8 +612,13 @@ function createStyles(theme) {
   circleSummary: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 16,
+    marginTop: 14,
+    marginBottom: 12,
+    padding: 13,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
   },
   summaryText: {
     flex: 1,
@@ -630,8 +646,8 @@ function createStyles(theme) {
     padding: 13,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
   },
   inviteIcon: {
     width: 38,
@@ -679,16 +695,16 @@ function createStyles(theme) {
     overflow: 'hidden',
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
   },
   cardRowWrap: {
     overflow: 'hidden',
     marginHorizontal: 0,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: glass,
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
+    borderColor: accentBorder,
   },
   firstMemberRow: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -771,7 +787,7 @@ function createStyles(theme) {
     borderRadius: 9,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surfaceSoft,
+    backgroundColor: glassSoft,
   },
   cancelInviteText: {
     color: '#b3261e',
@@ -795,8 +811,8 @@ function createStyles(theme) {
     paddingVertical: 25,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
   },
   emptyTitle: {
     marginTop: 9,
@@ -833,8 +849,8 @@ function createStyles(theme) {
     padding: 14,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
   },
   ownerNoticeTitle: {
     color: theme.colors.text,
@@ -856,7 +872,7 @@ function createStyles(theme) {
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: theme.colors.danger,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: glassStrong,
   },
   leaveText: {
     color: '#c62828',

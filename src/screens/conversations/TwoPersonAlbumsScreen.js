@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -20,6 +22,18 @@ import {
   subscribeToTwoPersonAlbumChanges,
 } from '../../services/twoPersonAlbumService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function formatDate(value) {
   if (!value) return '';
@@ -112,6 +126,8 @@ function TwoPersonAlbumsContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.10} />
+      <ThemeAtmosphere theme={theme} strength={0.28} decals />
       <FlatList
         data={albums}
         keyExtractor={(item) => item.id}
@@ -190,10 +206,14 @@ export function TwoPersonAlbumsScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.82);
+  const glassStrong = rgba(theme.colors.surface, 0.92);
+  const accentBorder = rgba(theme.circle.accent, 0.20);
+
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
     content: { paddingHorizontal: 14, paddingBottom: 48, flexGrow: 1 },
-    topActions: { paddingTop: 14, paddingBottom: 12 },
+    topActions: { marginTop: 12, marginBottom: 12, padding: 10, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glassStrong },
     createButton: {
       minHeight: 44,
       borderRadius: 11,
@@ -214,8 +234,8 @@ function createStyles(theme) {
       alignItems: 'center',
       gap: 12,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: theme.circle.accentSoft,
-      backgroundColor: theme.colors.surface,
+      borderColor: accentBorder,
+      backgroundColor: glass,
     },
     cover: { width: 86, height: 86, borderRadius: 14, backgroundColor: theme.colors.surfaceSoft },
     coverPlaceholder: {
@@ -241,7 +261,7 @@ function createStyles(theme) {
       fontSize: 12,
       lineHeight: 17,
     },
-    state: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 54, paddingHorizontal: 20 },
+    state: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 12, paddingVertical: 54, paddingHorizontal: 20, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glass },
     stateText: {
       marginTop: 9,
       maxWidth: 340,

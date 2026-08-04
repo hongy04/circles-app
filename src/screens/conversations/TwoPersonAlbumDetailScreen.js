@@ -17,6 +17,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 
 import { Avatar } from '../../components/Avatar';
+import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -28,6 +29,18 @@ import {
   uploadTwoPersonAlbumPhotos,
 } from '../../services/twoPersonAlbumService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function formatDate(value) {
   if (!value) return '';
@@ -293,6 +306,7 @@ function TwoPersonAlbumDetailContent({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.screen}>
+      <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.10} />
       <FlatList
         data={album?.photos || []}
         keyExtractor={(item) => item.id}
@@ -347,10 +361,14 @@ export function TwoPersonAlbumDetailScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentBorder = rgba(theme.circle.accent, 0.20);
+
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
     content: { paddingHorizontal: 12, paddingBottom: 48, flexGrow: 1 },
-    header: { paddingTop: 16, paddingBottom: 18 },
+    header: { marginTop: 12, marginBottom: 14, padding: 16, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glassStrong },
     headingRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
     headingCopy: { flex: 1 },
     title: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 24 },
@@ -363,8 +381,8 @@ function createStyles(theme) {
       alignItems: 'center',
       justifyContent: 'center',
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: theme.circle.accentSoft,
-      backgroundColor: theme.colors.surface,
+      borderColor: accentBorder,
+      backgroundColor: glassStrong,
     },
     actionRow: { marginTop: 16, flexDirection: 'row', gap: 8 },
     addButton: {
@@ -402,14 +420,14 @@ function createStyles(theme) {
     photoCount: { color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
     tile: { marginBottom: 4, backgroundColor: theme.colors.surfaceSoft, overflow: 'hidden' },
     tileImage: { width: '100%', height: '100%' },
-    emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 70 },
+    emptyState: { alignItems: 'center', justifyContent: 'center', marginTop: 10, paddingVertical: 70, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glass },
     emptyTitle: { marginTop: 10, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 17 },
     centerState: {
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
       padding: 24,
-      backgroundColor: theme.circle.profileBackground,
+      backgroundColor: glassStrong,
     },
     stateText: { marginTop: 9, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13, textAlign: 'center' },
     errorText: { marginTop: 10, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 13, textAlign: 'center' },

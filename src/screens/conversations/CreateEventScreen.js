@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
+import { EVENT_LOOK_OPTIONS, EventLookArtwork } from '../../components/events/EventLookHero';
 
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
@@ -154,6 +155,7 @@ function CreateEventContent({ route, navigation }) {
   const [startInput, setStartInput] = useState(defaults.start);
   const [endInput, setEndInput] = useState(defaults.end);
   const [location, setLocation] = useState(repeatFrom?.locationName || '');
+  const [appearanceKey, setAppearanceKey] = useState(repeatFrom?.appearanceKey || 'circle');
   const [submitting, setSubmitting] = useState(false);
   const [multiCircleEnabled, setMultiCircleEnabled] = useState(false);
   const [availableCircles, setAvailableCircles] = useState([]);
@@ -285,6 +287,14 @@ function CreateEventContent({ route, navigation }) {
         outsideGuestCap: guestCap,
         membersCanInviteGuests: allowOutsideGuests && membersCanInviteGuests,
         allowPlusOnes: allowOutsideGuests && allowPlusOnes,
+        appearanceKey,
+        timezoneName: (() => {
+          try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+          } catch {
+            return null;
+          }
+        })(),
       });
 
       navigation.replace('EventDetail', { eventId, conversationId, circleName });
@@ -477,6 +487,52 @@ function CreateEventContent({ route, navigation }) {
                 style={[styles.input, styles.textArea]}
               />
             </Field>
+          </View>
+
+          <View style={styles.lookCard}>
+            <View style={styles.formCardHeading}>
+              <View style={styles.formCardIcon}>
+                <Ionicons name="sparkles-outline" size={18} color={theme.colors.text} />
+              </View>
+              <View style={styles.lookHeadingCopy}>
+                <Text style={styles.formCardTitle}>Event look</Text>
+                <Text style={styles.lookHeadingBody}>Optional · just gives this gathering its own little mood.</Text>
+              </View>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.lookGrid}
+            >
+              {EVENT_LOOK_OPTIONS.map((option) => {
+                const selected = appearanceKey === option.key;
+                return (
+                  <Pressable
+                    key={option.key}
+                    onPress={() => setAppearanceKey(option.key)}
+                    style={({ pressed }) => [
+                      styles.lookOption,
+                      selected && styles.lookOptionSelected,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <EventLookArtwork appearanceKey={option.key} compact>
+                      <View style={styles.lookOptionOverlay}>
+                        <Ionicons name={option.icon} size={17} color={option.key === 'twilight' ? '#fff' : theme.colors.text} />
+                      </View>
+                    </EventLookArtwork>
+                    <View style={styles.lookOptionLabelRow}>
+                      <Text style={styles.lookOptionLabel}>{option.label}</Text>
+                      {selected ? (
+                        <View style={styles.lookCheck}>
+                          <Ionicons name="checkmark" size={11} color="#fff" />
+                        </View>
+                      ) : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </View>
 
           {outsideGuestsEnabled ? (
@@ -799,6 +855,71 @@ function createStyles(theme) {
   textArea: { minHeight: 112 },
   twoColumnRow: { flexDirection: 'row', gap: 10 },
   columnField: { flex: 1 },
+  lookCard: {
+    marginBottom: 20,
+    padding: 15,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 1,
+  },
+  lookHeadingCopy: { flex: 1 },
+  lookHeadingBody: {
+    marginTop: 2,
+    color: theme.colors.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 10,
+    lineHeight: 14,
+  },
+  lookGrid: {
+    gap: 9,
+    paddingRight: 4,
+  },
+  lookOption: {
+    width: 104,
+    padding: 4,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    backgroundColor: glassStrong,
+  },
+  lookOptionSelected: {
+    borderColor: theme.circle.accent,
+    backgroundColor: accentWash,
+  },
+  lookOptionOverlay: {
+    flex: 1,
+    minHeight: 74,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lookOptionLabelRow: {
+    minHeight: 31,
+    paddingHorizontal: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
+  },
+  lookOptionLabel: {
+    flexShrink: 1,
+    color: theme.colors.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 10,
+  },
+  lookCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.circle.accent,
+  },
   guestSettingsCard: {
     marginBottom: 20,
     padding: 15,

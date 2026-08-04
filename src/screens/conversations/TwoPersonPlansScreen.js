@@ -1,6 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -13,6 +12,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
+import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
+import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -178,21 +179,10 @@ function TwoPersonPlansContent({ route, navigation }) {
     ...section.data.map((plan) => ({ type: 'plan', id: plan.id, plan })),
   ])), [sections]);
 
-  if (loading) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ThemeAtmosphere theme={theme} strength={0.80} decals />
-        <View style={styles.stateCard}>
-          <ActivityIndicator color={theme.circle.accent} />
-          <Text style={styles.stateText}>Opening shared plans…</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
-      <ThemeAtmosphere theme={theme} strength={0.84} decals />
+      <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.10} />
+      <ThemeAtmosphere theme={theme} strength={0.30} decals />
       <FlatList
         data={flatData}
         keyExtractor={(item) => item.id}
@@ -208,7 +198,7 @@ function TwoPersonPlansContent({ route, navigation }) {
               <Ionicons name="add" size={18} color="#fff" />
               <Text style={styles.newButtonText}>New Idea</Text>
             </Pressable>
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {error && plans.length > 0 ? <Text style={styles.errorText}>{error}</Text> : null}
           </View>
         )}
         renderItem={({ item }) => {
@@ -239,7 +229,19 @@ function TwoPersonPlansContent({ route, navigation }) {
             />
           );
         }}
-        ListEmptyComponent={(
+        ListEmptyComponent={loading ? (
+          <ContinuityLoadingCard
+            label="Loading shared plans…"
+            body="Your shared-plan workspace is ready while the latest ideas load."
+            icon="sparkles-outline"
+          />
+        ) : error ? (
+          <ContinuityLoadingCard
+            error={error}
+            icon="sparkles-outline"
+            onRetry={() => load()}
+          />
+        ) : (
           <View style={styles.emptyState}>
             <Ionicons name="sparkles-outline" size={42} color={theme.colors.subtext} />
             <Text style={styles.emptyTitle}>Start with one small idea</Text>

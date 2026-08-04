@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
 
 import { Avatar } from '../../components/Avatar';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
@@ -113,7 +114,7 @@ function GuestRow({ guest, selected, onToggle }) {
 }
 
 function EventAttendanceReviewContent({ route, navigation }) {
-  const { eventId, conversationId } = route.params || {};
+  const { eventId, eventTitle = 'Event', conversationId } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [review, setReview] = useState(null);
@@ -152,7 +153,7 @@ function EventAttendanceReviewContent({ route, navigation }) {
 
   const attendedCount = selectedMembers.size + selectedGuests.size;
   const totalCount = (review?.members?.length || 0) + (review?.guests?.length || 0);
-  const wasReviewed = Boolean(review?.event?.attendanceReviewedAt);
+  const attendanceSource = review?.event?.attendanceSource || null;
 
   const memberIds = useMemo(() => review?.members?.map((member) => member.userId) || [], [review]);
   const guestIds = useMemo(() => review?.guests?.map((guest) => guest.id) || [], [review]);
@@ -197,7 +198,7 @@ function EventAttendanceReviewContent({ route, navigation }) {
       });
 
       Alert.alert(
-        wasReviewed ? 'Attendance updated' : 'Event completed',
+        'Attendance corrected',
         `${result.attendedCount} ${result.attendedCount === 1 ? 'person was' : 'people were'} marked as attended.`,
         [{ text: 'Done', onPress: () => navigation.goBack() }]
       );
@@ -211,23 +212,22 @@ function EventAttendanceReviewContent({ route, navigation }) {
     }
   };
 
-  if (loading && !review) {
+  if (!review) {
     return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.stateText}>Preparing attendance…</Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (error && !review) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="people-outline" size={38} color={theme.colors.text} />
-        <Text style={styles.errorText}>{error}</Text>
-        <Pressable onPress={load} style={styles.retryButton}>
-          <Text style={styles.retryText}>Try again</Text>
-        </Pressable>
+      <SafeAreaView edges={['bottom']} style={styles.screen}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.reviewContext}>
+            <Text style={styles.eventName}>{eventTitle}</Text>
+            <Text style={styles.eventDate}>Correct attendance</Text>
+          </View>
+          <ContinuityLoadingCard
+            label="Preparing attendance…"
+            body="The review workspace is already open while the attendee list loads."
+            icon="people-outline"
+            error={error}
+            onRetry={error ? load : undefined}
+          />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -242,6 +242,13 @@ function EventAttendanceReviewContent({ route, navigation }) {
           <Text style={styles.eventName}>{review?.event?.title || 'Event'}</Text>
           <Text style={styles.eventDate}>
             {formatEventDate(review?.event?.startsAt, review?.event?.endsAt)}
+          </Text>
+          <Text style={styles.reviewIntro}>
+            {attendanceSource === 'rsvp_assumed'
+              ? 'Going responses were used automatically. Only change the people whose actual attendance was different.'
+              : attendanceSource === 'host_reviewed'
+                ? 'You already corrected this attendance record. Make another adjustment only if something still needs fixing.'
+                : 'Going responses are preselected as a starting point. You can correct the record now, or leave it alone and Circles will settle it automatically.'}
           </Text>
           <View style={styles.summaryRow}>
             <View>
@@ -301,7 +308,7 @@ function EventAttendanceReviewContent({ route, navigation }) {
         <View style={styles.infoCard}>
           <Ionicons name="information-circle-outline" size={20} color={theme.colors.text} />
           <Text style={styles.infoText}>
-            This review creates explicit attendance history. It does not change anyone’s original RSVP or grant new profile access.
+            This only corrects the event’s attendance memory. Original RSVPs stay unchanged, and no new profile access is granted.
           </Text>
         </View>
 
@@ -317,7 +324,7 @@ function EventAttendanceReviewContent({ route, navigation }) {
             <>
               <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
               <Text style={styles.saveButtonText}>
-                {wasReviewed ? 'Save Attendance' : 'Complete Event'}
+                Save corrections
               </Text>
             </>
           )}
@@ -376,6 +383,13 @@ function createStyles(theme) {
   reviewContext: { paddingHorizontal: 2, paddingTop: 4, paddingBottom: 4 },
   eventName: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 18 },
   eventDate: { marginTop: 3, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12 },
+  reviewIntro: {
+    marginTop: 10,
+    color: theme.colors.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+    lineHeight: 17,
+  },
   summaryRow: {
     marginTop: 18,
     paddingTop: 16,

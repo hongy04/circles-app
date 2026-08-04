@@ -12,6 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
+import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
 import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
@@ -75,9 +76,9 @@ function formatEventDate(startsAt, endsAt) {
 }
 
 function EventCard({ event, onPress, styles, theme }) {
-  const startTime = new Date(event.startsAt).getTime();
-  const isPast = event.status === 'completed' || startTime < Date.now();
-  const historyLabel = event.attendanceReviewedAt ? 'Reviewed' : 'Past';
+  const endTime = new Date(event.endsAt || event.startsAt).getTime();
+  const isPast = event.status === 'completed' || endTime < Date.now();
+  const historyLabel = 'Past';
   const historySummary = event.attendanceReviewedAt
     ? `${event.attendedCount} attended`
     : `${event.goingCount} marked going`;
@@ -388,7 +389,8 @@ function CircleEventsContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
-      <ThemeAtmosphere theme={theme} strength={0.82} decals />
+      <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.12} />
+      <ThemeAtmosphere theme={theme} strength={0.34} decals />
       <FlatList
         data={eventRows}
         keyExtractor={(item) => item.rowType === 'section' ? item.id : item.event.id}

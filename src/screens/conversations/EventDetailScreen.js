@@ -14,8 +14,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
 import { EventRepeatCard } from '../../components/events/EventRepeatCard';
+import { EventLookHero } from '../../components/events/EventLookHero';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -52,6 +54,16 @@ const STATUS_LABELS = {
   pending: 'No response',
   invited: 'Invited',
 };
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(77,185,229,${alpha})`;
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function formatEventDate(startsAt, endsAt) {
   const start = new Date(startsAt);
@@ -125,6 +137,8 @@ function detailsFromEventSummary(summary, conversationId, circleName) {
       attendanceReviewedAt: summary.attendanceReviewedAt || null,
       completedAt: summary.completedAt || null,
       attendedCount: Number(summary.attendedCount || 0),
+      appearanceKey: summary.appearanceKey || 'circle',
+      attendanceSource: summary.attendanceSource || null,
     },
     counts: {
       attendeeCount: Number(summary.attendeeCount || 0),
@@ -559,6 +573,7 @@ function EventDetailContent({ route, navigation }) {
           outsideGuestCap: currentEvent.outsideGuestCap,
           membersCanInviteGuests: currentEvent.membersCanInviteGuests,
           allowPlusOnes: currentEvent.allowPlusOnes,
+          appearanceKey: currentEvent.appearanceKey || 'circle',
         },
       });
     } catch (repeatError) {
@@ -605,10 +620,18 @@ function EventDetailContent({ route, navigation }) {
   const attendees = details?.attendees || [];
   const guests = details?.guests || [];
   const guestInvitations = details?.guestInvitations || [];
+  const eventEndAt = event?.endsAt || event?.startsAt || null;
   const isPastEvent = Boolean(event) && (
-    event.isPast || event.status === 'completed' || new Date(event.startsAt).getTime() < Date.now()
+    event.status === 'completed'
+    || (eventEndAt ? new Date(eventEndAt).getTime() <= Date.now() : false)
   );
-  const eventLocked = event?.status === 'completed' || event?.status === 'cancelled';
+  const eventLocked = isPastEvent || event?.status === 'completed' || event?.status === 'cancelled';
+  const attendanceFinalized = Boolean(event?.attendanceReviewed);
+  const visibleAttendees = attendees.filter((attendee) => (
+    isPastEvent && attendanceFinalized
+      ? attendee.attended
+      : attendee.rsvpStatus === 'going' || attendee.rsvpStatus === 'maybe'
+  ));
 
   if (!event) {
     return (
@@ -642,69 +665,55 @@ function EventDetailContent({ route, navigation }) {
 
   const header = event ? (
     <View>
-      <View style={styles.heroCard}>
-        <View style={styles.privacyRow}>
-          <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
-          <Text style={styles.privacyText}>{formatCircleContext(event)}</Text>
-        </View>
+      <EventLookHero
+        appearanceKey={event.appearanceKey || 'circle'}
+        circleLabel={formatCircleContext(event)}
+        title={event.title}
+        dateLabel={formatEventDate(event.startsAt, event.endsAt)}
+        locationLabel={event.locationName}
+        isPast={isPastEvent}
+        isCancelled={event.status === 'cancelled'}
+      />
 
-        <Text style={styles.title}>{event.title}</Text>
-
-        {event.circleCount > 1 && event.circles.length > 1 ? (
-          <View style={styles.circleChips}>
-            {event.circles.map((circle) => (
-              <View key={circle.id} style={styles.circleChip}>
-                <Ionicons name="people-outline" size={13} color={theme.colors.text} />
-                <Text style={styles.circleChipText} numberOfLines={1}>{circle.name}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
-        <View style={styles.detailRow}>
-          <View style={styles.detailIcon}>
-            <Ionicons name="calendar-outline" size={20} color={theme.colors.text} />
-          </View>
-          <Text style={styles.detailText}>
-            {formatEventDate(event.startsAt, event.endsAt)}
+      <View style={styles.hostStrip}>
+        <Avatar size={38} name={event.hostName} uri={event.hostAvatar} />
+        <View style={styles.hostCopy}>
+          <Text style={styles.hostName}>Hosted by {event.hostName}</Text>
+          <Text style={styles.hostBody}>
+            {event.circleCount > 1
+              ? `Shared across ${event.circleCount} Circles`
+              : 'A private Circle gathering'}
           </Text>
         </View>
-
-        {event.locationName ? (
-          <View style={styles.detailRow}>
-            <View style={styles.detailIcon}>
-              <Ionicons name="location-outline" size={20} color={theme.colors.text} />
-            </View>
-            <Text style={styles.detailText}>{event.locationName}</Text>
+        {event.circleCount > 1 ? (
+          <View style={styles.circleCountPill}>
+            <Ionicons name="people-outline" size={13} color={theme.colors.text} />
+            <Text style={styles.circleCountPillText}>{event.circleCount}</Text>
           </View>
         ) : null}
-
-        <View style={styles.detailRow}>
-          <Avatar size={40} name={event.hostName} uri={event.hostAvatar} />
-          <View style={styles.hostCopy}>
-            <Text style={styles.hostName}>{event.hostName}</Text>
-            <Text style={styles.hostBody}>
-              {event.circleCount > 1
-                ? `Hosting across ${event.circleCount} Circles`
-                : 'Hosting for this Circle'}
-            </Text>
-          </View>
-        </View>
-
-        {event.description ? <Text style={styles.description}>{event.description}</Text> : null}
       </View>
 
-      <View style={styles.rsvpCard}>
-        <Text style={styles.rsvpTitle}>
-          {eventLocked ? 'Event completed' : 'Are you going?'}
-        </Text>
-        <Text style={styles.rsvpBody}>
-          {eventLocked
-            ? 'The original RSVP remains part of the event record. Attendance is tracked separately.'
-            : 'Your answer is visible only to members of the Circles invited to this event.'}
-        </Text>
+      {event.description ? (
+        <View style={styles.noteCard}>
+          <Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.colors.subtext} />
+          <Text style={styles.noteText}>{event.description}</Text>
+        </View>
+      ) : null}
 
-        {!eventLocked ? (
+      {!eventLocked ? (
+        <View style={styles.rsvpCard}>
+          <View style={styles.rsvpHeadingRow}>
+            <View>
+              <Text style={styles.rsvpEyebrow}>YOUR RSVP</Text>
+              <Text style={styles.rsvpTitle}>Are you going?</Text>
+            </View>
+            <View style={styles.currentRsvpPill}>
+              <Text style={styles.currentRsvpText}>
+                {STATUS_LABELS[event.viewerRsvpStatus] || 'No response'}
+              </Text>
+            </View>
+          </View>
+
           <View style={styles.rsvpButtons}>
             {RSVP_OPTIONS.map((option) => {
               const selected = event.viewerRsvpStatus === option.status;
@@ -725,50 +734,57 @@ function EventDetailContent({ route, navigation }) {
                   ) : (
                     <Ionicons
                       name={option.icon}
-                      size={19}
+                      size={18}
                       color={selected ? '#fff' : theme.colors.text}
                     />
                   )}
-                  <Text style={[
-                    styles.rsvpButtonText,
-                    selected && styles.rsvpButtonTextSelected,
-                  ]}>
+                  <Text style={[styles.rsvpButtonText, selected && styles.rsvpButtonTextSelected]}>
                     {option.label}
                   </Text>
                 </Pressable>
               );
             })}
           </View>
-        ) : null}
-      </View>
 
-      <View style={styles.countsRow}>
-        <CountCard value={counts?.going || 0} label="Going" />
-        <CountCard value={counts?.maybe || 0} label="Maybe" />
-        <CountCard value={counts?.pending || 0} label="Waiting" />
-      </View>
+          <View style={styles.responseStrip}>
+            <View style={styles.responseMetric}>
+              <Text style={styles.responseValue}>{counts?.going || 0}</Text>
+              <Text style={styles.responseLabel}>going</Text>
+            </View>
+            <View style={styles.responseDot} />
+            <View style={styles.responseMetric}>
+              <Text style={styles.responseValue}>{counts?.maybe || 0}</Text>
+              <Text style={styles.responseLabel}>maybe</Text>
+            </View>
+            <View style={styles.responseDot} />
+            <View style={styles.responseMetric}>
+              <Text style={styles.responseValue}>{counts?.pending || 0}</Text>
+              <Text style={styles.responseLabel}>waiting</Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
 
       {eventHistoryEnabled && isPastEvent ? (
-        <View style={styles.historyCard}>
-          <View style={styles.historyIcon}>
+        <View style={styles.memoryCard}>
+          <View style={styles.memoryIcon}>
             <Ionicons
-              name={event.attendanceReviewed ? 'checkmark-done-outline' : 'people-outline'}
-              size={23}
+              name={attendanceFinalized ? 'sparkles-outline' : 'time-outline'}
+              size={22}
               color={theme.colors.text}
             />
           </View>
-          <View style={styles.historyCopy}>
-            <Text style={styles.historyTitle}>
-              {event.attendanceReviewed
-                ? 'Attendance reviewed'
-                : (event.canManage ? 'Who made it?' : 'Past event')}
+          <View style={styles.memoryCopy}>
+            <Text style={styles.memoryEyebrow}>AFTER THE GATHERING</Text>
+            <Text style={styles.memoryTitle}>
+              {attendanceFinalized
+                ? (event.attendanceSource === 'host_reviewed' ? 'Attendance corrected by the host' : 'Attendance remembered from RSVPs')
+                : 'We’ll remember attendance automatically'}
             </Text>
-            <Text style={styles.historyBody}>
-              {event.attendanceReviewed
-                ? `${event.attendedCount} ${event.attendedCount === 1 ? 'person was' : 'people were'} marked as attended. Original RSVPs remain unchanged.`
-                : (event.canManage
-                  ? 'Review the guest list and record who actually attended. Going responses are only the starting suggestion.'
-                  : 'The host has not reviewed attendance for this event.')}
+            <Text style={styles.memoryBody}>
+              {attendanceFinalized
+                ? `${event.attendedCount} ${event.attendedCount === 1 ? 'person is' : 'people are'} in the attendance record.${event.attendanceSource === 'host_reviewed' ? ' The host adjusted the original RSVP-based record.' : ' Going responses became the starting attendance record.'}`
+                : 'The next morning, Going responses become the attendance record automatically. The host only needs to step in if something changed.'}
             </Text>
           </View>
           {event.canManage ? (
@@ -779,17 +795,53 @@ function EventDetailContent({ route, navigation }) {
                 conversationId,
                 circleName,
               })}
-              style={({ pressed }) => [styles.historyButton, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.memoryButton, pressed && styles.pressed]}
             >
-              <Text style={styles.historyButtonText}>
-                {event.attendanceReviewed ? 'Review again' : 'Review'}
-              </Text>
+              <Text style={styles.memoryButtonText}>Correct</Text>
             </Pressable>
           ) : null}
         </View>
       ) : null}
 
-      {repeatSignalsEnabled && event.attendanceReviewed && repeatSummary?.available ? (
+      <View style={styles.actionGrid}>
+        {eventPhotosEnabled ? (
+          <Pressable
+            onPress={() => navigation.navigate('EventPhotoGallery', {
+              eventId,
+              eventTitle: event.title,
+              conversationId,
+              circleName,
+            })}
+            style={({ pressed }) => [styles.actionTile, pressed && styles.pressed]}
+          >
+            <View style={styles.actionIcon}>
+              <Ionicons name="images-outline" size={22} color={theme.colors.text} />
+            </View>
+            <Text style={styles.actionTitle}>Photos</Text>
+            <Text style={styles.actionBody}>Keep the gathering together.</Text>
+          </Pressable>
+        ) : null}
+
+        {sharedEventConnectionsEnabled && attendanceFinalized ? (
+          <Pressable
+            onPress={() => navigation.navigate('EventConnections', {
+              eventId,
+              eventTitle: event.title,
+              conversationId,
+              circleName,
+            })}
+            style={({ pressed }) => [styles.actionTile, pressed && styles.pressed]}
+          >
+            <View style={styles.actionIcon}>
+              <Ionicons name="people-outline" size={22} color={theme.colors.text} />
+            </View>
+            <Text style={styles.actionTitle}>People</Text>
+            <Text style={styles.actionBody}>Reconnect through shared attendance.</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {repeatSignalsEnabled && attendanceFinalized && repeatSummary?.available ? (
         <EventRepeatCard
           summary={repeatSummary}
           updating={updatingRepeatSignal}
@@ -799,61 +851,16 @@ function EventDetailContent({ route, navigation }) {
         />
       ) : null}
 
-      {sharedEventConnectionsEnabled && event.attendanceReviewed ? (
-        <Pressable
-          onPress={() => navigation.navigate('EventConnections', {
-            eventId,
-            eventTitle: event.title,
-            conversationId,
-            circleName,
-          })}
-          style={({ pressed }) => [
-            styles.eventConnectionsCard,
-            pressed && styles.pressed,
-          ]}
-        >
-          <View style={styles.eventConnectionsIcon}>
-            <Ionicons name="people-outline" size={23} color={theme.colors.text} />
-          </View>
-          <View style={styles.eventConnectionsCopy}>
-            <Text style={styles.eventConnectionsTitle}>People from this event</Text>
-            <Text style={styles.eventConnectionsBody}>
-              See confirmed app attendees. Shared attendance gives limited profile context, never automatic access.
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.subtext} />
-        </Pressable>
-      ) : null}
-
-      {eventPhotosEnabled ? (
-        <Pressable
-          onPress={() => navigation.navigate('EventPhotoGallery', {
-            eventId,
-            eventTitle: event.title,
-            conversationId,
-            circleName,
-          })}
-          style={({ pressed }) => [
-            styles.photoGalleryCard,
-            pressed && styles.pressed,
-          ]}
-        >
-          <View style={styles.photoGalleryIcon}>
-            <Ionicons name="images-outline" size={23} color={theme.colors.text} />
-          </View>
-          <View style={styles.photoGalleryCopy}>
-            <Text style={styles.photoGalleryTitle}>Event photos</Text>
-            <Text style={styles.photoGalleryBody}>
-              Share photos from this gathering. Invited guests can view the gallery through their private link.
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.subtext} />
-        </Pressable>
-      ) : null}
-
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Circle responses</Text>
-        <Text style={styles.sectionCount}>{counts?.attendeeCount || 0} people</Text>
+        <View>
+          <Text style={styles.sectionEyebrow}>{isPastEvent ? 'THE MEMORY' : 'THE GUEST LIST'}</Text>
+          <Text style={styles.sectionTitle}>
+            {isPastEvent ? (attendanceFinalized ? 'Who was there' : 'Who planned to come') : 'Who’s coming'}
+          </Text>
+        </View>
+        <Text style={styles.sectionCount}>
+          {visibleAttendees.length} {visibleAttendees.length === 1 ? 'person' : 'people'}
+        </Text>
       </View>
     </View>
   ) : null;
@@ -861,29 +868,22 @@ function EventDetailContent({ route, navigation }) {
   const guestFooter = event && (event.outsideGuestCap > 0 || event.canManage || guests.length > 0 || guestInvitations.length > 0) ? (
     <View style={styles.guestSection}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Outside guests</Text>
+        <View>
+          <Text style={styles.sectionEyebrow}>OUTSIDE THE CIRCLE</Text>
+          <Text style={styles.sectionTitle}>Guests</Text>
+        </View>
         <Text style={styles.sectionCount}>
-          {event.reservedGuestCount}/{event.outsideGuestCap} spots
+          {event.reservedGuestCount}/{event.outsideGuestCap || 0} spots
         </Text>
       </View>
 
-      <View style={styles.guestPolicyCard}>
-        <View style={styles.guestPolicyIcon}>
-          <Ionicons name="shield-checkmark-outline" size={21} color={theme.colors.text} />
-        </View>
-        <View style={styles.guestPolicyCopy}>
-          <Text style={styles.guestPolicyTitle}>
-            {event.outsideGuestCap > 0 ? 'Controlled guest list' : 'Outside guests are off'}
-          </Text>
-          <Text style={styles.guestPolicyBody}>
-            {event.outsideGuestCap > 0
-              ? `${guestInviteLinksEnabled
-                ? (event.membersCanInviteGuests ? 'Circle members may create private guest invitations.' : 'Only the host may create private guest invitations.')
-                : (event.membersCanInviteGuests ? 'Circle members may add named guests manually.' : 'Only the host may add named guests manually.')} ${event.allowPlusOnes ? 'Plus-ones are allowed.' : 'Plus-ones are off.'}${guestInviteLinksEnabled ? ' Recipients enter their own name and RSVP.' : ''}`
-              : 'The host can enable named outside guests without exposing private Circle content.'}
-          </Text>
-        </View>
-      </View>
+      {event.outsideGuestCap > 0 ? (
+        <Text style={styles.guestPolicyLine}>
+          {event.membersCanInviteGuests ? 'Members can invite' : 'Host invites'}
+          {'  ·  '}
+          {event.allowPlusOnes ? 'Plus-ones on' : 'No plus-ones'}
+        </Text>
+      ) : null}
 
       {outsideGuestControlsEnabled && !eventLocked && (event.canManage || event.canAddGuests) ? (
         <View style={styles.guestActionRow}>
@@ -936,7 +936,7 @@ function EventDetailContent({ route, navigation }) {
               controlsEnabled={outsideGuestControlsEnabled && !eventLocked}
               onChangeStatus={chooseGuestStatus}
               onRemove={confirmRemoveGuest}
-              attendanceReviewed={event.attendanceReviewed}
+              attendanceReviewed={attendanceFinalized}
             />
           ))}
         </View>
@@ -947,9 +947,7 @@ function EventDetailContent({ route, navigation }) {
       ) : event.outsideGuestCap > 0 ? (
         <View style={styles.emptyGuestCard}>
           <Text style={styles.emptyGuestTitle}>No outside guests yet</Text>
-          <Text style={styles.emptyGuestBody}>
-            Create a private invitation so the recipient can enter their own name and RSVP. Manual entry remains available as a fallback.
-          </Text>
+          <Text style={styles.emptyGuestBody}>Invite someone when it adds to the gathering. They still won’t see private Circle content.</Text>
         </View>
       ) : null}
     </View>
@@ -957,8 +955,9 @@ function EventDetailContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={0.48} decals />
       <FlatList
-        data={attendees}
+        data={visibleAttendees}
         keyExtractor={(item) => item.userId}
         ListHeaderComponent={header}
         ListFooterComponent={guestFooter}
@@ -969,7 +968,14 @@ function EventDetailContent({ route, navigation }) {
           <View style={styles.inlineLoading}>
             <ActivityIndicator color={theme.circle.accent} />
           </View>
-        ) : null}
+        ) : (
+          <View style={styles.emptyAttendeeCard}>
+            <Ionicons name={isPastEvent ? 'sparkles-outline' : 'people-outline'} size={20} color={theme.colors.subtext} />
+            <Text style={styles.emptyAttendeeText}>
+              {isPastEvent ? 'Attendance will settle here automatically, or the host can correct it.' : 'No one has marked Going or Maybe yet.'}
+            </Text>
+          </View>
+        )}
         refreshControl={(
           <RefreshControl
             refreshing={refreshing}
@@ -997,8 +1003,12 @@ export function EventDetailScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.86);
+  const glassStrong = rgba(theme.colors.surface, 0.94);
+  const accentLine = rgba(theme.circle.accent, 0.20);
+  const accentWash = rgba(theme.circle.accent, 0.10);
   return StyleSheet.create({
-  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
   content: {
     width: '100%',
     maxWidth: 720,
@@ -1094,14 +1104,53 @@ function createStyles(theme) {
     fontSize: 14,
     lineHeight: 21,
   },
+  hostStrip: {
+    marginTop: 13,
+    minHeight: 66,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  circleCountPill: {
+    minHeight: 30,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    backgroundColor: accentWash,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  circleCountPillText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 10 },
+  noteCard: {
+    marginTop: 10,
+    padding: 14,
+    borderRadius: 17,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+  },
+  noteText: { flex: 1, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19 },
   rsvpCard: {
     marginTop: 12,
-    padding: 18,
-    borderRadius: 16,
+    padding: 16,
+    borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
   },
+  rsvpHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  rsvpEyebrow: { color: theme.colors.subtext, fontFamily: 'Manrope_700Bold', fontSize: 9, letterSpacing: 0.9 },
+  currentRsvpPill: { minHeight: 29, paddingHorizontal: 10, borderRadius: 999, backgroundColor: accentWash, justifyContent: 'center' },
+  currentRsvpText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 10 },
   rsvpTitle: {
     color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
@@ -1136,6 +1185,20 @@ function createStyles(theme) {
     fontSize: 11,
   },
   rsvpButtonTextSelected: { color: '#fff' },
+  responseStrip: {
+    marginTop: 14,
+    minHeight: 40,
+    borderRadius: 14,
+    backgroundColor: accentWash,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  responseMetric: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  responseValue: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+  responseLabel: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 9 },
+  responseDot: { width: 3, height: 3, borderRadius: 999, backgroundColor: rgba(theme.colors.subtext, 0.46) },
   countsRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   historyCard: {
     marginTop: 14,
@@ -1266,6 +1329,37 @@ function createStyles(theme) {
     fontFamily: 'Manrope_400Regular',
     fontSize: 10,
   },
+  memoryCard: {
+    marginTop: 13,
+    padding: 15,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  memoryIcon: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: accentWash },
+  memoryCopy: { flex: 1, minWidth: 0 },
+  memoryEyebrow: { color: theme.colors.subtext, fontFamily: 'Manrope_700Bold', fontSize: 8, letterSpacing: 0.8 },
+  memoryTitle: { marginTop: 2, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14, lineHeight: 18 },
+  memoryBody: { marginTop: 4, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10, lineHeight: 15 },
+  memoryButton: { minHeight: 35, paddingHorizontal: 11, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.welcome.brandInk },
+  memoryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 10 },
+  actionGrid: { flexDirection: 'row', gap: 9, marginTop: 12 },
+  actionTile: {
+    flex: 1,
+    minHeight: 116,
+    padding: 14,
+    borderRadius: 19,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentLine,
+    backgroundColor: glass,
+  },
+  actionIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: accentWash, marginBottom: 10 },
+  actionTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
+  actionBody: { marginTop: 3, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 9, lineHeight: 14 },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1274,6 +1368,7 @@ function createStyles(theme) {
     marginBottom: 9,
     paddingHorizontal: 2,
   },
+  sectionEyebrow: { color: theme.colors.subtext, fontFamily: 'Manrope_700Bold', fontSize: 8, letterSpacing: 0.8, marginBottom: 2 },
   sectionTitle: {
     color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
@@ -1292,7 +1387,7 @@ function createStyles(theme) {
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: glassStrong,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -1350,7 +1445,15 @@ function createStyles(theme) {
     fontSize: 11,
     lineHeight: 16,
   },
-  guestActionRow: { flexDirection: 'row', gap: 9, marginTop: 10 },
+  guestPolicyLine: {
+    marginTop: -2,
+    marginBottom: 9,
+    paddingHorizontal: 2,
+    color: theme.colors.subtext,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 10,
+  },
+  guestActionRow: { flexDirection: 'row', gap: 9, marginTop: 4 },
   secondaryGuestButton: {
     minHeight: 44,
     flex: 1,
@@ -1392,7 +1495,7 @@ function createStyles(theme) {
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: glassStrong,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -1447,6 +1550,18 @@ function createStyles(theme) {
     alignItems: 'center',
     justifyContent: 'center',
   },
+  emptyAttendeeCard: {
+    minHeight: 74,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  emptyAttendeeText: { flex: 1, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11, lineHeight: 16 },
   emptyGuestCard: {
     marginTop: 10,
     padding: 16,

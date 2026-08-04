@@ -13,6 +13,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
+import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -21,6 +22,18 @@ import {
   subscribeToTwoPersonThoughtChanges,
 } from '../../services/twoPersonThoughtService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function formatSharedAt(value) {
   if (!value) return '';
@@ -126,24 +139,27 @@ function TwoPersonThoughtDetailContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.10} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.contextRow}>
           <Ionicons name="lock-closed" size={11} color={theme.colors.subtext} />
           <Text style={styles.contextText}>{circleName} · shared only with each other</Text>
         </View>
 
-        <View style={styles.authorRow}>
-          <Avatar size={44} name={thought.authorName} uri={thought.authorAvatarUrl} />
-          <View style={styles.authorCopy}>
-            <Text style={styles.authorName}>
-              {thought.isAuthor ? 'Shared by you' : `Shared by ${thought.authorName}`}
-            </Text>
-            <Text style={styles.sharedAt}>{formatSharedAt(thought.sharedAt)}</Text>
+        <View style={styles.articleCard}>
+          <View style={styles.authorRow}>
+            <Avatar size={44} name={thought.authorName} uri={thought.authorAvatarUrl} />
+            <View style={styles.authorCopy}>
+              <Text style={styles.authorName}>
+                {thought.isAuthor ? 'Shared by you' : `Shared by ${thought.authorName}`}
+              </Text>
+              <Text style={styles.sharedAt}>{formatSharedAt(thought.sharedAt)}</Text>
+            </View>
           </View>
-        </View>
 
-        <Text style={styles.title}>{thought.title || 'A shared thought'}</Text>
-        <Text style={styles.body}>{thought.body}</Text>
+          <Text style={styles.title}>{thought.title || 'A shared thought'}</Text>
+          <Text style={styles.body}>{thought.body}</Text>
+        </View>
 
         <View style={styles.readOnlyCard}>
           <View style={styles.readOnlyIcon}>
@@ -183,6 +199,10 @@ export function TwoPersonThoughtDetailScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentBorder = rgba(theme.circle.accent, 0.20);
+
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
     content: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 70 },
@@ -190,7 +210,7 @@ function createStyles(theme) {
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: theme.circle.profileBackground,
+      backgroundColor: glassStrong,
       paddingHorizontal: 28,
       gap: 10,
     },
@@ -206,19 +226,20 @@ function createStyles(theme) {
     retryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 12 },
     contextRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     contextText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
-    authorRow: { marginTop: 21, flexDirection: 'row', alignItems: 'center', gap: 11 },
+    articleCard: { marginTop: 18, padding: 18, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glassStrong },
+    authorRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
     authorCopy: { flex: 1 },
     authorName: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
     sharedAt: { marginTop: 2, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10.5 },
-    title: { marginTop: 25, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 26, lineHeight: 34 },
+    title: { marginTop: 22, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 26, lineHeight: 34 },
     body: { marginTop: 16, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 15, lineHeight: 25 },
     readOnlyCard: {
       marginTop: 30,
       padding: 14,
       borderRadius: 15,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: theme.circle.accentSoft,
-      backgroundColor: theme.colors.surface,
+      borderColor: accentBorder,
+      backgroundColor: glassStrong,
       flexDirection: 'row',
       alignItems: 'flex-start',
       gap: 10,

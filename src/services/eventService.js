@@ -67,7 +67,7 @@ function mapEventDetails(data, rawInvitations = [], attendanceSummary = {}) {
       startsAt: rawEvent.starts_at,
       endsAt: rawEvent.ends_at || null,
       locationName: rawEvent.location_name || '',
-      status: rawEvent.status || 'scheduled',
+      status: attendanceSummary?.status || rawEvent.status || 'scheduled',
       hostId: rawEvent.host_id,
       hostName: rawEvent.host_name || 'Circle member',
       hostAvatar: rawEvent.host_avatar || null,
@@ -94,6 +94,11 @@ function mapEventDetails(data, rawInvitations = [], attendanceSummary = {}) {
       attendanceReviewedAt,
       completedAt: attendanceSummary?.completed_at || null,
       attendedCount: Number(attendanceSummary?.attended_count || 0),
+      appearanceKey: attendanceSummary?.appearance_key || 'circle',
+      timezoneName: attendanceSummary?.timezone_name || null,
+      attendanceSource: attendanceSummary?.attendance_source || null,
+      attendanceAssumedAt: attendanceSummary?.attendance_assumed_at || null,
+      attendanceDueAt: attendanceSummary?.attendance_due_at || null,
     },
     counts: {
       attendeeCount: Number(counts.attendee_count || 0),
@@ -165,6 +170,8 @@ export async function createCircleEvent({
   outsideGuestCap = 0,
   membersCanInviteGuests = false,
   allowPlusOnes = false,
+  appearanceKey = 'circle',
+  timezoneName = null,
 }) {
   await ensureAuthed();
   await requireFeature(
@@ -221,6 +228,19 @@ export async function createCircleEvent({
 
   if (error) throw error;
   if (!data?.event_id) throw new Error('Circles could not create the event.');
+
+  // Appearance/timezone metadata is intentionally non-blocking. The event is
+  // already valid if this newer RPC is unavailable during a staged rollout.
+  try {
+    const { error: experienceError } = await supabase.rpc('configure_event_experience', {
+      p_event_id: data.event_id,
+      p_appearance_key: String(appearanceKey || 'circle'),
+      p_timezone_name: timezoneName ? String(timezoneName) : null,
+    });
+    if (experienceError) throw experienceError;
+  } catch (experienceError) {
+    console.warn('Could not save event appearance metadata', experienceError);
+  }
 
   void trackAppEvent('event_created', {
     surface: 'create_event',
@@ -397,11 +417,14 @@ export async function getEventAttendanceReview(eventId) {
 
   if (!eventId) throw new Error('Event is missing.');
 
-  const { data, error } = await supabase.rpc('get_event_attendance_review', {
-    p_event_id: eventId,
-  });
+  const [reviewResult, experienceResult] = await Promise.all([
+    supabase.rpc('get_event_attendance_review', { p_event_id: eventId }),
+    supabase.rpc('get_event_experience', { p_event_id: eventId }),
+  ]);
 
-  if (error) throw error;
+  if (reviewResult.error) throw reviewResult.error;
+  const data = reviewResult.data;
+  const experience = experienceResult.error ? null : experienceResult.data;
   if (!data?.event?.id) throw new Error('Event not found or unavailable.');
 
   return {
@@ -413,6 +436,7 @@ export async function getEventAttendanceReview(eventId) {
       status: data.event.status || 'scheduled',
       attendanceReviewedAt: data.event.attendance_reviewed_at || null,
       completedAt: data.event.completed_at || null,
+      attendanceSource: experience?.attendance_source || null,
     },
     members: (data.members || []).map((member) => ({
       userId: member.user_id,
@@ -455,6 +479,15 @@ export async function saveEventAttendanceReview({
   });
 
   if (error) throw error;
+
+  // Older attendance RPCs only know that attendance was finalized. Mark the
+  // source separately so the event can distinguish automatic RSVP assumptions
+  // from a host correction.
+  try {
+    const { error: sourceError } = await supabase.rpc('mark_event_attendance_host_reviewed', { p_event_id: eventId });
+    if (sourceError) throw sourceError;
+  } catch {}
+
   return {
     status: data?.status || 'completed',
     attendanceReviewedAt: data?.attendance_reviewed_at || null,

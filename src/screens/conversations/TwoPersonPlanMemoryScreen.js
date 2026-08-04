@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { listCirclePosts } from '../../services/circlePostService';
@@ -23,6 +24,18 @@ import {
   updateTwoPersonPlanMemoryPost,
 } from '../../services/twoPersonPlanService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function dateOnly(value) {
   if (!value) return '';
@@ -247,15 +260,18 @@ function TwoPersonPlanMemoryContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.10} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.contextRow}>
-          <Ionicons name="lock-closed" size={11} color={theme.colors.subtext} />
-          <Text style={styles.contextText}>{circleName} · deliberate memory links</Text>
+        <View style={styles.introCard}>
+          <View style={styles.contextRow}>
+            <Ionicons name="lock-closed" size={11} color={theme.colors.subtext} />
+            <Text style={styles.contextText}>{circleName} · deliberate memory links</Text>
+          </View>
+          <Text style={styles.heading}>Build this memory</Text>
+          <Text style={styles.helper}>
+            Link content that already belongs to this Our Circle, or deliberately create something new. Nothing is copied or published automatically.
+          </Text>
         </View>
-        <Text style={styles.heading}>Build this memory</Text>
-        <Text style={styles.helper}>
-          Link content that already belongs to this Our Circle, or deliberately create something new. Nothing is copied or published automatically.
-        </Text>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -378,17 +394,22 @@ export function TwoPersonPlanMemoryScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentBorder = rgba(theme.circle.accent, 0.20);
+
   return StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   content: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 18, paddingBottom: 70 },
+  introCard: { padding: 17, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glassStrong },
   contextRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   contextText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
   heading: { marginTop: 10, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 27 },
   helper: { marginTop: 7, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13.5, lineHeight: 20 },
   errorText: { marginTop: 13, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12, lineHeight: 17 },
-  section: { marginTop: 20, padding: 14, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: '#fff' },
+  section: { marginTop: 20, padding: 14, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glassStrong },
   sectionHeadingRow: { flexDirection: 'row', alignItems: 'center' },
-  sectionIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f2f0f5' },
+  sectionIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: rgba(theme.circle.accent, 0.12) },
   sectionHeadingCopy: { flex: 1, marginLeft: 11 },
   sectionTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
   sectionBody: { marginTop: 2, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
@@ -397,8 +418,8 @@ function createStyles(theme) {
   unlinkButton: { minHeight: 38, marginTop: 7, alignItems: 'center', justifyContent: 'center' },
   unlinkText: { color: '#b42318', fontFamily: 'Manrope_700Bold', fontSize: 11.5 },
   listLabel: { marginTop: 17, marginBottom: 7, color: theme.colors.subtext, fontFamily: 'Manrope_700Bold', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.4 },
-  optionRow: { marginTop: 7, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, overflow: 'hidden', backgroundColor: '#fafafa' },
-  selectedRow: { borderColor: '#b8aaca', backgroundColor: '#f6f2fa' },
+  optionRow: { marginTop: 7, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, overflow: 'hidden', backgroundColor: glass },
+  selectedRow: { borderColor: '#b8aaca', backgroundColor: rgba(theme.circle.accent, 0.14) },
   optionMain: { minHeight: 70, flexDirection: 'row', alignItems: 'center', padding: 9 },
   optionImage: { width: 52, height: 52, borderRadius: 11, backgroundColor: '#eee' },
   optionPlaceholder: { alignItems: 'center', justifyContent: 'center' },

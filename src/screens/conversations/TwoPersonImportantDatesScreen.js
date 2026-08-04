@@ -1,6 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -12,6 +11,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
+import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -27,6 +29,18 @@ const CATEGORY_META = Object.freeze({
   tradition: { label: 'Tradition', icon: 'repeat-outline' },
   meaningful: { label: 'Meaningful', icon: 'star-outline' },
 });
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function parseDateValue(value) {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -192,17 +206,10 @@ function TwoPersonImportantDatesContent({ route, navigation }) {
     ...section.data.map((item) => ({ type: 'date', id: item.id, item })),
   ])), [sections]);
 
-  if (loading) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator color={theme.circle.accent} />
-        <Text style={styles.stateText}>Opening important dates…</Text>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.10} />
+      <ThemeAtmosphere theme={theme} strength={0.28} decals />
       <FlatList
         data={flatData}
         keyExtractor={(item) => item.id}
@@ -218,7 +225,7 @@ function TwoPersonImportantDatesContent({ route, navigation }) {
               <Ionicons name="add" size={18} color="#fff" />
               <Text style={styles.newButtonText}>Add Important Date</Text>
             </Pressable>
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {error && dates.length > 0 ? <Text style={styles.errorText}>{error}</Text> : null}
           </View>
         )}
         renderItem={({ item }) => {
@@ -249,7 +256,19 @@ function TwoPersonImportantDatesContent({ route, navigation }) {
             />
           );
         }}
-        ListEmptyComponent={(
+        ListEmptyComponent={loading ? (
+          <ContinuityLoadingCard
+            label="Loading important dates…"
+            body="The shared date space is already open while the latest dates load."
+            icon="calendar-outline"
+          />
+        ) : error ? (
+          <ContinuityLoadingCard
+            error={error}
+            icon="calendar-outline"
+            onRetry={() => load()}
+          />
+        ) : (
           <View style={styles.emptyState}>
             <Ionicons name="calendar-outline" size={42} color={theme.circle.accent} />
             <Text style={styles.emptyTitle}>Save a date that matters</Text>
@@ -285,6 +304,10 @@ export function TwoPersonImportantDatesScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.82);
+  const glassStrong = rgba(theme.colors.surface, 0.92);
+  const accentBorder = rgba(theme.circle.accent, 0.20);
+
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
     listContent: { flexGrow: 1, paddingBottom: 36 },
@@ -296,7 +319,7 @@ function createStyles(theme) {
       gap: 10,
     },
     stateText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-    topActions: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 2 },
+    topActions: { marginTop: 12, marginHorizontal: 14, padding: 10, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glassStrong },
     newButton: {
       minHeight: 43,
       borderRadius: 11,
@@ -325,8 +348,8 @@ function createStyles(theme) {
       paddingVertical: 12,
       borderRadius: 15,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: theme.circle.accentSoft,
-      backgroundColor: theme.colors.surface,
+      borderColor: accentBorder,
+      backgroundColor: glass,
       flexDirection: 'row',
       alignItems: 'center',
     },
@@ -350,7 +373,7 @@ function createStyles(theme) {
     recurrenceText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 9 },
     cardDate: { marginTop: 4, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 11.5 },
     cardMeta: { marginTop: 3, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5 },
-    emptyState: { minHeight: 330, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34 },
+    emptyState: { minHeight: 330, marginHorizontal: 14, marginTop: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, borderColor: accentBorder, backgroundColor: glass },
     emptyTitle: { marginTop: 12, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 17 },
     emptyBody: {
       marginTop: 6,
