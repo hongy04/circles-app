@@ -33,6 +33,7 @@ import { Avatar } from './src/components/Avatar';
 import { DevBanner } from './src/components/DevBanner';
 import { LaunchPortal } from './src/components/LaunchPortal';
 import { FrutigerAeroTabBar } from './src/components/FrutigerAeroTabBar';
+import { ThemeAtmosphere } from './src/components/ThemeAtmosphere';
 import { AuthNavigator } from './src/navigation/AuthNavigator';
 import {
   flushPendingPushDestination,
@@ -133,6 +134,18 @@ import {
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W } = Dimensions.get('window');
+
+function themeRgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 /* ---------------- Navigation ---------------- */
 const RootStack = createNativeStackNavigator();
@@ -953,7 +966,7 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
 
   if (!hasPreview) {
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.border, borderRadius: 12, backgroundColor: theme.colors.surface }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: themeRgba(theme.circle.accent, 0.16), borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.82)', shadowColor: theme.circle.accent, shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 1 }}>
         <Pressable
           onPress={onOpenProfile}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
@@ -985,7 +998,7 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
   }
 
   return (
-    <View style={{ borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.border, borderRadius: 16, overflow: 'hidden', backgroundColor: theme.colors.surface }}>
+    <View style={{ borderWidth: StyleSheet.hairlineWidth, borderColor: themeRgba(theme.circle.accent, 0.16), borderRadius: 18, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.84)', shadowColor: theme.circle.accent, shadowOpacity: 0.07, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 2 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12 }}>
         <Pressable
           onPress={onOpenProfile}
@@ -1084,6 +1097,10 @@ function MutualCandidateCard({ user, sending, onOpenProfile, onRequest }) {
 
 function MutualsScreen({ navigation, route }) {
   const theme = useThemeTokens();
+  const glass = 'rgba(255,255,255,0.76)';
+  const glassStrong = 'rgba(255,255,255,0.86)';
+  const glassBorder = themeRgba(theme.circle.accent, 0.16);
+  const accentMist = themeRgba(theme.circle.accent, 0.055);
   const [loading, setLoading] = useState(true);
   const [candidates, setCandidates] = useState([]);
   const [incoming, setIncoming] = useState([]);
@@ -1258,6 +1275,7 @@ function MutualsScreen({ navigation, route }) {
   if (loading) {
     return (
       <SafeAreaView edges={['top']} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.bg }}>
+        <ThemeAtmosphere theme={theme} strength={0.9} decals />
         <ActivityIndicator color={theme.circle.accent} />
       </SafeAreaView>
     );
@@ -1270,43 +1288,79 @@ function MutualsScreen({ navigation, route }) {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.colors.bg }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 8 }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 24 }}>Mutuals</Text>
-          <Text style={{ color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, marginTop: 2 }}>
-            Discover trusted context and handle connection requests.
-          </Text>
+      <ThemeAtmosphere theme={theme} strength={1.02} decals />
+
+      <View
+        style={{
+          marginHorizontal: 10,
+          marginTop: 8,
+          paddingHorizontal: 14,
+          paddingTop: 13,
+          paddingBottom: 12,
+          borderRadius: 22,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: glassBorder,
+          backgroundColor: glass,
+          shadowColor: theme.circle.accent,
+          shadowOpacity: 0.07,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: 8 },
+          elevation: 2,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 24 }}>Mutuals</Text>
+            <Text style={{ color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, marginTop: 2 }}>
+              People already near your real social world.
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => navigation.navigate('InvitePeople')}
+            style={({ pressed }) => ({
+              minHeight: 40,
+              borderRadius: 14,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: glassBorder,
+              backgroundColor: 'rgba(255,255,255,0.64)',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 12,
+              opacity: pressed ? 0.65 : 1,
+            })}
+          >
+            <Ionicons name="person-add-outline" size={18} color={theme.colors.text} />
+            <Text style={{ color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12 }}>Invite</Text>
+          </Pressable>
         </View>
-        <Pressable
-          onPress={() => navigation.navigate('InvitePeople')}
-          style={({ pressed }) => ({
-            minHeight: 40,
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: theme.colors.border,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6,
-            paddingHorizontal: 12,
-            opacity: pressed ? 0.65 : 1,
-          })}
-        >
-          <Ionicons name="person-add-outline" size={18} color={theme.colors.text} />
-          <Text style={{ color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12 }}>Invite</Text>
-        </Pressable>
       </View>
 
-      <View style={{ flexDirection: 'row', margin: 12, backgroundColor: theme.colors.surfaceSoft, borderRadius: 10 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          marginHorizontal: 10,
+          marginTop: 9,
+          marginBottom: 2,
+          padding: 4,
+          backgroundColor: glass,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: glassBorder,
+          borderRadius: 14,
+        }}
+      >
         {segmentItems.map((item) => (
           <Pressable
             key={item.key}
             onPress={() => setTab(item.key)}
             style={({ pressed }) => ({
               flex: 1,
-              paddingVertical: 10,
+              minHeight: 38,
+              paddingVertical: 9,
               alignItems: 'center',
+              justifyContent: 'center',
               backgroundColor: tab === item.key ? theme.circle.accent : 'transparent',
-              borderRadius: 10,
+              borderRadius: 11,
               opacity: pressed ? 0.9 : 1,
             })}
           >
@@ -1326,7 +1380,7 @@ function MutualsScreen({ navigation, route }) {
 
       {tab === 'mutuals' ? (
         <ScrollView
-          contentContainerStyle={{ padding: 12, gap: 12, flexGrow: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 10, paddingTop: 10, paddingBottom: 100, gap: 12, flexGrow: 1 }}
           refreshControl={(
             <RefreshControl
               refreshing={refreshing}
@@ -1339,7 +1393,7 @@ function MutualsScreen({ navigation, route }) {
           )}
         >
           {trustedRankingActive ? (
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 11, borderRadius: 12, backgroundColor: theme.colors.surfaceSoft }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 12, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: glassBorder, backgroundColor: glass }}>
               <Ionicons name="git-network-outline" size={18} color={theme.colors.text} />
               <Text style={{ flex: 1, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12, lineHeight: 18 }}>
                 Ordered by shared events, shared Circles, mutual connections, and mutual contacts — never popularity or engagement.
@@ -1347,7 +1401,7 @@ function MutualsScreen({ navigation, route }) {
             </View>
           ) : null}
           {candidates.length === 0 ? (
-            <View style={{ alignItems: 'center', paddingVertical: 38, paddingHorizontal: 24 }}>
+            <View style={{ alignItems: 'center', marginTop: 4, paddingVertical: 34, paddingHorizontal: 24, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: glassBorder, backgroundColor: glass }}>
               <Ionicons name="people-outline" size={38} color={theme.colors.subtext} />
               <Text style={{ marginTop: 10, textAlign: 'center', color: theme.colors.text, fontFamily: 'Manrope_700Bold' }}>
                 No mutuals yet
@@ -1383,7 +1437,7 @@ function MutualsScreen({ navigation, route }) {
         </ScrollView>
       ) : tab === 'requests' ? (
         <ScrollView
-          contentContainerStyle={{ padding: 12, gap: 12, flexGrow: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 10, paddingTop: 10, paddingBottom: 100, gap: 12, flexGrow: 1 }}
           refreshControl={(
             <RefreshControl
               refreshing={refreshing}
@@ -1396,9 +1450,13 @@ function MutualsScreen({ navigation, route }) {
           )}
         >
           {incoming.length === 0 ? (
-            <Text style={{ textAlign: 'center', color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', paddingTop: 38 }}>No requests right now.</Text>
+            <View style={{ alignItems: 'center', marginTop: 4, paddingVertical: 32, paddingHorizontal: 24, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: glassBorder, backgroundColor: glass }}>
+              <Ionicons name="mail-open-outline" size={34} color={theme.colors.subtext} />
+              <Text style={{ marginTop: 9, textAlign: 'center', color: theme.colors.text, fontFamily: 'Manrope_700Bold' }}>No requests right now</Text>
+              <Text style={{ marginTop: 4, textAlign: 'center', color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12 }}>New connection requests will appear here.</Text>
+            </View>
           ) : incoming.map((request) => (
-            <View key={request.id} style={{ padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.border, borderRadius: 12, backgroundColor: theme.colors.surface }}>
+            <View key={request.id} style={{ padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: glassBorder, borderRadius: 18, backgroundColor: glassStrong, shadowColor: theme.circle.accent, shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 1 }}>
               <Pressable
                 onPress={() => navigation.navigate('Profile', { userId: request.from_user })}
                 style={{ flexDirection: 'row', alignItems: 'center' }}
@@ -1433,7 +1491,8 @@ function MutualsScreen({ navigation, route }) {
                     paddingVertical: 10,
                     borderRadius: 10,
                     borderWidth: 1,
-                    borderColor: theme.colors.border,
+                    borderColor: glassBorder,
+                    backgroundColor: accentMist,
                     alignItems: 'center',
                     opacity: pressed || responding[request.id] ? 0.7 : 1,
                   })}

@@ -40,9 +40,22 @@ import { InstagramCommentsSheet } from '../../components/comments/InstagramComme
 import { StoriesRail } from '../../components/stories/StoriesRail';
 import { StoryViewer } from '../../components/stories/StoryViewer';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { timeAgo } from '../../utils/timeAgo';
 
 const PAGE_SIZE = 10;
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function errorMessage(error, fallback) {
   return error?.message || fallback;
@@ -624,7 +637,8 @@ export function FeedScreen({ navigation }) {
   if (initialLoading) {
     return (
       <SafeAreaView edges={['top']} style={styles.centerRoot}>
-        <ActivityIndicator />
+        <ThemeAtmosphere theme={theme} strength={0.78} decals />
+        <ActivityIndicator color={theme.circle.accent} />
         <Text style={styles.loadingText}>Loading your feed…</Text>
       </SafeAreaView>
     );
@@ -633,6 +647,7 @@ export function FeedScreen({ navigation }) {
   if (feedError && posts.length === 0) {
     return (
       <SafeAreaView edges={['top']} style={styles.centerRoot}>
+        <ThemeAtmosphere theme={theme} strength={0.78} decals />
         <Ionicons
           name="cloud-offline-outline"
           size={34}
@@ -649,7 +664,9 @@ export function FeedScreen({ navigation }) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.root}>
+      <ThemeAtmosphere theme={theme} strength={0.82} decals />
       <FlatList
+        style={styles.feedList}
         data={posts}
         keyExtractor={(post) => post.id}
         renderItem={({ item }) => (
@@ -690,32 +707,46 @@ export function FeedScreen({ navigation }) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
+            tintColor={theme.circle.accent}
           />
         }
         ListHeaderComponent={
           <View>
-            <View style={styles.feedHeader}>
-              <Text style={styles.feedTitle}>Feed</Text>
-              <Pressable
-                onPress={() => navigation.navigate('CreatePost')}
-                hitSlop={10}
-              >
-                <Ionicons
-                  name="add-circle-outline"
-                  size={27}
-                  color={theme.colors.text}
-                />
-              </Pressable>
-            </View>
+            <View style={styles.feedIntroGlass}>
+              <View style={styles.feedHeader}>
+                <View>
+                  <Text style={styles.feedTitle}>Feed</Text>
+                  <Text style={styles.feedSubtitle}>
+                    What your people have shared lately.
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => navigation.navigate('CreatePost')}
+                  hitSlop={10}
+                  style={({ pressed }) => [
+                    styles.createPostButton,
+                    pressed && styles.createPostButtonPressed,
+                  ]}
+                >
+                  <Ionicons
+                    name="add"
+                    size={22}
+                    color={theme.colors.text}
+                  />
+                </Pressable>
+              </View>
 
-            <StoriesRail
-              stories={stories}
-              seenStoryUserIds={seenStoryUserIds}
-              onAddYourStory={() =>
-                navigation.navigate('CreateStory')
-              }
-              onOpen={openStory}
-            />
+              <View style={styles.storiesGlass}>
+                <StoriesRail
+                  stories={stories}
+                  seenStoryUserIds={seenStoryUserIds}
+                  onAddYourStory={() =>
+                    navigation.navigate('CreateStory')
+                  }
+                  onOpen={openStory}
+                />
+              </View>
+            </View>
 
             {storyError ? (
               <Pressable
@@ -862,6 +893,10 @@ function createStyles(theme) {
     flex: 1,
     backgroundColor: theme.colors.bg,
   },
+  feedList: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
   centerRoot: {
     flex: 1,
     alignItems: 'center',
@@ -897,17 +932,59 @@ function createStyles(theme) {
     color: theme.colors.onPrimary,
     fontFamily: 'Manrope_700Bold',
   },
+  feedIntroGlass: {
+    marginHorizontal: 10,
+    marginTop: 8,
+    marginBottom: 8,
+    borderRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: rgba(theme.circle.accent, 0.16),
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    overflow: 'hidden',
+    shadowColor: theme.circle.accent,
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
   feedHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingTop: 8,
+    paddingHorizontal: 15,
+    paddingTop: 13,
+    paddingBottom: 2,
   },
   feedTitle: {
     color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 24,
+  },
+  feedSubtitle: {
+    marginTop: 2,
+    color: theme.colors.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11,
+  },
+  createPostButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: rgba(theme.circle.accent, 0.20),
+    backgroundColor: 'rgba(255,255,255,0.70)',
+  },
+  createPostButtonPressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.97 }],
+  },
+  storiesGlass: {
+    marginTop: 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: rgba(theme.circle.accent, 0.10),
+    backgroundColor: rgba(theme.circle.accent, 0.026),
   },
   storyNotice: {
     flexDirection: 'row',
@@ -917,7 +994,9 @@ function createStyles(theme) {
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: theme.colors.surfaceSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: rgba(theme.circle.accent, 0.12),
+    backgroundColor: 'rgba(255,255,255,0.74)',
   },
   storyNoticePressed: {
     opacity: 0.7,
@@ -936,7 +1015,9 @@ function createStyles(theme) {
     marginBottom: 8,
     padding: 10,
     borderRadius: 10,
-    backgroundColor: theme.colors.surfaceSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: rgba(theme.circle.accent, 0.12),
+    backgroundColor: 'rgba(255,255,255,0.74)',
   },
   noticeText: {
     flex: 1,
