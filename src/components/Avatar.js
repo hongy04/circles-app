@@ -3,7 +3,7 @@ import { Image, Text, View } from 'react-native';
 import { MotiView } from 'moti';
 import { getInitials } from '../utils/getInitials';
 
-export function Avatar({ size = 64, name, uri, ripple }) {
+function AvatarComponent({ size = 64, name, uri, ripple }) {
   return (
     <View style={{ width: size, alignItems: 'center' }}>
       <View
@@ -46,3 +46,5 @@ export function Avatar({ size = 64, name, uri, ripple }) {
     </View>
   );
 }
+
+export const Avatar = React.memo(AvatarComponent);

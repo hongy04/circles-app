@@ -22,6 +22,27 @@ import {
   subscribeToConversationChanges,
 } from '../../services/conversationService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+import { reconcileRowsById } from '../../utils/reconcileRows';
+
+const TIMELINE_FOCUS_FRESH_MS = 12_000;
+const TIMELINE_REALTIME_DEBOUNCE_MS = 220;
+
+function sameTimelineItem(left, right) {
+  return left?.id === right?.id
+    && left?.messageId === right?.messageId
+    && left?.senderId === right?.senderId
+    && left?.senderName === right?.senderName
+    && left?.senderAvatar === right?.senderAvatar
+    && left?.messageBody === right?.messageBody
+    && left?.createdAt === right?.createdAt
+    && left?.url === right?.url
+    && left?.storagePath === right?.storagePath
+    && left?.mediaType === right?.mediaType
+    && left?.width === right?.width
+    && left?.height === right?.height
+    && left?.durationMs === right?.durationMs
+    && left?.sortOrder === right?.sortOrder;
+}
 
 function groupTimeline(items) {
   const groups = [];
@@ -49,7 +70,7 @@ function groupTimeline(items) {
   return groups;
 }
 
-function TimelineFeedCard({ group, width, height, navigation, styles, theme }) {
+const TimelineFeedCard = React.memo(function TimelineFeedCard({ group, width, height, navigation, styles, theme }) {
   return (
     <View style={[styles.card, { height }]}>
       <Pressable
@@ -114,7 +135,7 @@ function TimelineFeedCard({ group, width, height, navigation, styles, theme }) {
       </View>
     </View>
   );
-}
+});
 
 function CircleTimelineFeedContent({ route, navigation }) {
   const { conversationId, initialMediaId } = route.params || {};
@@ -127,38 +148,78 @@ function CircleTimelineFeedContent({ route, navigation }) {
   const stageWidth = Math.min(width - 24, 696);
   const cardHeight = stageWidth + 166;
   const [items, setItems] = useState(initialItems);
+  const itemsRef = useRef(initialItems);
   const [loading, setLoading] = useState(!hasInitialItems);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const hasLoadedRef = useRef(hasInitialItems);
+  const lastRefreshAtRef = useRef(hasInitialItems ? Date.now() : 0);
+  const loadInFlightRef = useRef(null);
+  const realtimeTimerRef = useRef(null);
 
   const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
+    if (loadInFlightRef.current) return loadInFlightRef.current;
     if (refresh) setRefreshing(true);
     else if (!quiet) setLoading(true);
     setError('');
 
-    try {
-      const nextItems = await listConversationTimeline(conversationId);
-      setItems(nextItems);
-      writeNavigationCache(navigationCacheKeys.circleTimeline(conversationId), nextItems);
-    } catch (loadError) {
-      setError(loadError?.message || 'Could not load this Circle Timeline.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    const request = (async () => {
+      try {
+        const nextItems = await listConversationTimeline(conversationId);
+        const reconciled = reconcileRowsById(
+          itemsRef.current,
+          nextItems,
+          sameTimelineItem
+        );
+        itemsRef.current = reconciled;
+        setItems(reconciled);
+        lastRefreshAtRef.current = Date.now();
+        writeNavigationCache(navigationCacheKeys.circleTimeline(conversationId), reconciled);
+      } catch (loadError) {
+        setError(loadError?.message || 'Could not load this Circle Timeline.');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    })();
+
+    loadInFlightRef.current = request.finally(() => {
+      loadInFlightRef.current = null;
+    });
+    return loadInFlightRef.current;
   }, [conversationId]);
 
   useFocusEffect(
     useCallback(() => {
-      void load({ quiet: hasLoadedRef.current }).finally(() => {
-        hasLoadedRef.current = true;
-      });
-      return subscribeToConversationChanges({
+      const isFresh = hasLoadedRef.current
+        && Date.now() - lastRefreshAtRef.current < TIMELINE_FOCUS_FRESH_MS;
+      if (!isFresh) {
+        void load({ quiet: hasLoadedRef.current }).finally(() => {
+          hasLoadedRef.current = true;
+        });
+      }
+
+      const scheduleRealtimeLoad = () => {
+        if (realtimeTimerRef.current) clearTimeout(realtimeTimerRef.current);
+        realtimeTimerRef.current = setTimeout(() => {
+          realtimeTimerRef.current = null;
+          void load({ quiet: true });
+        }, TIMELINE_REALTIME_DEBOUNCE_MS);
+      };
+
+      const unsubscribe = subscribeToConversationChanges({
         conversationId,
-        onMessage: () => load({ quiet: true }),
-        onMediaChange: () => load({ quiet: true }),
+        onMessage: scheduleRealtimeLoad,
+        onMediaChange: scheduleRealtimeLoad,
       });
+
+      return () => {
+        unsubscribe();
+        if (realtimeTimerRef.current) {
+          clearTimeout(realtimeTimerRef.current);
+          realtimeTimerRef.current = null;
+        }
+      };
     }, [conversationId, load])
   );
 
@@ -169,6 +230,17 @@ function CircleTimelineFeedContent({ route, navigation }) {
     );
     return index >= 0 ? index : 0;
   }, [groups, initialMediaId]);
+
+  const renderTimelineGroup = useCallback(({ item }) => (
+    <TimelineFeedCard
+      group={item}
+      width={stageWidth}
+      height={cardHeight}
+      navigation={navigation}
+      styles={styles}
+      theme={theme}
+    />
+  ), [cardHeight, navigation, stageWidth, styles, theme]);
 
   if (loading) {
     return (
@@ -202,16 +274,11 @@ function CircleTimelineFeedContent({ route, navigation }) {
             offset: (cardHeight + 12) * index,
             index,
           })}
-          renderItem={({ item }) => (
-            <TimelineFeedCard
-              group={item}
-              width={stageWidth}
-              height={cardHeight}
-              navigation={navigation}
-              styles={styles}
-              theme={theme}
-            />
-          )}
+          renderItem={renderTimelineGroup}
+          initialNumToRender={3}
+          maxToRenderPerBatch={3}
+          updateCellsBatchingPeriod={45}
+          windowSize={6}
           refreshControl={(
             <RefreshControl
               refreshing={refreshing}

@@ -35,6 +35,7 @@ import {
   subscribeToNotificationChanges,
 } from '../../services/notificationService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+import { reconcileRowsById } from '../../utils/reconcileRows';
 
 const NOTIFICATION_PAGE_SIZE = 40;
 const NOTIFICATION_FOCUS_FRESH_MS = 15_000;
@@ -101,7 +102,28 @@ function isSafetyNotification(type) {
     || type === 'safety_age_correction_resolved';
 }
 
-function NotificationRow({ notification, onOpen, styles, theme }) {
+function sameNotification(left, right) {
+  return left?.id === right?.id
+    && left?.type === right?.type
+    && left?.conversationId === right?.conversationId
+    && left?.conversationTitle === right?.conversationTitle
+    && left?.actorId === right?.actorId
+    && left?.actorName === right?.actorName
+    && left?.actorAvatar === right?.actorAvatar
+    && left?.circlePostId === right?.circlePostId
+    && left?.circleCommentId === right?.circleCommentId
+    && left?.personalPostId === right?.personalPostId
+    && left?.personalCommentId === right?.personalCommentId
+    && left?.invitationId === right?.invitationId
+    && left?.safetyReportId === right?.safetyReportId
+    && left?.accountAppealId === right?.accountAppealId
+    && left?.ageCorrectionRequestId === right?.ageCorrectionRequestId
+    && left?.createdAt === right?.createdAt
+    && left?.readAt === right?.readAt
+    && left?.isRead === right?.isRead;
+}
+
+const NotificationRow = React.memo(function NotificationRow({ notification, onOpen, styles, theme }) {
   const copy = notificationCopy(notification);
   const isSafety = isSafetyNotification(notification.type);
 
@@ -140,7 +162,7 @@ function NotificationRow({ notification, onOpen, styles, theme }) {
       <Ionicons name="chevron-forward" size={17} color="#c7c7cc" />
     </Pressable>
   );
-}
+});
 
 export function NotificationsScreen({ navigation }) {
   const theme = useThemeTokens();
@@ -150,6 +172,7 @@ export function NotificationsScreen({ navigation }) {
     ? cachedNotifications
     : cachedNotifications?.items || [];
   const [notifications, setNotifications] = useState(cachedRows);
+  const notificationsRef = useRef(cachedRows);
   const [loading, setLoading] = useState(!cachedNotifications);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -161,6 +184,10 @@ export function NotificationsScreen({ navigation }) {
   const lastRefreshAtRef = useRef(Number(cachedNotifications?.refreshedAt || 0));
   const loadInFlightRef = useRef(null);
   const realtimeTimerRef = useRef(null);
+
+  useEffect(() => {
+    notificationsRef.current = notifications;
+  }, [notifications]);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.isRead).length,
@@ -190,10 +217,16 @@ export function NotificationsScreen({ navigation }) {
           before: new Date().toISOString(),
         });
         const nextHasMore = nextNotifications.length === NOTIFICATION_PAGE_SIZE;
-        setNotifications(nextNotifications);
+        const reconciled = reconcileRowsById(
+          notificationsRef.current,
+          nextNotifications,
+          sameNotification
+        );
+        notificationsRef.current = reconciled;
+        setNotifications(reconciled);
         setHasMore(nextHasMore);
         lastRefreshAtRef.current = Date.now();
-        persistNotifications(nextNotifications, nextHasMore);
+        persistNotifications(reconciled, nextHasMore);
       } catch (loadError) {
         setError(loadError?.message || 'Could not load notifications.');
       } finally {
@@ -277,6 +310,7 @@ export function NotificationsScreen({ navigation }) {
                   isRead: true,
                   readAt: item.readAt || new Date().toISOString(),
                 }));
+                notificationsRef.current = next;
                 persistNotifications(next, hasMore);
                 return next;
               });
@@ -295,7 +329,7 @@ export function NotificationsScreen({ navigation }) {
     });
   }, [hasMore, navigation, persistNotifications, unreadCount]);
 
-  const markReadLocally = (notification) => {
+  const markReadLocally = useCallback((notification) => {
     if (notification.isRead) return;
 
     setNotifications((current) => {
@@ -304,13 +338,14 @@ export function NotificationsScreen({ navigation }) {
           ? { ...item, isRead: true, readAt: new Date().toISOString() }
           : item
       ));
+      notificationsRef.current = next;
       persistNotifications(next, hasMore);
       return next;
     });
     markNotificationRead(notification.id).catch(() => {});
-  };
+  }, [hasMore, persistNotifications]);
 
-  const openNotification = (notification) => {
+  const openNotification = useCallback((notification) => {
     markReadLocally(notification);
 
     if (isSafetyNotification(notification.type)) {
@@ -356,7 +391,16 @@ export function NotificationsScreen({ navigation }) {
         conversationId: notification.conversationId,
       });
     }
-  };
+    }, [markReadLocally, navigation]);
+
+  const renderNotification = useCallback(({ item }) => (
+    <NotificationRow
+      notification={item}
+      onOpen={openNotification}
+      styles={styles}
+      theme={theme}
+    />
+  ), [openNotification, styles, theme]);
 
   if (loading) {
     return (
@@ -382,9 +426,7 @@ export function NotificationsScreen({ navigation }) {
         removeClippedSubviews
         onEndReachedThreshold={0.35}
         onEndReached={loadMore}
-        renderItem={({ item }) => (
-          <NotificationRow notification={item} onOpen={openNotification} styles={styles} theme={theme} />
-        )}
+        renderItem={renderNotification}
         refreshControl={(
           <RefreshControl
             refreshing={refreshing}

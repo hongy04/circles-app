@@ -18,6 +18,7 @@ import { UnreadBadge } from '../../components/UnreadBadge';
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+import { reconcileRowsById } from '../../utils/reconcileRows';
 
 const INBOX_FOCUS_FRESH_MS = 12_000;
 const INBOX_REALTIME_DEBOUNCE_MS = 220;
@@ -65,7 +66,35 @@ function getConversationSubtitle(conversation) {
         : `${conversation.memberCount} members`);
 }
 
-function PinnedConversation({
+function sameConversation(left, right) {
+  return left?.id === right?.id
+    && left?.kind === right?.kind
+    && left?.title === right?.title
+    && left?.avatarUri === right?.avatarUri
+    && left?.otherUserId === right?.otherUserId
+    && left?.isCircle === right?.isCircle
+    && left?.lastMessage === right?.lastMessage
+    && left?.lastMessageAt === right?.lastMessageAt
+    && left?.unreadCount === right?.unreadCount
+    && left?.pinned === right?.pinned
+    && left?.notificationsMuted === right?.notificationsMuted
+    && left?.memberCount === right?.memberCount
+    && left?.pendingInvitationCount === right?.pendingInvitationCount
+    && left?.createdAt === right?.createdAt;
+}
+
+function sameInvitation(left, right) {
+  return left?.id === right?.id
+    && left?.conversationId === right?.conversationId
+    && left?.title === right?.title
+    && left?.inviterId === right?.inviterId
+    && left?.inviterName === right?.inviterName
+    && left?.inviterAvatar === right?.inviterAvatar
+    && left?.memberCount === right?.memberCount
+    && left?.createdAt === right?.createdAt;
+}
+
+const PinnedConversation = React.memo(function PinnedConversation({
   conversation,
   onOpen,
   onTogglePin,
@@ -120,9 +149,9 @@ function PinnedConversation({
       </Pressable>
     </View>
   );
-}
+});
 
-function ConversationRow({ conversation, onOpen, onTogglePin }) {
+const ConversationRow = React.memo(function ConversationRow({ conversation, onOpen, onTogglePin }) {
   const { theme, styles } = useInboxTheme();
   const subtitle = getConversationSubtitle(conversation);
 
@@ -184,9 +213,9 @@ function ConversationRow({ conversation, onOpen, onTogglePin }) {
       </View>
     </Pressable>
   );
-}
+});
 
-function InvitationCard({ invitation, busy, onRespond }) {
+const InvitationCard = React.memo(function InvitationCard({ invitation, busy, onRespond }) {
   const { theme, styles } = useInboxTheme();
 
   return (
@@ -236,7 +265,7 @@ function InvitationCard({ invitation, busy, onRespond }) {
       </View>
     </View>
   );
-}
+});
 
 export function InboxScreen({ navigation }) {
   const { theme, styles } = useInboxTheme();
@@ -249,10 +278,20 @@ export function InboxScreen({ navigation }) {
   const [error, setError] = useState(null);
   const [respondingId, setRespondingId] = useState(null);
   const [notificationCount, setNotificationCount] = useState(Number(cachedInbox?.notificationCount || 0));
+  const conversationsRef = useRef(cachedInbox?.conversations || []);
+  const invitationsRef = useRef(cachedInbox?.invitations || []);
   const hasLoadedRef = useRef(Boolean(cachedInbox));
   const lastRefreshAtRef = useRef(Number(cachedInbox?.refreshedAt || 0));
   const loadInFlightRef = useRef(null);
   const realtimeTimerRef = useRef(null);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    invitationsRef.current = invitations;
+  }, [invitations]);
 
   const load = useCallback(async ({ quiet = false, force = false } = {}) => {
     if (loadInFlightRef.current) return loadInFlightRef.current;
@@ -270,13 +309,25 @@ export function InboxScreen({ navigation }) {
           listConversationInvitations(),
           getNotificationCenterUnreadCount(),
         ]);
-        setConversations(conversationRows);
-        setInvitations(invitationRows);
+        const nextConversations = reconcileRowsById(
+          conversationsRef.current,
+          conversationRows,
+          sameConversation
+        );
+        const nextInvitations = reconcileRowsById(
+          invitationsRef.current,
+          invitationRows,
+          sameInvitation
+        );
+        conversationsRef.current = nextConversations;
+        invitationsRef.current = nextInvitations;
+        setConversations(nextConversations);
+        setInvitations(nextInvitations);
         setNotificationCount(nextNotificationCount);
         lastRefreshAtRef.current = Date.now();
         writeNavigationCache(navigationCacheKeys.inbox(), {
-          conversations: conversationRows,
-          invitations: invitationRows,
+          conversations: nextConversations,
+          invitations: nextInvitations,
           notificationCount: nextNotificationCount,
           refreshedAt: lastRefreshAtRef.current,
         });
@@ -401,28 +452,32 @@ export function InboxScreen({ navigation }) {
   const contentWidth = Math.min(width, 760);
   const pinnedItemWidth = Math.floor((contentWidth - 24) / pinnedColumnCount);
 
-  const openConversation = async (conversation) => {
+  const openConversation = useCallback(async (conversation) => {
     await Haptics.selectionAsync();
     navigation.navigate('Chat', {
       conversationId: conversation.id,
       name: conversation.title,
       kind: conversation.kind,
     });
-  };
+  }, [navigation]);
 
-  const togglePin = async (conversation) => {
+  const togglePin = useCallback(async (conversation) => {
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const pinned = await toggleConversationPin(conversation.id);
-      setConversations((current) => current.map((item) => (
-        item.id === conversation.id ? { ...item, pinned } : item
-      )));
+      setConversations((current) => {
+        const next = current.map((item) => (
+          item.id === conversation.id ? { ...item, pinned } : item
+        ));
+        conversationsRef.current = next;
+        return next;
+      });
     } catch (pinError) {
       Alert.alert('Could not update pin', pinError?.message || 'Please try again.');
     }
-  };
+  }, []);
 
-  const respond = async (invitation, action) => {
+  const respond = useCallback(async (invitation, action) => {
     setRespondingId(invitation.id);
     try {
       const conversationId = await respondToConversationInvitation(
@@ -446,7 +501,7 @@ export function InboxScreen({ navigation }) {
     } finally {
       setRespondingId(null);
     }
-  };
+  }, [load, navigation]);
 
   if (loading) {
     return (

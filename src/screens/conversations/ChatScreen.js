@@ -47,6 +47,7 @@ import {
   uploadConversationAsset,
 } from '../../services/conversationMediaService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+import { reconcileRowsById } from '../../utils/reconcileRows';
 
 const MAX_ATTACHMENTS = 6;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -261,6 +262,112 @@ function MessageMediaGrid({ items, onOpen, onLongPress }) {
   );
 }
 
+
+function sameChatMedia(left, right) {
+  const a = Array.isArray(left) ? left : [];
+  const b = Array.isArray(right) ? right : [];
+  if (a.length !== b.length) return false;
+
+  return a.every((item, index) => {
+    const other = b[index];
+    return item?.id === other?.id
+      && item?.url === other?.url
+      && item?.storagePath === other?.storagePath
+      && item?.mediaType === other?.mediaType
+      && item?.width === other?.width
+      && item?.height === other?.height
+      && item?.durationMs === other?.durationMs
+      && item?.sortOrder === other?.sortOrder;
+  });
+}
+
+function sameChatMessage(left, right) {
+  return left?.id === right?.id
+    && left?.senderId === right?.senderId
+    && left?.senderName === right?.senderName
+    && left?.senderAvatar === right?.senderAvatar
+    && left?.body === right?.body
+    && left?.createdAt === right?.createdAt
+    && left?.readCount === right?.readCount
+    && left?.recipientCount === right?.recipientCount
+    && sameChatMedia(left?.media, right?.media);
+}
+
+const ChatMessageRow = React.memo(function ChatMessageRow({
+  item,
+  currentUserId,
+  isGroup,
+  isDeleting,
+  onShowActions,
+  onOpenMedia,
+}) {
+  const mine = item.senderId === currentUserId;
+  const hasText = Boolean(item.body);
+  const hasMedia = item.media?.length > 0;
+  const readStatus = mine ? formatReadStatus(item, isGroup) : '';
+  const canUnsend = mine && Number(item.readCount || 0) === 0;
+
+  return (
+    <Pressable
+      onLongPress={() => onShowActions(item)}
+      delayLongPress={360}
+      disabled={!mine || isDeleting}
+      accessibilityRole="button"
+      accessibilityLabel={mine ? 'Your message' : `${item.senderName}'s message`}
+      accessibilityHint={mine
+        ? (canUnsend
+          ? 'Press and hold to unsend before anyone reads it.'
+          : 'This message has already been read and cannot be unsent.')
+        : undefined}
+      style={styles.messageWrap}
+    >
+      {!mine && isGroup ? (
+        <Text style={styles.senderName}>{item.senderName}</Text>
+      ) : null}
+
+      <View style={[
+        styles.messageContent,
+        mine ? styles.mineContent : styles.otherContent,
+      ]}>
+        {hasMedia ? (
+          <MessageMediaGrid
+            items={item.media}
+            onOpen={(index) => onOpenMedia(item, index)}
+            onLongPress={mine ? () => onShowActions(item) : undefined}
+          />
+        ) : null}
+
+        {hasText ? (
+          <View style={[
+            styles.bubble,
+            mine ? styles.mineBubble : styles.otherBubble,
+            hasMedia && styles.textWithMedia,
+          ]}>
+            <Text style={[
+              styles.messageText,
+              mine ? styles.mineText : styles.otherText,
+            ]}>
+              {item.body}
+            </Text>
+          </View>
+        ) : null}
+
+        {isDeleting ? (
+          <ActivityIndicator size="small" style={styles.deletingIndicator} />
+        ) : null}
+      </View>
+
+      <Text style={[
+        styles.messageTime,
+        mine ? styles.mineTime : styles.otherTime,
+      ]}>
+        {formatTime(item.createdAt)}
+        {mine && readStatus ? ` · ${readStatus}` : ''}
+      </Text>
+    </Pressable>
+  );
+});
+
 export function ChatScreen({ route, navigation }) {
   const {
     conversationId,
@@ -396,9 +503,14 @@ export function ChatScreen({ route, navigation }) {
       try {
         if (messagesOnly) {
           const rows = await listConversationMessages(conversationId);
-          setMessages(rows);
-          messagesRef.current = rows;
-          persistChatSnapshot({ nextMessages: rows });
+          const nextRows = reconcileRowsById(
+            messagesRef.current,
+            rows,
+            sameChatMessage
+          );
+          setMessages(nextRows);
+          messagesRef.current = nextRows;
+          persistChatSnapshot({ nextMessages: nextRows });
           await markReadIfVisible();
           return;
         }
@@ -418,10 +530,15 @@ export function ChatScreen({ route, navigation }) {
           || cachedChat?.conversation
           || routeConversation;
 
+        const nextRows = reconcileRowsById(
+          messagesRef.current,
+          rows,
+          sameChatMessage
+        );
         setCurrentUserId(user.id);
         currentUserIdRef.current = user.id;
-        setMessages(rows);
-        messagesRef.current = rows;
+        setMessages(nextRows);
+        messagesRef.current = nextRows;
         setConversation(nextConversation);
         conversationRef.current = nextConversation;
         lastFullLoadAtRef.current = Date.now();
@@ -435,7 +552,7 @@ export function ChatScreen({ route, navigation }) {
         persistChatSnapshot({
           nextConversation,
           nextCurrentUserId: user.id,
-          nextMessages: rows,
+          nextMessages: nextRows,
         });
 
         if (checkRomanticReveal) {
@@ -696,6 +813,7 @@ export function ChatScreen({ route, navigation }) {
       setMessages((current) => {
         if (current.some((item) => item.id === message.id)) return current;
         const nextMessages = [message, ...current];
+        messagesRef.current = nextMessages;
         writeNavigationCache(navigationCacheKeys.chat(conversationId), {
           conversation,
           currentUserId,
@@ -721,7 +839,7 @@ export function ChatScreen({ route, navigation }) {
     }
   };
 
-  const unsendMessage = async (message) => {
+  const unsendMessage = useCallback(async (message) => {
     if (message.senderId !== currentUserId || deletingMessageId) return;
 
     setDeletingMessageId(message.id);
@@ -729,6 +847,7 @@ export function ChatScreen({ route, navigation }) {
       await deleteOwnConversationMessage(message.id);
       setMessages((current) => {
         const nextMessages = current.filter((item) => item.id !== message.id);
+        messagesRef.current = nextMessages;
         writeNavigationCache(navigationCacheKeys.chat(conversationId), {
           conversation,
           currentUserId,
@@ -744,9 +863,9 @@ export function ChatScreen({ route, navigation }) {
     } finally {
       setDeletingMessageId(null);
     }
-  };
+  }, [conversation, conversationId, currentUserId, deletingMessageId]);
 
-  const confirmUnsend = (message) => {
+  const confirmUnsend = useCallback((message) => {
     if (Number(message.readCount || 0) > 0) {
       Alert.alert(
         'Already read',
@@ -773,9 +892,9 @@ export function ChatScreen({ route, navigation }) {
         },
       ]
     );
-  };
+  }, [isCircle, unsendMessage]);
 
-  const showMessageActions = (message) => {
+  const showMessageActions = useCallback((message) => {
     if (message.senderId !== currentUserId || deletingMessageId) return;
 
     if (Number(message.readCount || 0) > 0) {
@@ -813,9 +932,9 @@ export function ChatScreen({ route, navigation }) {
         },
       ]
     );
-  };
+  }, [confirmUnsend, currentUserId, deletingMessageId]);
 
-  const openMedia = (message, startIndex) => {
+  const openMedia = useCallback((message, startIndex) => {
     const items = message.media.map((item) => ({
       ...item,
       senderName: message.senderName,
@@ -828,7 +947,8 @@ export function ChatScreen({ route, navigation }) {
       items,
       startIndex,
     });
-  };
+  }, [navigation]);
+
 
   const otherUserId = conversation?.other_user_id || initialOtherUserId || null;
 
@@ -851,78 +971,22 @@ export function ChatScreen({ route, navigation }) {
     });
   };
 
-  const renderMessage = ({ item }) => {
-    const mine = item.senderId === currentUserId;
-    const hasText = Boolean(item.body);
-    const hasMedia = item.media?.length > 0;
-    const readStatus = mine
-      ? formatReadStatus(item, conversation?.kind === 'group')
-      : '';
-    const canUnsend = mine && Number(item.readCount || 0) === 0;
-
-    return (
-      <Pressable
-        onLongPress={() => showMessageActions(item)}
-        delayLongPress={360}
-        disabled={!mine || deletingMessageId === item.id}
-        accessibilityRole="button"
-        accessibilityLabel={mine ? 'Your message' : `${item.senderName}'s message`}
-        accessibilityHint={mine
-          ? (canUnsend
-            ? 'Press and hold to unsend before anyone reads it.'
-            : 'This message has already been read and cannot be unsent.')
-          : undefined}
-        style={styles.messageWrap}
-      >
-        {!mine && conversation?.kind === 'group' ? (
-          <Text style={styles.senderName}>{item.senderName}</Text>
-        ) : null}
-
-        <View style={[
-          styles.messageContent,
-          mine ? styles.mineContent : styles.otherContent,
-        ]}>
-          {hasMedia ? (
-            <MessageMediaGrid
-              items={item.media}
-              onOpen={(index) => openMedia(item, index)}
-              onLongPress={mine ? () => showMessageActions(item) : undefined}
-            />
-          ) : null}
-
-          {hasText ? (
-            <View style={[
-              styles.bubble,
-              mine ? styles.mineBubble : styles.otherBubble,
-              hasMedia && styles.textWithMedia,
-            ]}>
-              <Text style={[
-                styles.messageText,
-                mine ? styles.mineText : styles.otherText,
-              ]}>
-                {item.body}
-              </Text>
-            </View>
-          ) : null}
-
-          {deletingMessageId === item.id ? (
-            <ActivityIndicator
-              size="small"
-              style={styles.deletingIndicator}
-            />
-          ) : null}
-        </View>
-
-        <Text style={[
-          styles.messageTime,
-          mine ? styles.mineTime : styles.otherTime,
-        ]}>
-          {formatTime(item.createdAt)}
-          {mine && readStatus ? ` · ${readStatus}` : ''}
-        </Text>
-      </Pressable>
-    );
-  };
+  const renderMessage = useCallback(({ item }) => (
+    <ChatMessageRow
+      item={item}
+      currentUserId={currentUserId}
+      isGroup={conversation?.kind === 'group'}
+      isDeleting={deletingMessageId === item.id}
+      onShowActions={showMessageActions}
+      onOpenMedia={openMedia}
+    />
+  ), [
+    conversation?.kind,
+    currentUserId,
+    deletingMessageId,
+    openMedia,
+    showMessageActions,
+  ]);
 
   if (!conversationId) {
     return (

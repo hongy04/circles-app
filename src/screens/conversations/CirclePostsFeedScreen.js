@@ -33,6 +33,10 @@ import {
   toggleCirclePostLike,
 } from '../../services/circlePostService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+import { reconcileRowsById } from '../../utils/reconcileRows';
+
+const CIRCLE_POSTS_FOCUS_FRESH_MS = 12_000;
+const CIRCLE_POSTS_REALTIME_DEBOUNCE_MS = 220;
 
 function mapCircleComment(comment) {
   return {
@@ -44,6 +48,35 @@ function mapCircleComment(comment) {
     timeLabel: timeAgo(comment.createdAt),
     canDelete: Boolean(comment.canDelete),
   };
+}
+
+function sameCircleMedia(left, right) {
+  const a = Array.isArray(left) ? left : [];
+  const b = Array.isArray(right) ? right : [];
+  if (a.length !== b.length) return false;
+  return a.every((item, index) => {
+    const other = b[index];
+    return item?.id === other?.id
+      && item?.url === other?.url
+      && item?.mediaType === other?.mediaType
+      && item?.width === other?.width
+      && item?.height === other?.height;
+  });
+}
+
+function sameCirclePost(left, right) {
+  return left?.id === right?.id
+    && left?.authorId === right?.authorId
+    && left?.authorName === right?.authorName
+    && left?.authorAvatar === right?.authorAvatar
+    && left?.caption === right?.caption
+    && left?.createdAt === right?.createdAt
+    && left?.likedByMe === right?.likedByMe
+    && left?.likeCount === right?.likeCount
+    && left?.commentCount === right?.commentCount
+    && left?.canEdit === right?.canEdit
+    && sameCircleMedia(left?.media, right?.media)
+    && JSON.stringify(left?.presentation || {}) === JSON.stringify(right?.presentation || {});
 }
 
 function CirclePostFeedCard({
@@ -202,6 +235,47 @@ function CirclePostFeedCard({
   );
 }
 
+const CirclePostFeedRow = React.memo(function CirclePostFeedRow({
+  post,
+  width,
+  navigation,
+  conversationId,
+  onOpenComments,
+  onToggleLike,
+  onManage,
+  likeBusy,
+  styles,
+  theme,
+}) {
+  const openComments = useCallback(
+    () => onOpenComments(post),
+    [onOpenComments, post]
+  );
+  const toggleLike = useCallback(
+    () => onToggleLike(post),
+    [onToggleLike, post]
+  );
+  const manage = useCallback(
+    () => onManage(post),
+    [onManage, post]
+  );
+
+  return (
+    <CirclePostFeedCard
+      post={post}
+      width={width}
+      navigation={navigation}
+      conversationId={conversationId}
+      onOpenComments={openComments}
+      onToggleLike={toggleLike}
+      onManage={post.canEdit ? manage : undefined}
+      likeBusy={likeBusy}
+      styles={styles}
+      theme={theme}
+    />
+  );
+});
+
 function CirclePostsFeedContent({ route, navigation }) {
   const { conversationId, initialPostId, circleName } = route.params || {};
   const cachedPosts = readNavigationCache(navigationCacheKeys.circlePosts(conversationId));
@@ -212,6 +286,7 @@ function CirclePostsFeedContent({ route, navigation }) {
   const { width } = useWindowDimensions();
   const stageWidth = Math.min(width - 24, 696);
   const [posts, setPosts] = useState(initialPosts);
+  const postsRef = useRef(initialPosts);
   const [loading, setLoading] = useState(!hasInitialPosts);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -225,34 +300,57 @@ function CirclePostsFeedContent({ route, navigation }) {
   const [togglingLikes, setTogglingLikes] = useState({});
   const [deletingPostId, setDeletingPostId] = useState(null);
   const hasLoadedRef = useRef(hasInitialPosts);
+  const lastRefreshAtRef = useRef(hasInitialPosts ? Date.now() : 0);
+  const loadInFlightRef = useRef(null);
+  const realtimeTimerRef = useRef(null);
+  const likeRequestsRef = useRef(new Set());
   const commentsPostIdRef = useRef(null);
+
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
 
   useEffect(() => {
     commentsPostIdRef.current = commentsPost?.id || null;
   }, [commentsPost?.id]);
 
   const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
+    if (loadInFlightRef.current) return loadInFlightRef.current;
     if (refresh) setRefreshing(true);
     else if (!quiet) setLoading(true);
     setError('');
 
-    try {
-      const rows = await listCirclePosts(conversationId);
-      setPosts(rows);
-      writeNavigationCache(navigationCacheKeys.circlePosts(conversationId), rows);
-      rows.forEach((post) => {
-        writeNavigationCache(navigationCacheKeys.circlePost(post.id), post);
-      });
-      setCommentsPost((current) => {
-        if (!current) return current;
-        return rows.find((post) => post.id === current.id) || current;
-      });
-    } catch (loadError) {
-      setError(loadError?.message || 'Could not load Circle posts.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    const request = (async () => {
+      try {
+        const rows = await listCirclePosts(conversationId);
+        const reconciled = reconcileRowsById(
+          postsRef.current,
+          rows,
+          sameCirclePost
+        );
+        postsRef.current = reconciled;
+        setPosts(reconciled);
+        lastRefreshAtRef.current = Date.now();
+        writeNavigationCache(navigationCacheKeys.circlePosts(conversationId), reconciled);
+        reconciled.forEach((post) => {
+          writeNavigationCache(navigationCacheKeys.circlePost(post.id), post);
+        });
+        setCommentsPost((current) => {
+          if (!current) return current;
+          return reconciled.find((post) => post.id === current.id) || current;
+        });
+      } catch (loadError) {
+        setError(loadError?.message || 'Could not load Circle posts.');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    })();
+
+    loadInFlightRef.current = request.finally(() => {
+      loadInFlightRef.current = null;
+    });
+    return loadInFlightRef.current;
   }, [conversationId]);
 
   const loadComments = useCallback(async (postId, { quiet = false } = {}) => {
@@ -278,17 +376,38 @@ function CirclePostsFeedContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      void load({ quiet: hasLoadedRef.current }).finally(() => {
-        hasLoadedRef.current = true;
-      });
-      return subscribeToCirclePostChanges({
-        conversationId,
-        onChange: () => {
-          load({ quiet: true });
+      const isFresh = hasLoadedRef.current
+        && Date.now() - lastRefreshAtRef.current < CIRCLE_POSTS_FOCUS_FRESH_MS;
+      if (!isFresh) {
+        void load({ quiet: hasLoadedRef.current }).finally(() => {
+          hasLoadedRef.current = true;
+        });
+      }
+
+      const scheduleRealtimeLoad = () => {
+        if (realtimeTimerRef.current) clearTimeout(realtimeTimerRef.current);
+        realtimeTimerRef.current = setTimeout(() => {
+          realtimeTimerRef.current = null;
+          void load({ quiet: true });
           const activeCommentPostId = commentsPostIdRef.current;
-          if (activeCommentPostId) loadComments(activeCommentPostId, { quiet: true });
-        },
+          if (activeCommentPostId) {
+            void loadComments(activeCommentPostId, { quiet: true });
+          }
+        }, CIRCLE_POSTS_REALTIME_DEBOUNCE_MS);
+      };
+
+      const unsubscribe = subscribeToCirclePostChanges({
+        conversationId,
+        onChange: scheduleRealtimeLoad,
       });
+
+      return () => {
+        unsubscribe();
+        if (realtimeTimerRef.current) {
+          clearTimeout(realtimeTimerRef.current);
+          realtimeTimerRef.current = null;
+        }
+      };
     }, [conversationId, load, loadComments])
   );
 
@@ -304,8 +423,9 @@ function CirclePostsFeedContent({ route, navigation }) {
     return () => clearTimeout(timer);
   }, [initialPostId, posts]);
 
-  const toggleLike = async (post) => {
-    if (!post?.id || togglingLikes[post.id]) return;
+  const toggleLike = useCallback(async (post) => {
+    if (!post?.id || likeRequestsRef.current.has(post.id)) return;
+    likeRequestsRef.current.add(post.id);
     const previousLiked = Boolean(post.likedByMe);
     const previousCount = Number(post.likeCount || 0);
     const optimistic = {
@@ -315,28 +435,41 @@ function CirclePostsFeedContent({ route, navigation }) {
     };
 
     setTogglingLikes((current) => ({ ...current, [post.id]: true }));
-    setPosts((current) => current.map((item) => item.id === post.id ? optimistic : item));
+    setPosts((current) => {
+      const next = current.map((item) => item.id === post.id ? optimistic : item);
+      postsRef.current = next;
+      return next;
+    });
     setCommentsPost((current) => current?.id === post.id ? { ...current, ...optimistic } : current);
 
     try {
       const result = await toggleCirclePostLike(post.id);
-      setPosts((current) => current.map((item) => (
-        item.id === post.id ? { ...item, likedByMe: result.liked, likeCount: result.likeCount } : item
-      )));
+      setPosts((current) => {
+        const next = current.map((item) => (
+          item.id === post.id ? { ...item, likedByMe: result.liked, likeCount: result.likeCount } : item
+        ));
+        postsRef.current = next;
+        return next;
+      });
       setCommentsPost((current) => current?.id === post.id
         ? { ...current, likedByMe: result.liked, likeCount: result.likeCount }
         : current);
     } catch (likeError) {
-      setPosts((current) => current.map((item) => (
-        item.id === post.id ? { ...item, likedByMe: previousLiked, likeCount: previousCount } : item
-      )));
+      setPosts((current) => {
+        const next = current.map((item) => (
+          item.id === post.id ? { ...item, likedByMe: previousLiked, likeCount: previousCount } : item
+        ));
+        postsRef.current = next;
+        return next;
+      });
       Alert.alert('Like not updated', likeError?.message || 'Please try again.');
     } finally {
+      likeRequestsRef.current.delete(post.id);
       setTogglingLikes((current) => ({ ...current, [post.id]: false }));
     }
-  };
+  }, []);
 
-  const managePost = (post) => {
+  const managePost = useCallback((post) => {
     if (!post?.canEdit || deletingPostId) return;
 
     const edit = () => navigation.navigate('EditCirclePost', {
@@ -374,15 +507,15 @@ function CirclePostsFeedContent({ route, navigation }) {
       { text: 'Edit Caption', onPress: edit },
       { text: 'Delete Post', style: 'destructive', onPress: remove },
     ]);
-  };
+    }, [conversationId, deletingPostId, navigation]);
 
-  const openComments = (post) => {
+  const openComments = useCallback((post) => {
     setCommentsPost(post);
     setComments([]);
     setCommentsError('');
     setCommentsVisible(true);
     loadComments(post.id);
-  };
+  }, [loadComments]);
 
   const submitComment = async (body) => {
     if (!commentsPost?.id) return;
@@ -434,6 +567,31 @@ function CirclePostsFeedContent({ route, navigation }) {
     setTimeout(() => navigation.navigate('Profile', { userId: commentUserId }), 180);
   };
 
+  const renderPost = useCallback(({ item }) => (
+    <CirclePostFeedRow
+      post={item}
+      width={stageWidth}
+      navigation={navigation}
+      conversationId={conversationId}
+      onOpenComments={openComments}
+      onToggleLike={toggleLike}
+      onManage={managePost}
+      likeBusy={Boolean(togglingLikes[item.id])}
+      styles={styles}
+      theme={theme}
+    />
+  ), [
+    conversationId,
+    managePost,
+    navigation,
+    openComments,
+    stageWidth,
+    styles,
+    theme,
+    toggleLike,
+    togglingLikes,
+  ]);
+
   if (loading) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
@@ -465,20 +623,7 @@ function CirclePostsFeedContent({ route, navigation }) {
             listRef.current?.scrollToOffset?.({ offset: Math.max(0, averageItemLength * index), animated: false });
             setTimeout(() => listRef.current?.scrollToIndex?.({ index, animated: false }), 80);
           }}
-          renderItem={({ item }) => (
-            <CirclePostFeedCard
-              post={item}
-              width={stageWidth}
-              navigation={navigation}
-              conversationId={conversationId}
-              onOpenComments={() => openComments(item)}
-              onToggleLike={() => toggleLike(item)}
-              onManage={item.canEdit ? () => managePost(item) : undefined}
-              likeBusy={Boolean(togglingLikes[item.id])}
-              styles={styles}
-              theme={theme}
-            />
-          )}
+          renderItem={renderPost}
           refreshControl={(
             <RefreshControl
               refreshing={refreshing}

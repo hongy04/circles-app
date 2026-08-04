@@ -35,6 +35,7 @@ import {
   togglePostLike,
 } from '../../services/feedService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+import { reconcileRowsById } from '../../utils/reconcileRows';
 
 const PROFILE_POSTS_FOCUS_FRESH_MS = 12_000;
 
@@ -88,6 +89,32 @@ function mapPersonalComment(comment) {
     timeLabel: timeAgo(comment.createdAt),
     canDelete: false,
   };
+}
+
+function samePersonalMedia(left, right) {
+  const a = Array.isArray(left) ? left : [];
+  const b = Array.isArray(right) ? right : [];
+  if (a.length !== b.length) return false;
+  return a.every((item, index) => {
+    const other = b[index];
+    return item?.id === other?.id
+      && item?.url === other?.url
+      && item?.mediaType === other?.mediaType;
+  });
+}
+
+function samePersonalPost(left, right) {
+  return left?.id === right?.id
+    && left?.authorId === right?.authorId
+    && left?.authorName === right?.authorName
+    && left?.authorAvatar === right?.authorAvatar
+    && left?.caption === right?.caption
+    && left?.createdAt === right?.createdAt
+    && left?.likes === right?.likes
+    && left?.commentCount === right?.commentCount
+    && left?.liked === right?.liked
+    && samePersonalMedia(left?.media, right?.media)
+    && JSON.stringify(left?.presentation || {}) === JSON.stringify(right?.presentation || {});
 }
 
 function PersonalPostFeedCard({
@@ -227,6 +254,77 @@ function PersonalPostFeedCard({
   );
 }
 
+const PersonalPostFeedRow = React.memo(function PersonalPostFeedRow({
+  post,
+  width,
+  navigation,
+  isSelfProfile,
+  onOpenComments,
+  onManage,
+  onToggleLike,
+  styles,
+  theme,
+}) {
+  const openDetail = useCallback(() => {
+    writeNavigationCache(navigationCacheKeys.postPreview(post.id), {
+      post: {
+        id: post.id,
+        user_id: post.authorId,
+        caption: post.caption || '',
+        created_at: post.createdAt,
+        display_aspect_ratio: post.presentation?.aspectRatio ?? null,
+        media_crop_points: post.presentation?.cropPoints || [],
+        media_presentations: post.presentation?.mediaPresentations || [],
+      },
+      author: {
+        id: post.authorId,
+        display_name: post.authorName || 'Unknown',
+        avatar_url: post.authorAvatar || null,
+      },
+      media: (post.media || []).map((mediaItem) => ({
+        ...mediaItem,
+        media_type: mediaItem.media_type || mediaItem.mediaType || 'image',
+      })),
+      likes: Number(post.likes || 0),
+      commentCount: Number(post.commentCount || 0),
+      likedByMe: Boolean(post.liked),
+      isOwner: isSelfProfile,
+    });
+    navigation.navigate('PostDetail', { postId: post.id });
+  }, [isSelfProfile, navigation, post]);
+
+  const openProfile = useCallback(
+    () => navigation.navigate('Profile', { userId: post.authorId }),
+    [navigation, post.authorId]
+  );
+  const openComments = useCallback(
+    () => onOpenComments(post),
+    [onOpenComments, post]
+  );
+  const manage = useCallback(
+    () => onManage(post),
+    [onManage, post]
+  );
+  const toggleLike = useCallback(
+    () => onToggleLike(post.id),
+    [onToggleLike, post.id]
+  );
+
+  return (
+    <PersonalPostFeedCard
+      post={post}
+      width={width}
+      onOpenDetail={openDetail}
+      onOpenComments={openComments}
+      onOpenProfile={openProfile}
+      onManage={isSelfProfile ? manage : undefined}
+      onToggleLike={toggleLike}
+      styles={styles}
+      theme={theme}
+    />
+  );
+});
+
 export function ProfilePostsFeedScreen({ route, navigation }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -235,6 +333,7 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
   const stageWidth = Math.min(width, 720);
   const cachedFeed = readNavigationCache(navigationCacheKeys.profilePostsFeed(userId));
   const [posts, setPosts] = useState(cachedFeed?.posts || []);
+  const postsRef = useRef(cachedFeed?.posts || []);
   const [resolvedName, setResolvedName] = useState(cachedFeed?.resolvedName || profileName || 'Posts');
   const [loading, setLoading] = useState(!cachedFeed);
   const [refreshing, setRefreshing] = useState(false);
@@ -255,6 +354,10 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
   const [comments, setComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState('');
+
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
 
   const load = useCallback(async ({
     refresh = false,
@@ -292,13 +395,19 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
             .map((result) => mapDetail(result.value));
         }
 
+        const reconciledPosts = reconcileRowsById(
+          postsRef.current,
+          nextPosts,
+          samePersonalPost
+        );
+        postsRef.current = reconciledPosts;
         setResolvedName(nextResolvedName);
         setIsSelfProfile(ownProfile);
         setMutualPreviewPostId(nextPreviewPostId);
-        setPosts(nextPosts);
+        setPosts(reconciledPosts);
         lastRefreshAtRef.current = Date.now();
         writeNavigationCache(navigationCacheKeys.profilePostsFeed(userId), {
-          posts: nextPosts,
+          posts: reconciledPosts,
           resolvedName: nextResolvedName,
           isSelfProfile: ownProfile,
           mutualPreviewPostId: nextPreviewPostId,
@@ -342,29 +451,37 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
     return () => clearTimeout(timer);
   }, [initialPostId, posts]);
 
-  const toggleLike = async (postId) => {
-    const existing = posts.find((post) => post.id === postId);
+  const toggleLike = useCallback(async (postId) => {
+    const existing = postsRef.current.find((post) => post.id === postId);
     if (!existing) return;
 
-    setPosts((current) => current.map((post) => (
-      post.id === postId
-        ? {
-            ...post,
-            liked: !post.liked,
-            likes: Math.max(0, post.likes + (post.liked ? -1 : 1)),
-          }
-        : post
-    )));
+    setPosts((current) => {
+      const next = current.map((post) => (
+        post.id === postId
+          ? {
+              ...post,
+              liked: !post.liked,
+              likes: Math.max(0, post.likes + (post.liked ? -1 : 1)),
+            }
+          : post
+      ));
+      postsRef.current = next;
+      return next;
+    });
 
     try {
       await togglePostLike(postId);
     } catch (likeError) {
-      setPosts((current) => current.map((post) => (
-        post.id === postId ? existing : post
-      )));
+      setPosts((current) => {
+        const next = current.map((post) => (
+          post.id === postId ? existing : post
+        ));
+        postsRef.current = next;
+        return next;
+      });
       Alert.alert('Like not saved', likeError?.message || 'Please try again.');
     }
-  };
+  }, []);
 
   const loadComments = useCallback(async (postId, { quiet = false } = {}) => {
     if (!postId) return;
@@ -387,13 +504,13 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
     }
   }, []);
 
-  const openComments = (post) => {
+  const openComments = useCallback((post) => {
     setCommentsPost(post);
     setComments([]);
     setCommentsError('');
     setCommentsVisible(true);
     loadComments(post.id);
-  };
+  }, [loadComments]);
 
   const submitComment = async (body) => {
     if (!commentsPost?.id) return;
@@ -447,6 +564,28 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
     }
   };
 
+  const renderPost = useCallback(({ item }) => (
+    <PersonalPostFeedRow
+      post={item}
+      width={stageWidth}
+      navigation={navigation}
+      isSelfProfile={isSelfProfile}
+      onOpenComments={openComments}
+      onManage={setManagedPost}
+      onToggleLike={toggleLike}
+      styles={styles}
+      theme={theme}
+    />
+  ), [
+    isSelfProfile,
+    navigation,
+    openComments,
+    stageWidth,
+    styles,
+    theme,
+    toggleLike,
+  ]);
+
   if (loading) {
     return (
       <SafeAreaView edges={['top']} style={styles.centerState}>
@@ -490,45 +629,7 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
             listRef.current?.scrollToOffset?.({ offset: Math.max(0, averageItemLength * index), animated: false });
             setTimeout(() => listRef.current?.scrollToIndex?.({ index, animated: false }), 80);
           }}
-          renderItem={({ item }) => (
-            <PersonalPostFeedCard
-              post={item}
-              width={stageWidth}
-              onOpenDetail={() => {
-                writeNavigationCache(navigationCacheKeys.postPreview(item.id), {
-                  post: {
-                    id: item.id,
-                    user_id: item.authorId,
-                    caption: item.caption || '',
-                    created_at: item.createdAt,
-                    display_aspect_ratio: item.presentation?.aspectRatio ?? null,
-                    media_crop_points: item.presentation?.cropPoints || [],
-                    media_presentations: item.presentation?.mediaPresentations || [],
-                  },
-                  author: {
-                    id: item.authorId,
-                    display_name: item.authorName || 'Unknown',
-                    avatar_url: item.authorAvatar || null,
-                  },
-                  media: (item.media || []).map((mediaItem) => ({
-                    ...mediaItem,
-                    media_type: mediaItem.media_type || mediaItem.mediaType || 'image',
-                  })),
-                  likes: Number(item.likes || 0),
-                  commentCount: Number(item.commentCount || 0),
-                  likedByMe: Boolean(item.liked),
-                  isOwner: isSelfProfile,
-                });
-                navigation.navigate('PostDetail', { postId: item.id });
-              }}
-              onOpenComments={() => openComments(item)}
-              onOpenProfile={() => navigation.navigate('Profile', { userId: item.authorId })}
-              onManage={isSelfProfile ? () => setManagedPost(item) : undefined}
-              onToggleLike={() => toggleLike(item.id)}
-              styles={styles}
-              theme={theme}
-            />
-          )}
+          renderItem={renderPost}
           refreshControl={(
             <RefreshControl
               refreshing={refreshing}

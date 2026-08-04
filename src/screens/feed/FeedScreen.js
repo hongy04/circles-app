@@ -47,6 +47,7 @@ import {
   readNavigationCache,
   writeNavigationCache,
 } from '../../services/navigationCacheService';
+import { reconcileRowsById } from '../../utils/reconcileRows';
 
 const PAGE_SIZE = 10;
 const FEED_FOCUS_FRESH_MS = 15_000;
@@ -73,6 +74,125 @@ function localCommentId() {
     .toString(36)
     .slice(2)}`;
 }
+
+function sameArrayJson(left, right) {
+  if (left === right) return true;
+  return JSON.stringify(left || []) === JSON.stringify(right || []);
+}
+
+function sameFeedMedia(left, right) {
+  const a = Array.isArray(left) ? left : [];
+  const b = Array.isArray(right) ? right : [];
+  if (a.length !== b.length) return false;
+
+  return a.every((item, index) => {
+    const other = b[index];
+    return item?.id === other?.id
+      && item?.url === other?.url
+      && item?.media_type === other?.media_type;
+  });
+}
+
+function sameFeedPost(left, right) {
+  return left?.id === right?.id
+    && left?.user?.id === right?.user?.id
+    && left?.user?.name === right?.user?.name
+    && left?.user?.avatarUri === right?.user?.avatarUri
+    && left?.caption === right?.caption
+    && left?.created_at === right?.created_at
+    && left?.time === right?.time
+    && left?.liked === right?.liked
+    && left?.likes === right?.likes
+    && left?.commentCount === right?.commentCount
+    && sameFeedMedia(left?.media, right?.media)
+    && sameArrayJson(
+      left?.presentation?.mediaPresentations,
+      right?.presentation?.mediaPresentations
+    )
+    && sameArrayJson(
+      left?.presentation?.cropPoints,
+      right?.presentation?.cropPoints
+    )
+    && left?.presentation?.aspectRatio === right?.presentation?.aspectRatio;
+}
+
+function sameIdSet(left, right) {
+  if (left === right) return true;
+  if (left.size !== right.size) return false;
+  for (const id of left) {
+    if (!right.has(id)) return false;
+  }
+  return true;
+}
+
+const FeedPostRow = React.memo(function FeedPostRow({
+  post,
+  isVisible,
+  currentUserId,
+  navigation,
+  onToggleLike,
+  onOpenComments,
+  onManagePost,
+}) {
+  const openPost = useCallback(() => {
+    writeNavigationCache(navigationCacheKeys.postPreview(post.id), {
+      post: {
+        id: post.id,
+        user_id: post.user.id,
+        caption: post.caption || '',
+        created_at: post.created_at,
+        display_aspect_ratio: post.presentation?.aspectRatio ?? null,
+        media_crop_points: post.presentation?.cropPoints || [],
+        media_presentations: post.presentation?.mediaPresentations || [],
+      },
+      author: {
+        id: post.user.id,
+        display_name: post.user.name || 'Unknown',
+        avatar_url: post.user.avatarUri || null,
+      },
+      media: post.media || [],
+      likes: Number(post.likes || 0),
+      commentCount: Number(post.commentCount || 0),
+      likedByMe: Boolean(post.liked),
+      isOwner: post.user.id === currentUserId,
+    });
+    navigation.navigate('PostDetail', { postId: post.id });
+  }, [currentUserId, navigation, post]);
+
+  const openProfile = useCallback(() => {
+    if (!post.user.id) return;
+    navigation.navigate('Profile', {
+      userId: post.user.id,
+      name: post.user.name,
+    });
+  }, [navigation, post.user.id, post.user.name]);
+
+  const toggleLike = useCallback(
+    () => onToggleLike(post.id),
+    [onToggleLike, post.id]
+  );
+  const openComments = useCallback(
+    () => onOpenComments(post.id),
+    [onOpenComments, post.id]
+  );
+  const openMenu = useCallback(
+    () => onManagePost(post),
+    [onManagePost, post]
+  );
+
+  return (
+    <PostCard
+      post={post}
+      isVisible={isVisible}
+      onToggleLike={toggleLike}
+      onDoubleLike={toggleLike}
+      onOpenComments={openComments}
+      onOpenPost={openPost}
+      onOpenProfile={post.user.id ? openProfile : undefined}
+      onOpenMenu={post.user.id === currentUserId ? openMenu : undefined}
+    />
+  );
+});
 
 export function FeedScreen({ navigation }) {
   const theme = useThemeTokens();
@@ -122,13 +242,14 @@ export function FeedScreen({ navigation }) {
     itemVisiblePercentThreshold: 60,
   });
   const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
-    setVisiblePostIds(
-      new Set(
-        viewableItems
-          .map((item) => item.item?.id)
-          .filter(Boolean)
-      )
+    const nextVisibleIds = new Set(
+      viewableItems
+        .map((item) => item.item?.id)
+        .filter(Boolean)
     );
+    setVisiblePostIds((current) => (
+      sameIdSet(current, nextVisibleIds) ? current : nextVisibleIds
+    ));
   });
 
   useEffect(() => {
@@ -156,13 +277,18 @@ export function FeedScreen({ navigation }) {
         if (!mountedRef.current) return;
 
         const nextHasMore = page.posts.length === PAGE_SIZE;
-        setPosts(page.posts);
-        postsRef.current = page.posts;
+        const nextPosts = reconcileRowsById(
+          postsRef.current,
+          page.posts,
+          sameFeedPost
+        );
+        setPosts(nextPosts);
+        postsRef.current = nextPosts;
         setCursor(page.cursor);
         setHasMore(nextHasMore);
         lastFeedRefreshAtRef.current = Date.now();
         writeNavigationCache(navigationCacheKeys.feed(), {
-          posts: page.posts,
+          posts: nextPosts,
           cursor: page.cursor,
           hasMore: nextHasMore,
           refreshedAt: lastFeedRefreshAtRef.current,
@@ -691,6 +817,24 @@ export function FeedScreen({ navigation }) {
     });
   }, [stories, storyIndex]);
 
+  const renderFeedPost = useCallback(({ item }) => (
+    <FeedPostRow
+      post={item}
+      isVisible={visiblePostIds.has(item.id)}
+      currentUserId={currentUserId}
+      navigation={navigation}
+      onToggleLike={toggleLike}
+      onOpenComments={openComments}
+      onManagePost={setManagedPost}
+    />
+  ), [
+    currentUserId,
+    navigation,
+    openComments,
+    toggleLike,
+    visiblePostIds,
+  ]);
+
   if (initialLoading) {
     return (
       <SafeAreaView edges={['top']} style={styles.centerRoot}>
@@ -730,55 +874,7 @@ export function FeedScreen({ navigation }) {
         maxToRenderPerBatch={4}
         updateCellsBatchingPeriod={40}
         windowSize={7}
-        renderItem={({ item }) => (
-          <PostCard
-            post={item}
-            isVisible={visiblePostIds.has(item.id)}
-            onToggleLike={() => toggleLike(item.id)}
-            onDoubleLike={() => toggleLike(item.id)}
-            onOpenComments={() => openComments(item.id)}
-            onOpenPost={() => {
-              writeNavigationCache(navigationCacheKeys.postPreview(item.id), {
-                post: {
-                  id: item.id,
-                  user_id: item.user.id,
-                  caption: item.caption || '',
-                  created_at: item.created_at,
-                  display_aspect_ratio: item.presentation?.aspectRatio ?? null,
-                  media_crop_points: item.presentation?.cropPoints || [],
-                  media_presentations: item.presentation?.mediaPresentations || [],
-                },
-                author: {
-                  id: item.user.id,
-                  display_name: item.user.name || 'Unknown',
-                  avatar_url: item.user.avatarUri || null,
-                },
-                media: item.media || [],
-                likes: Number(item.likes || 0),
-                commentCount: Number(item.commentCount || 0),
-                likedByMe: Boolean(item.liked),
-                isOwner: item.user.id === currentUserId,
-              });
-              navigation.navigate('PostDetail', {
-                postId: item.id,
-              });
-            }}
-            onOpenProfile={
-              item.user.id
-                ? () =>
-                    navigation.navigate('Profile', {
-                      userId: item.user.id,
-                      name: item.user.name,
-                    })
-                : undefined
-            }
-            onOpenMenu={
-              item.user.id === currentUserId
-                ? () => setManagedPost(item)
-                : undefined
-            }
-          />
-        )}
+        renderItem={renderFeedPost}
         viewabilityConfig={viewabilityConfigRef.current}
         onViewableItemsChanged={
           onViewableItemsChangedRef.current
