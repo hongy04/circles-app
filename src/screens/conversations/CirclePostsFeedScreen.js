@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
+import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
 import { InstagramCommentsSheet } from '../../components/comments/InstagramCommentsSheet';
 import { FramedPostImage } from '../../components/posts/FramedPostImage';
 import { mediaPresentationForIndex } from '../../utils/postPresentation';
@@ -594,15 +595,19 @@ function CirclePostsFeedContent({ route, navigation }) {
 
   if (loading) {
     return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator color={theme.circle.accent} />
-        <Text style={styles.stateText}>Opening Circle posts…</Text>
+      <SafeAreaView edges={['bottom']} style={styles.screen}>
+        <CircleBackdrop conversationId={conversationId} />
+        <View style={styles.centerState}>
+          <ActivityIndicator color={theme.circle.accent} />
+          <Text style={styles.stateText}>Opening Circle posts…</Text>
+        </View>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <CircleBackdrop conversationId={conversationId} />
 
       {error && !posts.length ? (
         <View style={styles.centerState}>
@@ -682,7 +687,7 @@ function createStyles(theme) {
       maxWidth: 696,
       alignSelf: 'center',
       marginBottom: 12,
-      backgroundColor: theme.colors.surface,
+      backgroundColor: 'rgba(255,255,255,0.91)',
       borderRadius: 18,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: theme.circle.accentSoft,
@@ -714,7 +719,7 @@ function createStyles(theme) {
     captionAuthor: { fontFamily: 'Manrope_700Bold' },
     commentsButton: { alignSelf: 'flex-start', paddingTop: 7, paddingBottom: 5, paddingRight: 18 },
     commentsLink: { color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13 },
-    centerState: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: theme.circle.profileBackground },
+    centerState: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: 'transparent' },
     stateIcon: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: theme.circle.accentSoft },
     stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
     errorText: { marginTop: 12, color: theme.colors.text, fontFamily: 'Manrope_700Bold', textAlign: 'center' },
