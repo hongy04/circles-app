@@ -14,8 +14,22 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
+
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 import { addEventGuest } from '../../services/eventService';
 import {
   createEventGuestInvitation,
@@ -130,6 +144,7 @@ function AddEventGuestContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={0.60} decals />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -296,8 +311,12 @@ export function AddEventGuestScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentLine = rgba(theme.circle.accent, 0.20);
+  const accentWash = rgba(theme.circle.accent, 0.10);
   return StyleSheet.create({
-  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
   keyboardView: { flex: 1 },
   content: {
     width: '100%',
@@ -313,8 +332,13 @@ function createStyles(theme) {
     marginBottom: 22,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    shadowColor: '#000',
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   contextIcon: {
     width: 44,
@@ -322,7 +346,7 @@ function createStyles(theme) {
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.circle.accentSoft,
+    backgroundColor: accentWash,
   },
   contextCopy: { flex: 1 },
   contextTitle: {
@@ -349,8 +373,8 @@ function createStyles(theme) {
     paddingHorizontal: 14,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
     color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 15,
@@ -361,8 +385,8 @@ function createStyles(theme) {
     minHeight: 48,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -372,7 +396,7 @@ function createStyles(theme) {
     borderColor: theme.circle.accent,
     backgroundColor: theme.circle.accent,
   },
-  choiceButtonDisabled: { backgroundColor: theme.colors.surfaceSoft },
+  choiceButtonDisabled: { backgroundColor: rgba(theme.colors.surface, 0.58) },
   choiceButtonText: {
     color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
@@ -385,11 +409,16 @@ function createStyles(theme) {
     padding: 15,
     borderRadius: 13,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   explainerText: {
     flex: 1,
@@ -408,8 +437,8 @@ function createStyles(theme) {
     minHeight: 44,
     borderRadius: 11,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -446,8 +475,12 @@ function createStyles(theme) {
     fontSize: 15,
   },
   modeButton: {
-    minHeight: 46,
+    minHeight: 44,
     marginTop: 10,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentLine,
+    backgroundColor: rgba(theme.colors.surface, 0.66),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -455,7 +488,7 @@ function createStyles(theme) {
     color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
     fontSize: 12,
-    textDecorationLine: 'underline',
+
   },
   pressed: { opacity: 0.72 },
   });

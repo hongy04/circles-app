@@ -15,8 +15,22 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
+
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 import { createCircleEvent } from '../../services/eventService';
 import { listMyConversations } from '../../services/conversationService';
 import {
@@ -286,6 +300,7 @@ function CreateEventContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={0.74} decals />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -376,8 +391,16 @@ function CreateEventContent({ route, navigation }) {
             </View>
           ) : null}
 
-          <Field label="Event title">
-            <TextInput
+          <View style={styles.formCard}>
+            <View style={styles.formCardHeading}>
+              <View style={styles.formCardIcon}>
+                <Ionicons name="calendar-clear-outline" size={18} color={theme.colors.text} />
+              </View>
+              <Text style={styles.formCardTitle}>Event details</Text>
+            </View>
+
+            <Field label="Event title">
+              <TextInput
               value={title}
               onChangeText={setTitle}
               placeholder="Game night"
@@ -442,18 +465,19 @@ function CreateEventContent({ route, navigation }) {
             />
           </Field>
 
-          <Field label="Details" hint="Optional">
-            <TextInput
-              value={description}
-              onChangeText={setDescription}
-              placeholder="What should people know or bring?"
-              placeholderTextColor="#a4a4a4"
-              multiline
-              textAlignVertical="top"
-              maxLength={2000}
-              style={[styles.input, styles.textArea]}
-            />
-          </Field>
+            <Field label="Details" hint="Optional">
+              <TextInput
+                value={description}
+                onChangeText={setDescription}
+                placeholder="What should people know or bring?"
+                placeholderTextColor="#a4a4a4"
+                multiline
+                textAlignVertical="top"
+                maxLength={2000}
+                style={[styles.input, styles.textArea]}
+              />
+            </Field>
+          </View>
 
           {outsideGuestsEnabled ? (
             <View style={styles.guestSettingsCard}>
@@ -552,8 +576,12 @@ export function CreateEventScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentLine = rgba(theme.circle.accent, 0.20);
+  const accentWash = rgba(theme.circle.accent, 0.10);
   return StyleSheet.create({
-  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
   keyboardView: { flex: 1 },
   content: {
     width: '100%',
@@ -569,8 +597,13 @@ function createStyles(theme) {
     marginBottom: 20,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    shadowColor: '#000',
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   contextIcon: {
     width: 42,
@@ -578,7 +611,7 @@ function createStyles(theme) {
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.circle.accentSoft,
+    backgroundColor: accentWash,
   },
   contextCopy: { flex: 1 },
   contextTitle: {
@@ -598,8 +631,13 @@ function createStyles(theme) {
     padding: 15,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    shadowColor: '#000',
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   circleSectionHeader: {
     flexDirection: 'row',
@@ -633,15 +671,15 @@ function createStyles(theme) {
     paddingVertical: 9,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
   circleSelectorRowSelected: {
     borderColor: theme.circle.accent,
-    backgroundColor: theme.circle.accentSoft,
+    backgroundColor: accentWash,
   },
   circleSelectorIcon: {
     width: 38,
@@ -649,7 +687,7 @@ function createStyles(theme) {
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.surface,
+    backgroundColor: glassStrong,
   },
   circleSelectorCopy: { flex: 1 },
   circleSelectorTitle: {
@@ -668,21 +706,21 @@ function createStyles(theme) {
     height: 27,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
+    borderColor: accentLine,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.surface,
+    backgroundColor: glassStrong,
   },
   circleCheckboxSelected: {
-    borderColor: theme.welcome.brandInk,
-    backgroundColor: theme.welcome.brandInk,
+    borderColor: theme.circle.accent,
+    backgroundColor: theme.circle.accent,
   },
   circleLoadState: {
     minHeight: 54,
     marginTop: 8,
     paddingHorizontal: 11,
     borderRadius: 11,
-    backgroundColor: theme.circle.accentSoft,
+    backgroundColor: accentWash,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -699,6 +737,39 @@ function createStyles(theme) {
     fontFamily: 'Manrope_400Regular',
     fontSize: 11,
     lineHeight: 16,
+  },
+  formCard: {
+    marginBottom: 20,
+    padding: 15,
+    paddingBottom: 2,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    shadowColor: '#000',
+    shadowOpacity: 0.045,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 1,
+  },
+  formCardHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    marginBottom: 15,
+  },
+  formCardIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: accentWash,
+  },
+  formCardTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
   },
   field: { marginBottom: 17 },
   label: {
@@ -719,8 +790,8 @@ function createStyles(theme) {
     paddingVertical: 11,
     borderRadius: 11,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
     color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 15,
@@ -733,8 +804,13 @@ function createStyles(theme) {
     padding: 15,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    shadowColor: '#000',
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   settingRow: {
     flexDirection: 'row',

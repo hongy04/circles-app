@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   Animated,
@@ -38,6 +38,7 @@ import {
   subscribeToCirclePostChanges,
   toggleCirclePostLike,
 } from '../../services/circlePostService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function formatTimestamp(timestamp) {
   const date = new Date(timestamp);
@@ -83,10 +84,12 @@ function CirclePostDetailContent({ route, navigation }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [post, setPost] = useState(null);
+  const cachedPost = readNavigationCache(navigationCacheKeys.circlePost(postId));
+  const [post, setPost] = useState(cachedPost || null);
   const [comments, setComments] = useState([]);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
   const [commentText, setCommentText] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedPost);
   const [refreshing, setRefreshing] = useState(false);
   const [commenting, setCommenting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -94,6 +97,7 @@ function CirclePostDetailContent({ route, navigation }) {
   const [error, setError] = useState('');
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const stageWidth = Math.min(width, 720);
+  const hasLoadedRef = useRef(Boolean(cachedPost));
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!postId) return;
@@ -106,6 +110,8 @@ function CirclePostDetailContent({ route, navigation }) {
       ]);
       setPost(postRow);
       setComments(commentRows);
+      setCommentsLoaded(true);
+      writeNavigationCache(navigationCacheKeys.circlePost(postId), postRow);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this Circle post.');
     } finally {
@@ -114,7 +120,11 @@ function CirclePostDetailContent({ route, navigation }) {
     }
   }, [postId]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    void load({ quiet: hasLoadedRef.current }).finally(() => {
+      hasLoadedRef.current = true;
+    });
+  }, [load]));
 
   useFocusEffect(
     useCallback(() => {
@@ -410,7 +420,13 @@ function CirclePostDetailContent({ route, navigation }) {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
             contentContainerStyle={styles.listContent}
-            ListEmptyComponent={<InstagramCommentsEmpty body="Keep the conversation inside this Circle." />}
+            ListEmptyComponent={!commentsLoaded ? (
+              <View style={styles.commentsLoading}>
+                <ActivityIndicator color={theme.circle.accent} />
+              </View>
+            ) : (
+              <InstagramCommentsEmpty body="Keep the conversation inside this Circle." />
+            )}
             renderItem={({ item }) => (
               <InstagramCommentRow
                 comment={{
@@ -456,6 +472,7 @@ function createStyles(theme) {
     keyboardView: { flex: 1 },
     contentWidth: { flex: 1, width: '100%', maxWidth: 720, alignSelf: 'center' },
     listContent: { flexGrow: 1, paddingBottom: 18, backgroundColor: theme.colors.surface },
+    commentsLoading: { minHeight: 110, alignItems: 'center', justifyContent: 'center' },
     postCard: { backgroundColor: theme.colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.circle.accentSoft },
     authorRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.divider, backgroundColor: theme.colors.surface },
     authorIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center' },

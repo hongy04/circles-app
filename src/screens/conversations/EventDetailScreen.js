@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -34,6 +34,7 @@ import {
   reshareEventGuestInvitation,
   revokeEventGuestInvitation,
 } from '../../services/eventGuestInviteService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 const RSVP_OPTIONS = [
   { status: 'going', label: 'Going', icon: 'checkmark-circle-outline' },
@@ -90,6 +91,56 @@ function formatCircleContext(event) {
   if (circles.length === 1) return circles[0].name;
   if (circles.length === 2) return `${circles[0].name} + ${circles[1].name}`;
   return `${circles[0].name} + ${circles.length - 1} more Circles`;
+}
+
+
+function detailsFromEventSummary(summary, conversationId, circleName) {
+  if (!summary?.id) return null;
+  const guestCap = Number(summary.guestCap || 0);
+  const guestCount = Number(summary.guestCount || 0);
+  const circleCount = Math.max(1, Number(summary.circleCount || 1));
+  return {
+    event: {
+      ...summary,
+      circleId: conversationId || null,
+      circleName: circleName || 'Circle',
+      circleCount,
+      circles: circleCount === 1 && conversationId
+        ? [{ id: conversationId, name: circleName || 'Circle' }]
+        : [],
+      canManage: false,
+      outsideGuestCap: guestCap,
+      membersCanInviteGuests: false,
+      allowPlusOnes: false,
+      pendingGuestInvitationCount: 0,
+      reservedGuestCount: guestCount,
+      remainingGuestSlots: Math.max(guestCap - guestCount, 0),
+      canAddGuests: false,
+      isPast: summary.status === 'completed'
+        || (summary.startsAt ? new Date(summary.startsAt).getTime() < Date.now() : false),
+      attendanceReviewed: Boolean(summary.attendanceReviewedAt),
+      attendanceReviewedAt: summary.attendanceReviewedAt || null,
+      completedAt: summary.completedAt || null,
+      attendedCount: Number(summary.attendedCount || 0),
+    },
+    counts: {
+      attendeeCount: Number(summary.attendeeCount || 0),
+      going: Number(summary.goingCount || 0),
+      maybe: Number(summary.maybeCount || 0),
+      notGoing: Number(summary.notGoingCount || 0),
+      pending: Number(summary.pendingCount || 0),
+      guestCount,
+      pendingGuestInvitations: 0,
+      reservedGuestCount: guestCount,
+      guestGoing: 0,
+      guestMaybe: 0,
+      guestInvited: 0,
+      guestNotGoing: 0,
+    },
+    attendees: [],
+    guests: [],
+    guestInvitations: [],
+  };
 }
 
 function CountCard({ value, label }) {
@@ -254,8 +305,18 @@ function EventDetailContent({ route, navigation }) {
   const { eventId, conversationId, circleName = 'Circle' } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [details, setDetails] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const initialSnapshot = useMemo(() => {
+    const cachedDetails = readNavigationCache(navigationCacheKeys.eventDetails(eventId));
+    const cachedSummary = readNavigationCache(navigationCacheKeys.eventSummary(eventId));
+    return {
+      details: cachedDetails || detailsFromEventSummary(cachedSummary, conversationId, circleName),
+      hasFullDetails: Boolean(cachedDetails),
+    };
+  }, [circleName, conversationId, eventId]);
+  const initialDetails = initialSnapshot.details;
+  const [details, setDetails] = useState(initialDetails || null);
+  const [loading, setLoading] = useState(!initialSnapshot.hasFullDetails);
+  const hasLoadedRef = useRef(initialSnapshot.hasFullDetails);
   const [refreshing, setRefreshing] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState('');
   const [updatingGuestId, setUpdatingGuestId] = useState('');
@@ -296,6 +357,7 @@ function EventDetailContent({ route, navigation }) {
         isFeatureEnabled(FEATURE_FLAGS.EVENT_REPEAT_SIGNALS),
       ]);
       setDetails(nextDetails);
+      writeNavigationCache(navigationCacheKeys.eventDetails(eventId), nextDetails);
       setOutsideGuestControlsEnabled(guestControlsEnabled);
       setGuestInviteLinksEnabled(inviteLinksEnabled);
       setEventPhotosEnabled(photosEnabled);
@@ -322,8 +384,10 @@ function EventDetailContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load])
+      void load({ quiet: hasLoadedRef.current || Boolean(initialDetails) }).finally(() => {
+        hasLoadedRef.current = true;
+      });
+    }, [initialDetails, load])
   );
 
   const updateRsvp = async (status) => {
@@ -559,7 +623,7 @@ function EventDetailContent({ route, navigation }) {
 
         <Text style={styles.title}>{event.title}</Text>
 
-        {event.circleCount > 1 ? (
+        {event.circleCount > 1 && event.circles.length > 1 ? (
           <View style={styles.circleChips}>
             {event.circles.map((circle) => (
               <View key={circle.id} style={styles.circleChip}>
@@ -849,6 +913,10 @@ function EventDetailContent({ route, navigation }) {
             />
           ))}
         </View>
+      ) : loading && Number(event.guestCount || 0) > 0 ? (
+        <View style={styles.inlineLoading}>
+          <ActivityIndicator color={theme.circle.accent} />
+        </View>
       ) : event.outsideGuestCap > 0 ? (
         <View style={styles.emptyGuestCard}>
           <Text style={styles.emptyGuestTitle}>No outside guests yet</Text>
@@ -870,6 +938,11 @@ function EventDetailContent({ route, navigation }) {
         renderItem={({ item }) => (
           <AttendeeRow attendee={item} attendanceReviewed={event?.attendanceReviewed} />
         )}
+        ListEmptyComponent={loading ? (
+          <View style={styles.inlineLoading}>
+            <ActivityIndicator color={theme.circle.accent} />
+          </View>
+        ) : null}
         refreshControl={(
           <RefreshControl
             refreshing={refreshing}
@@ -906,6 +979,7 @@ function createStyles(theme) {
     padding: 16,
     paddingBottom: 46,
   },
+  inlineLoading: { minHeight: 84, alignItems: 'center', justifyContent: 'center' },
   heroCard: {
     padding: 20,
     overflow: 'hidden',

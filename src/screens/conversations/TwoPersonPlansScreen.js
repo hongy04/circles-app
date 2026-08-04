@@ -12,12 +12,26 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
   listTwoPersonPlans,
   subscribeToTwoPersonPlanChanges,
 } from '../../services/twoPersonPlanService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function formatPlanDate(value) {
   if (!value) return null;
@@ -98,20 +112,28 @@ function SectionHeader({ title, subtitle, styles }) {
 
 function TwoPersonPlansContent({ route, navigation }) {
   const { conversationId, circleName = 'Our Circle' } = route.params || {};
+  const cachedPlans = readNavigationCache(navigationCacheKeys.twoPersonPlans(conversationId));
+  const hasInitialPlans = Array.isArray(cachedPlans);
+  const initialPlans = hasInitialPlans ? cachedPlans : [];
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [plans, setPlans] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [plans, setPlans] = useState(initialPlans);
+  const [loading, setLoading] = useState(!hasInitialPlans);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(hasInitialPlans);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!conversationId) return;
     if (!quiet) setLoading(true);
     setError('');
     try {
-      setPlans(await listTwoPersonPlans(conversationId));
+      const nextPlans = await listTwoPersonPlans(conversationId);
+      setPlans(nextPlans);
+      writeNavigationCache(navigationCacheKeys.twoPersonPlans(conversationId), nextPlans);
+      nextPlans.forEach((plan) => {
+        writeNavigationCache(navigationCacheKeys.plan(plan.id), plan);
+      });
     } catch (loadError) {
       setError(loadError?.message || 'Could not open shared plans.');
     } finally {
@@ -159,14 +181,18 @@ function TwoPersonPlansContent({ route, navigation }) {
   if (loading) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.stateText}>Opening shared plans…</Text>
+        <ThemeAtmosphere theme={theme} strength={0.80} decals />
+        <View style={styles.stateCard}>
+          <ActivityIndicator color={theme.circle.accent} />
+          <Text style={styles.stateText}>Opening shared plans…</Text>
+        </View>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={0.84} decals />
       <FlatList
         data={flatData}
         keyExtractor={(item) => item.id}
@@ -202,11 +228,14 @@ function TwoPersonPlansContent({ route, navigation }) {
               plan={item.plan}
               styles={styles}
               theme={theme}
-              onPress={() => navigation.navigate('TwoPersonPlanDetail', {
-                planId: item.plan.id,
-                conversationId,
-                circleName,
-              })}
+              onPress={() => {
+                writeNavigationCache(navigationCacheKeys.plan(item.plan.id), item.plan);
+                navigation.navigate('TwoPersonPlanDetail', {
+                  planId: item.plan.id,
+                  conversationId,
+                  circleName,
+                });
+              }}
             />
           );
         }}
@@ -226,7 +255,7 @@ function TwoPersonPlansContent({ route, navigation }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={theme.colors.text}
+            tintColor={theme.circle.accent}
           />
         )}
         contentContainerStyle={styles.listContent}
@@ -246,30 +275,175 @@ export function TwoPersonPlansScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentBorder = rgba(theme.circle.accent, 0.20);
+
   return StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
-  listContent: { flexGrow: 1, paddingBottom: 36 },
-  topActions: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 2 },
-  newButton: { minHeight: 43, borderRadius: 11, backgroundColor: theme.welcome.brandInk, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  listContent: {
+    flexGrow: 1,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+    paddingHorizontal: 14,
+    paddingBottom: 36,
+  },
+  topActions: {
+    marginTop: 14,
+    marginBottom: 2,
+    padding: 11,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
+  },
+  newButton: {
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: theme.welcome.brandInk,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    shadowColor: theme.welcome.brandInk,
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
+  },
   newButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  errorText: { marginTop: 10, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12 },
-  sectionHeader: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 8 },
-  sectionTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 16 },
-  sectionSubtitle: { marginTop: 2, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 16 },
-  planCard: { minHeight: 84, marginHorizontal: 14, marginBottom: 9, paddingHorizontal: 13, paddingVertical: 12, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.colors.surface, flexDirection: 'row', alignItems: 'center' },
-  planIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: theme.circle.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  errorText: {
+    marginTop: 10,
+    paddingHorizontal: 2,
+    color: '#b42318',
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 12,
+  },
+  sectionHeader: {
+    paddingHorizontal: 4,
+    paddingTop: 22,
+    paddingBottom: 9,
+  },
+  sectionTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 17,
+  },
+  sectionSubtitle: {
+    marginTop: 3,
+    color: theme.colors.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11.5,
+    lineHeight: 16,
+  },
+  planCard: {
+    minHeight: 86,
+    marginBottom: 9,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    borderRadius: 17,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glass,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: theme.colors.text,
+    shadowOpacity: 0.025,
+    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
+  },
+  planIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: rgba(theme.circle.accent, 0.12),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: rgba(theme.circle.accent, 0.15),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   planCopy: { flex: 1, marginHorizontal: 11 },
   planTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  planTitle: { flex: 1, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
-  statusBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999, backgroundColor: theme.circle.accentSoft },
-  statusText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 9.5 },
-  planMeta: { marginTop: 4, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5 },
-  planHint: { marginTop: 4, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5, lineHeight: 15 },
-  emptyState: { minHeight: 330, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34 },
-  emptyTitle: { marginTop: 13, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 18, textAlign: 'center' },
-  emptyBody: { marginTop: 7, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 13, lineHeight: 19, textAlign: 'center' },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: theme.colors.surface },
-  stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
-  pressed: { opacity: 0.72 },
+  planTitle: {
+    flex: 1,
+    color: theme.colors.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 14,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: rgba(theme.circle.accent, 0.11),
+  },
+  statusText: {
+    color: theme.colors.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 9.5,
+  },
+  planMeta: {
+    marginTop: 4,
+    color: theme.colors.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11.5,
+  },
+  planHint: {
+    marginTop: 4,
+    color: theme.colors.text,
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 10.5,
+    lineHeight: 15,
+  },
+  emptyState: {
+    minHeight: 330,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 34,
+    marginTop: 14,
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glass,
+  },
+  emptyTitle: {
+    marginTop: 13,
+    color: theme.colors.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 18,
+    textAlign: 'center',
+  },
+  emptyBody: {
+    marginTop: 7,
+    color: theme.colors.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  centerState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    backgroundColor: theme.circle.profileBackground,
+  },
+  stateCard: {
+    minWidth: 210,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 22,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
+  },
+  stateText: {
+    marginTop: 10,
+    color: theme.colors.subtext,
+    fontFamily: 'Manrope_400Regular',
+  },
+  pressed: { opacity: 0.74, transform: [{ scale: 0.995 }] },
   });
 }

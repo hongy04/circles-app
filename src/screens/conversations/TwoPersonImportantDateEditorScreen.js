@@ -23,6 +23,7 @@ import {
   getTwoPersonImportantDate,
   updateTwoPersonImportantDate,
 } from '../../services/twoPersonImportantDateService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 const CATEGORIES = Object.freeze([
   { key: 'anniversary', label: 'Anniversary', icon: 'heart-outline' },
@@ -72,16 +73,19 @@ function TwoPersonImportantDateEditorContent({ route, navigation }) {
   } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const cachedItem = importantDateId
+    ? readNavigationCache(navigationCacheKeys.importantDate(importantDateId))
+    : null;
 
   const nextMonth = new Date();
   nextMonth.setMonth(nextMonth.getMonth() + 1);
 
-  const [title, setTitle] = useState('');
-  const [note, setNote] = useState('');
-  const [dateInput, setDateInput] = useState(formatDateInput(nextMonth));
-  const [category, setCategory] = useState('meaningful');
-  const [recursYearly, setRecursYearly] = useState(false);
-  const [loading, setLoading] = useState(Boolean(importantDateId));
+  const [title, setTitle] = useState(cachedItem?.title || '');
+  const [note, setNote] = useState(cachedItem?.note || '');
+  const [dateInput, setDateInput] = useState(cachedItem?.dateValue || formatDateInput(nextMonth));
+  const [category, setCategory] = useState(cachedItem?.category || 'meaningful');
+  const [recursYearly, setRecursYearly] = useState(cachedItem?.recurrence === 'yearly');
+  const [loading, setLoading] = useState(Boolean(importantDateId && !cachedItem));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const scrollRef = useRef(null);
@@ -109,6 +113,7 @@ function TwoPersonImportantDateEditorContent({ route, navigation }) {
         setDateInput(item.dateValue || '');
         setCategory(item.category || 'meaningful');
         setRecursYearly(item.recurrence === 'yearly');
+        writeNavigationCache(navigationCacheKeys.importantDate(importantDateId), item);
       } catch (loadError) {
         if (active) setError(loadError?.message || 'Could not open this important date.');
       } finally {

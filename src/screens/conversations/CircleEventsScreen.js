@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { listCircleEvents } from '../../services/eventService';
@@ -21,6 +22,19 @@ import {
   FEATURE_FLAGS,
   isFeatureEnabled,
 } from '../../services/featureFlagService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 const RSVP_LABELS = {
   pending: 'No response',
@@ -176,14 +190,17 @@ function CircleEventsContent({ route, navigation }) {
   const { conversationId, circleName = 'Circle' } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [events, setEvents] = useState([]);
-  const [polls, setPolls] = useState([]);
+  const cachedEvents = readNavigationCache(navigationCacheKeys.circleEvents(conversationId));
+  const cachedPolls = readNavigationCache(navigationCacheKeys.circlePolls(conversationId));
+  const hasWarmSnapshot = Array.isArray(cachedEvents) && Array.isArray(cachedPolls);
+  const [events, setEvents] = useState(Array.isArray(cachedEvents) ? cachedEvents : []);
+  const [polls, setPolls] = useState(Array.isArray(cachedPolls) ? cachedPolls : []);
   const [pollsEnabled, setPollsEnabled] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasWarmSnapshot);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [pollError, setPollError] = useState('');
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(hasWarmSnapshot);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!conversationId) return;
@@ -205,12 +222,20 @@ function CircleEventsContent({ route, navigation }) {
 
     if (results[0].status === 'fulfilled') {
       setEvents(results[0].value);
+      writeNavigationCache(navigationCacheKeys.circleEvents(conversationId), results[0].value);
+      results[0].value.forEach((event) => {
+        writeNavigationCache(navigationCacheKeys.eventSummary(event.id), event);
+      });
     } else {
       setError(results[0].reason?.message || 'Could not load this Circle’s events.');
     }
 
     if (results[1].status === 'fulfilled') {
       setPolls(results[1].value);
+      writeNavigationCache(navigationCacheKeys.circlePolls(conversationId), results[1].value);
+      results[1].value.forEach((poll) => {
+        writeNavigationCache(navigationCacheKeys.pollSummary(poll.id), poll);
+      });
     } else {
       setPollError(results[1].reason?.message || 'Availability polls could not load.');
     }
@@ -259,6 +284,7 @@ function CircleEventsContent({ route, navigation }) {
       rsvp_status: event.viewerRsvpStatus,
       circle_count: event.circleCount,
     });
+    writeNavigationCache(navigationCacheKeys.eventSummary(event.id), event);
     navigation.navigate('EventDetail', { eventId: event.id, conversationId, circleName });
   };
 
@@ -267,6 +293,7 @@ function CircleEventsContent({ route, navigation }) {
       surface: 'circle_events',
       poll_status: poll.status,
     });
+    writeNavigationCache(navigationCacheKeys.pollSummary(poll.id), poll);
     navigation.navigate('AvailabilityPollDetail', { pollId: poll.id, conversationId, circleName });
   };
 
@@ -332,8 +359,11 @@ function CircleEventsContent({ route, navigation }) {
   if (loading && events.length === 0 && polls.length === 0) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.stateText}>Loading plans…</Text>
+        <ThemeAtmosphere theme={theme} strength={0.78} decals />
+        <View style={styles.stateCard}>
+          <ActivityIndicator color={theme.circle.accent} />
+          <Text style={styles.stateText}>Loading plans…</Text>
+        </View>
       </SafeAreaView>
     );
   }
@@ -341,17 +371,23 @@ function CircleEventsContent({ route, navigation }) {
   if (error && events.length === 0 && polls.length === 0) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="calendar-outline" size={38} color={theme.colors.text} />
-        <Text style={styles.errorText}>{error}</Text>
-        <Pressable onPress={() => load()} style={styles.retryButton}>
-          <Text style={styles.retryText}>Try again</Text>
-        </Pressable>
+        <ThemeAtmosphere theme={theme} strength={0.78} decals />
+        <View style={styles.stateCard}>
+          <View style={styles.stateIcon}>
+            <Ionicons name="calendar-outline" size={28} color={theme.colors.text} />
+          </View>
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable onPress={() => load()} style={styles.retryButton}>
+            <Text style={styles.retryText}>Try again</Text>
+          </Pressable>
+        </View>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={0.82} decals />
       <FlatList
         data={eventRows}
         keyExtractor={(item) => item.rowType === 'section' ? item.id : item.event.id}
@@ -381,7 +417,7 @@ function CircleEventsContent({ route, navigation }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={theme.colors.text}
+            tintColor={theme.circle.accent}
           />
         )}
         contentContainerStyle={styles.content}
@@ -401,6 +437,10 @@ export function CircleEventsScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentBorder = rgba(theme.circle.accent, 0.20);
+
   return StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
   content: {
@@ -408,19 +448,26 @@ function createStyles(theme) {
     maxWidth: 720,
     alignSelf: 'center',
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 12,
     paddingBottom: 46,
     flexGrow: 1,
   },
-  topActions: { paddingHorizontal: 14, paddingTop: 14 },
+  topActions: {
+    marginTop: 2,
+    padding: 11,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
+  },
   actionRow: { flexDirection: 'row', gap: 9 },
   pollButton: {
     minHeight: 44,
     flex: 1,
-    borderRadius: 11,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: rgba(theme.circle.accent, 0.24),
+    backgroundColor: rgba(theme.colors.surface, 0.74),
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -434,12 +481,17 @@ function createStyles(theme) {
   createButton: {
     minHeight: 44,
     flex: 1,
-    borderRadius: 11,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
     backgroundColor: theme.welcome.brandInk,
+    shadowColor: theme.welcome.brandInk,
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
   },
   createButtonText: {
     color: '#fff',
@@ -468,18 +520,23 @@ function createStyles(theme) {
     fontSize: 17,
   },
   sectionCount: {
-    color: theme.colors.subtext,
-    fontFamily: 'Manrope_600SemiBold',
-    fontSize: 12,
+    overflow: 'hidden',
+    color: theme.colors.text,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 10.5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: rgba(theme.circle.accent, 0.10),
   },
   pollCard: {
     minHeight: 104,
     marginBottom: 9,
     padding: 14,
-    borderRadius: 15,
+    borderRadius: 17,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentBorder,
+    backgroundColor: glass,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -490,7 +547,9 @@ function createStyles(theme) {
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.circle.accentSoft,
+    backgroundColor: rgba(theme.circle.accent, 0.12),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: rgba(theme.circle.accent, 0.15),
   },
   pollCopy: { flex: 1 },
   pollTitle: {
@@ -500,7 +559,7 @@ function createStyles(theme) {
     fontSize: 15,
   },
   pollState: {
-    color: theme.colors.subtext,
+    color: theme.circle.accent,
     fontFamily: 'Manrope_700Bold',
     fontSize: 9,
     textTransform: 'uppercase',
@@ -519,10 +578,10 @@ function createStyles(theme) {
   },
   pollEmptyCard: {
     padding: 16,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentBorder,
+    backgroundColor: glass,
   },
   pollEmptyTitle: {
     color: theme.colors.text,
@@ -539,10 +598,10 @@ function createStyles(theme) {
   inlineError: {
     minHeight: 62,
     padding: 13,
-    borderRadius: 13,
+    borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -557,13 +616,18 @@ function createStyles(theme) {
     minHeight: 126,
     marginBottom: 10,
     padding: 14,
-    borderRadius: 15,
+    borderRadius: 17,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentBorder,
+    backgroundColor: glass,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    shadowColor: theme.colors.text,
+    shadowOpacity: 0.025,
+    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
   },
   dateIcon: {
     width: 46,
@@ -571,7 +635,9 @@ function createStyles(theme) {
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.circle.accentSoft,
+    backgroundColor: rgba(theme.circle.accent, 0.12),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: rgba(theme.circle.accent, 0.15),
   },
   eventCopy: { flex: 1 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -615,7 +681,7 @@ function createStyles(theme) {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: theme.circle.accentSoft,
+    backgroundColor: rgba(theme.circle.accent, 0.11),
   },
   rsvpPillText: {
     color: theme.colors.text,
@@ -630,7 +696,12 @@ function createStyles(theme) {
   emptyState: {
     alignItems: 'center',
     paddingHorizontal: 30,
-    paddingVertical: 54,
+    paddingVertical: 48,
+    marginTop: 12,
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glass,
   },
   emptyTitle: {
     marginTop: 13,
@@ -652,7 +723,26 @@ function createStyles(theme) {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 30,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: theme.circle.profileBackground,
+  },
+  stateCard: {
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
+  },
+  stateIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: rgba(theme.circle.accent, 0.12),
   },
   stateText: {
     marginTop: 10,
@@ -670,10 +760,10 @@ function createStyles(theme) {
     marginTop: 16,
     paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 11,
     backgroundColor: theme.welcome.brandInk,
   },
   retryText: { color: '#fff', fontFamily: 'Manrope_700Bold' },
-  pressed: { opacity: 0.72 },
+  pressed: { opacity: 0.74, transform: [{ scale: 0.995 }] },
   });
 }

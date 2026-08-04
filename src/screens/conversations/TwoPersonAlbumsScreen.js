@@ -19,6 +19,7 @@ import {
   listTwoPersonAlbums,
   subscribeToTwoPersonAlbumChanges,
 } from '../../services/twoPersonAlbumService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function formatDate(value) {
   if (!value) return '';
@@ -61,20 +62,28 @@ function AlbumCard({ album, onPress, styles, theme }) {
 
 function TwoPersonAlbumsContent({ route, navigation }) {
   const { conversationId, circleName = 'Our Circle' } = route.params || {};
+  const cachedAlbums = readNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId));
+  const hasInitialAlbums = Array.isArray(cachedAlbums);
+  const initialAlbums = hasInitialAlbums ? cachedAlbums : [];
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [albums, setAlbums] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [albums, setAlbums] = useState(initialAlbums);
+  const [loading, setLoading] = useState(!hasInitialAlbums);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(hasInitialAlbums);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!conversationId) return;
     if (!quiet) setLoading(true);
     setError('');
     try {
-      setAlbums(await listTwoPersonAlbums(conversationId));
+      const nextAlbums = await listTwoPersonAlbums(conversationId);
+      setAlbums(nextAlbums);
+      writeNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId), nextAlbums);
+      nextAlbums.forEach((album) => {
+        writeNavigationCache(navigationCacheKeys.album(album.id), album);
+      });
     } catch (loadError) {
       setError(loadError?.message || 'Could not load shared albums.');
     } finally {
@@ -134,11 +143,14 @@ function TwoPersonAlbumsContent({ route, navigation }) {
             album={item}
             styles={styles}
             theme={theme}
-            onPress={() => navigation.navigate('TwoPersonAlbumDetail', {
-              albumId: item.id,
-              conversationId,
-              circleName,
-            })}
+            onPress={() => {
+              writeNavigationCache(navigationCacheKeys.album(item.id), item);
+              navigation.navigate('TwoPersonAlbumDetail', {
+                albumId: item.id,
+                conversationId,
+                circleName,
+              });
+            }}
           />
         )}
         ListEmptyComponent={loading ? (

@@ -25,6 +25,7 @@ import {
   listEventPhotos,
   uploadEventPhotos,
 } from '../../services/eventPhotoService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function formatAddedAt(value) {
   if (!value) return '';
@@ -109,14 +110,15 @@ function EventPhotoGalleryContent({ route }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
-  const [gallery, setGallery] = useState({
+  const cachedGallery = readNavigationCache(navigationCacheKeys.eventPhotos(eventId));
+  const [gallery, setGallery] = useState(cachedGallery || {
     canUpload: false,
     photoCount: 0,
     photos: [],
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedGallery);
   const [refreshing, setRefreshing] = useState(false);
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(Boolean(cachedGallery));
   const [uploading, setUploading] = useState(false);
   const [uploadStage, setUploadStage] = useState('');
   const [selectedPhoto, setSelectedPhoto] = useState(null);
@@ -139,6 +141,7 @@ function EventPhotoGalleryContent({ route }) {
     try {
       const next = await listEventPhotos(eventId);
       setGallery(next);
+      writeNavigationCache(navigationCacheKeys.eventPhotos(eventId), next);
     } catch (loadError) {
       setError(loadError?.message || 'Could not load event photos.');
     } finally {
@@ -186,11 +189,15 @@ function EventPhotoGalleryContent({ route }) {
         },
       });
 
-      setGallery((current) => ({
-        ...current,
-        photoCount: current.photoCount + uploaded.length,
-        photos: [...uploaded.reverse(), ...current.photos],
-      }));
+      setGallery((current) => {
+        const next = {
+          ...current,
+          photoCount: current.photoCount + uploaded.length,
+          photos: [...uploaded.reverse(), ...current.photos],
+        };
+        writeNavigationCache(navigationCacheKeys.eventPhotos(eventId), next);
+        return next;
+      });
       setUploadStage('');
     } catch (uploadError) {
       Alert.alert(
@@ -219,11 +226,15 @@ function EventPhotoGalleryContent({ route }) {
             try {
               await deleteEventPhoto(photo);
               setSelectedPhoto(null);
-              setGallery((current) => ({
-                ...current,
-                photoCount: Math.max(0, current.photoCount - 1),
-                photos: current.photos.filter((item) => item.id !== photo.id),
-              }));
+              setGallery((current) => {
+                const next = {
+                  ...current,
+                  photoCount: Math.max(0, current.photoCount - 1),
+                  photos: current.photos.filter((item) => item.id !== photo.id),
+                };
+                writeNavigationCache(navigationCacheKeys.eventPhotos(eventId), next);
+                return next;
+              });
             } catch (deleteError) {
               Alert.alert(
                 'Could not remove photo',
@@ -239,20 +250,13 @@ function EventPhotoGalleryContent({ route }) {
     );
   };
 
-  if (loading && gallery.photos.length === 0) {
-    return (
-      <SafeAreaView style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.stateText}>Opening event photos…</Text>
-      </SafeAreaView>
-    );
-  }
-
   const header = (
     <View style={styles.galleryTools}>
       <View style={styles.galleryActionRow}>
         <Text style={styles.countText}>
-          {gallery.photoCount === 1 ? '1 photo' : `${gallery.photoCount} photos`}
+          {loading
+            ? 'Loading photos…'
+            : (gallery.photoCount === 1 ? '1 photo' : `${gallery.photoCount} photos`)}
         </Text>
         {gallery.canUpload ? (
           <Pressable
@@ -274,7 +278,7 @@ function EventPhotoGalleryContent({ route }) {
           </Pressable>
         ) : null}
       </View>
-      {!gallery.canUpload ? (
+      {!loading && !gallery.canUpload ? (
         <View style={styles.uploadNotice}>
           <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.subtext} />
           <Text style={styles.uploadNoticeText}>
@@ -296,11 +300,20 @@ function EventPhotoGalleryContent({ route }) {
         ListHeaderComponent={header}
         ListEmptyComponent={(
           <View style={styles.emptyCard}>
-            <Ionicons name="image-outline" size={36} color={theme.colors.subtext} />
-            <Text style={styles.emptyTitle}>No event photos yet</Text>
-            <Text style={styles.emptyBody}>
-              Photos shared here become part of the gathering’s history and remain available to invited guests through their private link.
-            </Text>
+            {loading ? (
+              <>
+                <ActivityIndicator color={theme.circle.accent} />
+                <Text style={styles.emptyTitle}>Loading event photos…</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="image-outline" size={36} color={theme.colors.subtext} />
+                <Text style={styles.emptyTitle}>No event photos yet</Text>
+                <Text style={styles.emptyBody}>
+                  Photos shared here become part of the gathering’s history and remain available to invited guests through their private link.
+                </Text>
+              </>
+            )}
           </View>
         )}
         renderItem={({ item }) => (

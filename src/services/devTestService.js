@@ -4,6 +4,7 @@ import {
 } from '../config/env';
 import { supabase } from '../lib/supabase';
 import { unregisterCurrentPushDevice } from './pushNotificationService';
+import { setNavigationCacheScope } from './navigationCacheService';
 
 function assertDevelopment() {
   if (!IS_DEVELOPMENT) {
@@ -107,9 +108,11 @@ export async function switchDevAccount(account) {
 
   await unregisterCurrentPushDevice({ bestEffort: true });
   await supabase.auth.signOut();
+  setNavigationCacheScope(null);
 
   try {
     const session = await signInConfiguredAccount(account);
+    setNavigationCacheScope(session?.user?.id || null);
     const enforcement = await getCurrentAccountEnforcement();
 
     // Restricted and suspended accounts must still be switchable for testing,
@@ -127,7 +130,8 @@ export async function switchDevAccount(account) {
     // has a typo or has not yet been created in Supabase Authentication.
     if (previousAccount) {
       try {
-        await signInConfiguredAccount(previousAccount);
+        const restoredSession = await signInConfiguredAccount(previousAccount);
+        setNavigationCacheScope(restoredSession?.user?.id || null);
       } catch {
         // Preserve the original switching error below.
       }

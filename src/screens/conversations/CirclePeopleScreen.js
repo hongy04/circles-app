@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -26,6 +26,7 @@ import {
   transferCircleOwnership,
   updateCircleMemberRole,
 } from '../../services/circlePeopleService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function roleLabel(role) {
   if (role === 'owner') return 'Owner';
@@ -71,9 +72,11 @@ function CirclePeopleContent({ route, navigation }) {
   const { conversationId, circleName = 'Circle' } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cachedPeople = readNavigationCache(navigationCacheKeys.circlePeople(conversationId));
+  const [data, setData] = useState(cachedPeople || null);
+  const [loading, setLoading] = useState(!cachedPeople);
   const [refreshing, setRefreshing] = useState(false);
+  const hasLoadedRef = useRef(Boolean(cachedPeople));
   const [busyKey, setBusyKey] = useState('');
   const [error, setError] = useState('');
 
@@ -83,7 +86,9 @@ function CirclePeopleContent({ route, navigation }) {
     setError('');
 
     try {
-      setData(await getCirclePeople(conversationId));
+      const nextData = await getCirclePeople(conversationId);
+      setData(nextData);
+      writeNavigationCache(navigationCacheKeys.circlePeople(conversationId), nextData);
     } catch (loadError) {
       setError(loadError?.message || 'Could not load this Circle’s people.');
     } finally {
@@ -94,7 +99,9 @@ function CirclePeopleContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load({ quiet: hasLoadedRef.current }).finally(() => {
+        hasLoadedRef.current = true;
+      });
     }, [load])
   );
 

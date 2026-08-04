@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -39,7 +39,9 @@ import {
   listTwoPersonAlbums,
   subscribeToTwoPersonAlbumChanges,
 } from '../../services/twoPersonAlbumService';
+import { listTwoPersonThoughts } from '../../services/twoPersonThoughtService';
 import { fetchCircleDecoration } from '../../services/circleDecorationService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function rgba(hex, alpha) {
   const normalized = String(hex || '').replace('#', '');
@@ -49,6 +51,35 @@ function rgba(hex, alpha) {
   const g = (value >> 8) & 255;
   const b = value & 255;
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function preserveDecorationImageUrls(current, next) {
+  if (!next || !current) return next;
+
+  const currentAssets = new Map(
+    (current.circle_custom_stickers || []).map((asset) => [String(asset?.id || ''), asset])
+  );
+
+  return {
+    ...next,
+    circle_header_url:
+      current.circle_header_path
+      && current.circle_header_path === next.circle_header_path
+        ? current.circle_header_url
+        : next.circle_header_url,
+    circle_background_url:
+      current.circle_background_path
+      && current.circle_background_path === next.circle_background_path
+        ? current.circle_background_url
+        : next.circle_background_url,
+    circle_custom_stickers: (next.circle_custom_stickers || []).map((asset) => {
+      const previous = currentAssets.get(String(asset?.id || ''));
+      if (previous?.path && previous.path === asset?.path && previous.url) {
+        return { ...asset, url: previous.url };
+      }
+      return asset;
+    }),
+  };
 }
 
 function Stat({ value, label, onPress, styles }) {
@@ -161,17 +192,39 @@ function CircleProfileContent({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [details, setDetails] = useState(null);
-  const [timeline, setTimeline] = useState([]);
-  const [posts, setPosts] = useState([]);
-  const [plans, setPlans] = useState([]);
-  const [importantDates, setImportantDates] = useState([]);
-  const [albums, setAlbums] = useState([]);
-  const [decoration, setDecoration] = useState(null);
+  // Conversation details are only a warm identity shell. Chat and other
+  // screens may already know the Circle name/members without having loaded the
+  // Circle profile's posts, timeline, relationship-depth data, or decoration.
+  // Keep those concepts separate so a cached identity can never suppress the
+  // profile's first authoritative hydration.
+  const cachedDetails = readNavigationCache(navigationCacheKeys.conversationDetails(conversationId));
+  const cachedTimeline = readNavigationCache(navigationCacheKeys.circleTimeline(conversationId));
+  const cachedPosts = readNavigationCache(navigationCacheKeys.circlePosts(conversationId));
+  const cachedPlans = readNavigationCache(navigationCacheKeys.twoPersonPlans(conversationId));
+  const cachedImportantDates = readNavigationCache(navigationCacheKeys.twoPersonDates(conversationId));
+  const cachedAlbums = readNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId));
+  const cachedDecoration = readNavigationCache(navigationCacheKeys.circleDecoration(conversationId));
+  const hasWarmGridSnapshot = Array.isArray(cachedTimeline) && Array.isArray(cachedPosts);
+
+  const [details, setDetails] = useState(cachedDetails || null);
+  const [timeline, setTimeline] = useState(Array.isArray(cachedTimeline) ? cachedTimeline : []);
+  const [posts, setPosts] = useState(Array.isArray(cachedPosts) ? cachedPosts : []);
+  const [plans, setPlans] = useState(Array.isArray(cachedPlans) ? cachedPlans : []);
+  const [importantDates, setImportantDates] = useState(
+    Array.isArray(cachedImportantDates) ? cachedImportantDates : []
+  );
+  const [albums, setAlbums] = useState(Array.isArray(cachedAlbums) ? cachedAlbums : []);
+  const [decoration, setDecoration] = useState(cachedDecoration || null);
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedDetails);
+  const [contentResolved, setContentResolved] = useState(hasWarmGridSnapshot);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  // This means the Circle PROFILE has hydrated, not merely that another screen
+  // cached the conversation identity. It intentionally starts false on mount.
+  const hasLoadedRef = useRef(false);
+  const lastLoadedAtRef = useRef(0);
+  const hadWarmIdentityRef = useRef(Boolean(cachedDetails));
 
   useEffect(() => {
     if (initialTab === 'timeline' || initialTab === 'posts') {
@@ -195,6 +248,45 @@ function CircleProfileContent({ route, navigation }) {
       }
 
       setDetails(detailRows);
+      writeNavigationCache(navigationCacheKeys.conversationDetails(conversationId), detailRows);
+
+      // The Circle profile already has enough identity/member context to make
+      // the People destination feel immediate. Permissions and pending invites
+      // are intentionally conservative until CirclePeople quietly hydrates its
+      // authoritative payload.
+      if (conversation?.kind === 'group') {
+        const existingPeople = readNavigationCache(navigationCacheKeys.circlePeople(conversationId));
+        if (!existingPeople || existingPeople.isPreview) {
+          const memberPreview = (detailRows?.members || []).map((member) => ({
+            userId: member.user_id,
+            displayName: member.display_name || 'Member',
+            avatarUri: member.avatar_url || null,
+            role: member.role || 'member',
+            joinedAt: member.joined_at || null,
+            isMe: Boolean(member.is_me),
+          }));
+          writeNavigationCache(navigationCacheKeys.circlePeople(conversationId), {
+            conversation: {
+              id: conversation.id || conversationId,
+              title: conversation.title || 'Circle',
+              avatarUri: conversation.avatar_url || null,
+              memberCount: memberPreview.length,
+              pendingCount: 0,
+            },
+            viewerRole: 'member',
+            permissions: {
+              canInvite: false,
+              canCancelInvitations: false,
+              canManageRoles: false,
+              canRemoveMembers: false,
+              canLeave: false,
+            },
+            members: memberPreview,
+            pendingInvitations: [],
+            isPreview: true,
+          });
+        }
+      }
 
       if (
         conversation?.kind === 'direct'
@@ -215,30 +307,27 @@ function CircleProfileContent({ route, navigation }) {
         fetchCircleDecoration(conversationId).catch(() => null),
       ]);
 
-      setDecoration(decorationRows);
+      setDecoration((current) => preserveDecorationImageUrls(current, decorationRows));
+      if (decorationRows) {
+        writeNavigationCache(navigationCacheKeys.circleDecoration(conversationId), decorationRows);
+      }
 
       let planRows = [];
       let importantDateRows = [];
       let albumRows = [];
+      let thoughtRows = [];
       if (conversation?.kind === 'direct') {
-        try {
-          planRows = await listTwoPersonPlans(conversationId);
-        } catch {
-          // The Circle remains usable if the plans migration is not installed yet.
-          planRows = [];
-        }
-        try {
-          importantDateRows = await listTwoPersonImportantDates(conversationId);
-        } catch {
-          // The Circle remains usable until the important-dates migration is installed.
-          importantDateRows = [];
-        }
-        try {
-          albumRows = await listTwoPersonAlbums(conversationId);
-        } catch {
-          // The Circle remains usable until the albums migration is installed.
-          albumRows = [];
-        }
+        const [plansResult, datesResult, albumsResult, thoughtsResult] = await Promise.allSettled([
+          listTwoPersonPlans(conversationId),
+          listTwoPersonImportantDates(conversationId),
+          listTwoPersonAlbums(conversationId),
+          listTwoPersonThoughts(conversationId),
+        ]);
+        // Optional relationship-depth modules must never block the Circle itself.
+        planRows = plansResult.status === 'fulfilled' ? plansResult.value : [];
+        importantDateRows = datesResult.status === 'fulfilled' ? datesResult.value : [];
+        albumRows = albumsResult.status === 'fulfilled' ? albumsResult.value : [];
+        thoughtRows = thoughtsResult.status === 'fulfilled' ? thoughtsResult.value : [];
       }
 
       setTimeline(timelineRows);
@@ -246,9 +335,35 @@ function CircleProfileContent({ route, navigation }) {
       setPlans(planRows);
       setImportantDates(importantDateRows);
       setAlbums(albumRows);
+
+      // The Circle profile already paid the network cost for these destinations.
+      // Seed their in-memory snapshots so opening a deeper page can render
+      // immediately and quietly revalidate instead of showing another loader.
+      writeNavigationCache(navigationCacheKeys.circleTimeline(conversationId), timelineRows);
+      writeNavigationCache(navigationCacheKeys.circlePosts(conversationId), postRows);
+      if (conversation?.kind === 'direct') {
+        writeNavigationCache(navigationCacheKeys.twoPersonPlans(conversationId), planRows);
+        writeNavigationCache(navigationCacheKeys.twoPersonDates(conversationId), importantDateRows);
+        writeNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId), albumRows);
+        writeNavigationCache(navigationCacheKeys.twoPersonThoughts(conversationId), thoughtRows);
+        planRows.forEach((plan) => {
+          writeNavigationCache(navigationCacheKeys.plan(plan.id), plan);
+        });
+        albumRows.forEach((album) => {
+          writeNavigationCache(navigationCacheKeys.album(album.id), album);
+        });
+        thoughtRows.forEach((thought) => {
+          writeNavigationCache(navigationCacheKeys.thought(thought.id), thought);
+        });
+      }
+      postRows.forEach((post) => {
+        writeNavigationCache(navigationCacheKeys.circlePost(post.id), post);
+      });
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this private Circle.');
     } finally {
+      lastLoadedAtRef.current = Date.now();
+      setContentResolved(true);
       setLoading(false);
       setRefreshing(false);
     }
@@ -256,7 +371,25 @@ function CircleProfileContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      const hasLoaded = hasLoadedRef.current;
+      const recentlyLoaded = hasLoaded
+        && Date.now() - lastLoadedAtRef.current < 20_000;
+
+      // Back-navigation should reveal the exact Circle profile that was already
+      // on screen. A short child-page visit is not a reason to refetch the
+      // profile, decorations, posts, and memories again. Longer absences still
+      // get a quiet revalidation.
+      if (recentlyLoaded) return undefined;
+
+      // A cached conversation identity is useful for immediate paint, but it is
+      // NOT proof that Circle Profile content has ever loaded. On the first
+      // focus we always hydrate. If identity is warm, do it quietly around the
+      // visible shell instead of replacing that shell with a loading screen.
+      const quiet = hasLoaded || hadWarmIdentityRef.current;
+      void load({ quiet }).finally(() => {
+        hasLoadedRef.current = true;
+      });
+      return undefined;
     }, [load])
   );
 
@@ -740,36 +873,48 @@ function CircleProfileContent({ route, navigation }) {
             )
           )}
           ListEmptyComponent={(
-            <View style={styles.emptyState}>
-              <Ionicons
-                name={activeTab === 'timeline'
-                  ? 'images-outline'
-                  : 'albums-outline'}
-                size={38}
-                color={theme.colors.subtext}
-              />
-              <Text style={styles.emptyTitle}>
-                {activeTab === 'timeline'
-                  ? 'No shared media yet'
-                  : 'No Circle posts yet'}
-              </Text>
-              <Text style={styles.emptyBody}>
-                {activeTab === 'timeline'
-                  ? 'Photos and videos sent in Chat will appear here automatically, without being uploaded twice.'
-                  : 'Posts are intentional moments created for this private Circle. They stay separate from the automatic chat Timeline.'}
-              </Text>
-              {activeTab === 'posts' ? (
-                <Pressable
-                  onPress={createPost}
-                  style={({ pressed }) => [
-                    styles.emptyButton,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.emptyButtonText}>Create First Post</Text>
-                </Pressable>
-              ) : null}
-            </View>
+            !contentResolved ? (
+              <View style={styles.emptyState}>
+                <ActivityIndicator color={theme.circle.accent} />
+                <Text style={styles.emptyTitle}>
+                  {activeTab === 'timeline' ? 'Loading timeline…' : 'Loading Circle posts…'}
+                </Text>
+                <Text style={styles.emptyBody}>
+                  Your Circle is already open. We’re filling in its latest content quietly.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons
+                  name={activeTab === 'timeline'
+                    ? 'images-outline'
+                    : 'albums-outline'}
+                  size={38}
+                  color={theme.colors.subtext}
+                />
+                <Text style={styles.emptyTitle}>
+                  {activeTab === 'timeline'
+                    ? 'No shared media yet'
+                    : 'No Circle posts yet'}
+                </Text>
+                <Text style={styles.emptyBody}>
+                  {activeTab === 'timeline'
+                    ? 'Photos and videos sent in Chat will appear here automatically, without being uploaded twice.'
+                    : 'Posts are intentional moments created for this private Circle. They stay separate from the automatic chat Timeline.'}
+                </Text>
+                {activeTab === 'posts' ? (
+                  <Pressable
+                    onPress={createPost}
+                    style={({ pressed }) => [
+                      styles.emptyButton,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={styles.emptyButtonText}>Create First Post</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            )
           )}
           refreshControl={(
             <RefreshControl

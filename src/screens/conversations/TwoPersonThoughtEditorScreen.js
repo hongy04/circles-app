@@ -23,6 +23,7 @@ import {
   shareTwoPersonThought,
   updateTwoPersonThoughtDraft,
 } from '../../services/twoPersonThoughtService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function Field({ label, hint, children, styles }) {
   return (
@@ -42,9 +43,15 @@ function TwoPersonThoughtEditorContent({ route, navigation }) {
   } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [loading, setLoading] = useState(Boolean(thoughtId));
+  const cachedThought = thoughtId
+    ? readNavigationCache(navigationCacheKeys.thought(thoughtId))
+    : null;
+  const cachedDraft = cachedThought?.status === 'draft' && cachedThought?.isAuthor
+    ? cachedThought
+    : null;
+  const [title, setTitle] = useState(cachedDraft?.title || '');
+  const [body, setBody] = useState(cachedDraft?.body || '');
+  const [loading, setLoading] = useState(Boolean(thoughtId && !cachedDraft));
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const scrollRef = useRef(null);
@@ -76,6 +83,7 @@ function TwoPersonThoughtEditorContent({ route, navigation }) {
         }
         setTitle(thought.title);
         setBody(thought.body);
+        writeNavigationCache(navigationCacheKeys.thought(thoughtId), thought);
       } catch (loadError) {
         if (active) setError(loadError?.message || 'Could not open this draft.');
       } finally {

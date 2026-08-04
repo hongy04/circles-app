@@ -10,6 +10,7 @@ import { uploadToBucket } from './uploadService';
 import { fetchProfileSocialStats } from './profileDirectoryService';
 import { unregisterCurrentPushDevice } from './pushNotificationService';
 import { fetchProfileDecoration } from './profileDecorationService';
+import { setNavigationCacheScope } from './navigationCacheService';
 
 const REMOTE_URI_PATTERN = /^https?:\/\//i;
 
@@ -344,4 +345,5 @@ export async function signOut() {
   await unregisterCurrentPushDevice({ bestEffort: true });
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
+  setNavigationCacheScope(null);
 }

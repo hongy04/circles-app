@@ -46,6 +46,7 @@ import {
   setMyMutualPreviewPost,
 } from '../../services/profileService';
 import { timeAgo } from '../../utils/timeAgo';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function localCommentId() {
   return `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -60,18 +61,20 @@ export function PostDetailScreen({ route, navigation }) {
   const listRef = useRef(null);
   const commentInputRef = useRef(null);
   const mountedRef = useRef(true);
+  const cachedDetail = readNavigationCache(navigationCacheKeys.postPreview(postId));
+  const hasLoadedRef = useRef(Boolean(cachedDetail?.post));
 
-  const [post, setPost] = useState(null);
-  const [author, setAuthor] = useState(null);
-  const [media, setMedia] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [post, setPost] = useState(cachedDetail?.post || null);
+  const [author, setAuthor] = useState(cachedDetail?.author || null);
+  const [media, setMedia] = useState(cachedDetail?.media || []);
+  const [loading, setLoading] = useState(!cachedDetail?.post);
   const [error, setError] = useState(null);
-  const [liked, setLiked] = useState(false);
-  const [likes, setLikes] = useState(0);
+  const [liked, setLiked] = useState(Boolean(cachedDetail?.likedByMe));
+  const [likes, setLikes] = useState(Number(cachedDetail?.likes || 0));
   const [liking, setLiking] = useState(false);
-  const [commentCount, setCommentCount] = useState(0);
+  const [commentCount, setCommentCount] = useState(Number(cachedDetail?.commentCount || 0));
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
-  const [isOwner, setIsOwner] = useState(false);
+  const [isOwner, setIsOwner] = useState(Boolean(cachedDetail?.isOwner));
   const [ownerMenuVisible, setOwnerMenuVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [mutualPreviewPostId, setMutualPreviewPostId] = useState(null);
@@ -98,6 +101,7 @@ export function PostDetailScreen({ route, navigation }) {
       setAuthor(detail.author);
       setMedia(detail.media);
       setLikes(detail.likes);
+      writeNavigationCache(navigationCacheKeys.postPreview(postId), detail);
       setCommentCount(detail.commentCount);
       setLiked(detail.likedByMe);
       setIsOwner(detail.isOwner);
@@ -141,7 +145,9 @@ export function PostDetailScreen({ route, navigation }) {
 
   useEffect(() => {
     mountedRef.current = true;
-    load();
+    void load({ silent: hasLoadedRef.current }).finally(() => {
+      hasLoadedRef.current = true;
+    });
     loadComments();
 
     const unsubscribe = navigation.addListener('focus', () => {

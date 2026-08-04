@@ -18,7 +18,20 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Contacts from 'expo-contacts';
 
 import { Avatar } from '../../components/Avatar';
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { useThemeTokens } from '../../theme/ThemeProvider';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 import { getRegionCode, normalizeToE164 } from '../../utils/contactPhones';
 import {
   createPersonalInvite,
@@ -274,6 +287,7 @@ export function InvitePeopleScreen({ navigation }) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={0.68} decals />
       <View style={styles.topBar}>
         <Pressable
           onPress={() => navigation.goBack()}
@@ -349,6 +363,10 @@ export function InvitePeopleScreen({ navigation }) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentLine = rgba(theme.circle.accent, 0.20);
+  const accentWash = rgba(theme.circle.accent, 0.10);
   return StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.bg },
   keyboardView: { flex: 1 },
@@ -358,8 +376,8 @@ function createStyles(theme) {
     alignItems: 'center',
     paddingHorizontal: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.bg,
+    borderBottomColor: accentLine,
+    backgroundColor: glassStrong,
   },
   topBarSide: {
     width: 52,
@@ -385,9 +403,14 @@ function createStyles(theme) {
   heroCard: {
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSoft,
+    borderColor: accentLine,
+    backgroundColor: glass,
     padding: 15,
+    shadowColor: '#000',
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   heroBody: {
     color: theme.colors.subtext,
@@ -412,7 +435,7 @@ function createStyles(theme) {
   errorBox: {
     marginTop: 12,
     borderRadius: 10,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: glassStrong,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: theme.colors.danger,
     padding: 11,
@@ -459,8 +482,8 @@ function createStyles(theme) {
     minHeight: 40,
     borderRadius: 11,
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
@@ -472,8 +495,8 @@ function createStyles(theme) {
     minHeight: 44,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
     paddingHorizontal: 12,
     marginBottom: 10,
   },
@@ -489,8 +512,8 @@ function createStyles(theme) {
     alignItems: 'center',
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
     paddingHorizontal: 12,
     marginBottom: 9,
   },
@@ -512,9 +535,9 @@ function createStyles(theme) {
     paddingHorizontal: 12,
   },
   invitedButton: {
-    backgroundColor: theme.colors.surfaceSoft,
+    backgroundColor: accentWash,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
+    borderColor: accentLine,
   },
   inviteText: { color: theme.colors.onPrimary, fontFamily: 'Manrope_700Bold', fontSize: 12 },
   invitedText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 12 },

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -38,12 +38,42 @@ import {
   setMyMutualPreviewPost,
   sendProfileConnectionRequest,
 } from '../../services/profileService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 
 function useProfileTheme() {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return { theme, styles };
+}
+
+function preserveProfileDecorationImageUrls(current, next) {
+  if (!next || !current || current.id !== next.id) return next;
+
+  const currentAssets = new Map(
+    (current.profile_custom_stickers || []).map((asset) => [String(asset?.id || ''), asset])
+  );
+
+  return {
+    ...next,
+    profile_header_url:
+      current.profile_header_path
+      && current.profile_header_path === next.profile_header_path
+        ? current.profile_header_url
+        : next.profile_header_url,
+    profile_background_url:
+      current.profile_background_path
+      && current.profile_background_path === next.profile_background_path
+        ? current.profile_background_url
+        : next.profile_background_url,
+    profile_custom_stickers: (next.profile_custom_stickers || []).map((asset) => {
+      const previous = currentAssets.get(String(asset?.id || ''));
+      if (previous?.path && previous.path === asset?.path && previous.url) {
+        return { ...asset, url: previous.url };
+      }
+      return asset;
+    }),
+  };
 }
 
 function TopBar({
@@ -309,19 +339,23 @@ export function ProfileViewScreen({
 }) {
   const { theme, styles } = useProfileTheme();
   const insets = useSafeAreaInsets();
-  const [profile, setProfile] = useState(null);
-  const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = navigationCacheKeys.profilePage(userId || 'self');
+  const cachedPage = readNavigationCache(cacheKey);
+  const [profile, setProfile] = useState(cachedPage?.profile || null);
+  const [posts, setPosts] = useState(cachedPage?.posts || []);
+  const [loading, setLoading] = useState(!cachedPage?.profile);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const initialLoadFinishedRef = useRef(false);
+  const lastLoadedAtRef = useRef(cachedPage?.profile ? Date.now() : 0);
   const [actionBusy, setActionBusy] = useState(false);
   const [gridWidth, setGridWidth] = useState(0);
   const [managedPost, setManagedPost] = useState(null);
   const [deletingPostId, setDeletingPostId] = useState(null);
-  const [mutualPreviewPostId, setMutualPreviewPostId] = useState(null);
+  const [mutualPreviewPostId, setMutualPreviewPostId] = useState(cachedPage?.mutualPreviewPostId || null);
   const [previewSaving, setPreviewSaving] = useState(false);
-  const [socialStats, setSocialStats] = useState(null);
-  const [romanticStatus, setRomanticStatus] = useState({
+  const [socialStats, setSocialStats] = useState(cachedPage?.socialStats || null);
+  const [romanticStatus, setRomanticStatus] = useState(cachedPage?.romanticStatus || {
     available: false,
     channelOpen: false,
     selectedByMe: false,
@@ -334,7 +368,7 @@ export function ProfileViewScreen({
   const [romanticBusy, setRomanticBusy] = useState(false);
   const [romanceSheetVisible, setRomanceSheetVisible] = useState(false);
   const [circleProposalBusy, setCircleProposalBusy] = useState(false);
-  const [circleProposalStatus, setCircleProposalStatus] = useState({
+  const [circleProposalStatus, setCircleProposalStatus] = useState(cachedPage?.circleProposalStatus || {
     available: false,
     state: 'unavailable',
     canPropose: false,
@@ -348,9 +382,9 @@ export function ProfileViewScreen({
     conversationId: null,
   });
 
-  const load = useCallback(async ({ refresh = false } = {}) => {
+  const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
     if (refresh) setRefreshing(true);
-    else setLoading(true);
+    else if (!quiet) setLoading(true);
 
     setError('');
 
@@ -393,27 +427,44 @@ export function ProfileViewScreen({
             },
           ];
 
-      setProfile(result.profile);
+      setProfile((current) => preserveProfileDecorationImageUrls(current, result.profile));
       setPosts(result.posts);
       setSocialStats(result.socialStats || null);
       setMutualPreviewPostId(previewPostId);
       setRomanticStatus(romanticStatus);
       setCircleProposalStatus(proposalStatus);
+      writeNavigationCache(cacheKey, {
+        profile: result.profile,
+        posts: result.posts || [],
+        socialStats: result.socialStats || null,
+        mutualPreviewPostId: previewPostId,
+        romanticStatus,
+        circleProposalStatus: proposalStatus,
+      });
     } catch (loadError) {
       setError(loadError?.message || 'Failed to load profile.');
     } finally {
+      lastLoadedAtRef.current = Date.now();
       setLoading(false);
       setRefreshing(false);
     }
-  }, [isSelf, userId]);
+  }, [cacheKey, isSelf, userId]);
 
   useEffect(() => {
-    load();
+    let active = true;
+    void load({ quiet: Boolean(cachedPage?.profile) }).finally(() => {
+      if (active) initialLoadFinishedRef.current = true;
+    });
+    return () => {
+      active = false;
+    };
   }, [load]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      load({ refresh: true });
+      if (!initialLoadFinishedRef.current) return;
+      if (Date.now() - lastLoadedAtRef.current < 20_000) return;
+      void load({ quiet: true });
     });
 
     return unsubscribe;

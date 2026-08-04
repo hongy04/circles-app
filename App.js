@@ -131,6 +131,7 @@ import {
   getMyAccountEnforcementState,
   subscribeToMyAccountEnforcement,
 } from './src/services/accountEnforcementService';
+import { setNavigationCacheScope } from './src/services/navigationCacheService';
 
 /* ---------------- Layout & helpers ---------------- */
 const { width: W } = Dimensions.get('window');
@@ -334,9 +335,15 @@ function GateScreen({ navigation }) {
         if (!mounted) return;
 
         if (!session) {
+          setNavigationCacheScope(null);
           navigation.replace('Auth', { screen: 'Welcome' });
           return;
         }
+
+        // Keep continuity data strictly scoped to the active signed-in account.
+        // A dev-account switch or sign-out can never flash another account's
+        // cached private screen data.
+        setNavigationCacheScope(session.user.id);
 
         // Hydrate the saved theme before the launch portal becomes interactive.
         // The portal atmosphere, particles, and bubble bloom all inherit the

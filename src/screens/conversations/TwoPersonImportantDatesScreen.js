@@ -18,6 +18,7 @@ import {
   listTwoPersonImportantDates,
   subscribeToTwoPersonImportantDateChanges,
 } from '../../services/twoPersonImportantDateService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 const CATEGORY_META = Object.freeze({
   anniversary: { label: 'Anniversary', icon: 'heart-outline' },
@@ -120,20 +121,28 @@ function SectionHeader({ title, subtitle, styles }) {
 
 function TwoPersonImportantDatesContent({ route, navigation }) {
   const { conversationId, circleName = 'Our Circle' } = route.params || {};
+  const cachedDates = readNavigationCache(navigationCacheKeys.twoPersonDates(conversationId));
+  const hasInitialDates = Array.isArray(cachedDates);
+  const initialDates = hasInitialDates ? cachedDates : [];
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [dates, setDates] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [dates, setDates] = useState(initialDates);
+  const [loading, setLoading] = useState(!hasInitialDates);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(hasInitialDates);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!conversationId) return;
     if (!quiet) setLoading(true);
     setError('');
     try {
-      setDates(await listTwoPersonImportantDates(conversationId));
+      const nextDates = await listTwoPersonImportantDates(conversationId);
+      setDates(nextDates);
+      writeNavigationCache(navigationCacheKeys.twoPersonDates(conversationId), nextDates);
+      nextDates.forEach((item) => {
+        writeNavigationCache(navigationCacheKeys.importantDate(item.id), item);
+      });
     } catch (loadError) {
       setError(loadError?.message || 'Could not open important dates.');
     } finally {
@@ -229,11 +238,14 @@ function TwoPersonImportantDatesContent({ route, navigation }) {
               item={item.item}
               styles={styles}
               theme={theme}
-              onPress={() => navigation.navigate('TwoPersonImportantDateEditor', {
-                conversationId,
-                circleName,
-                importantDateId: item.item.id,
-              })}
+              onPress={() => {
+                writeNavigationCache(navigationCacheKeys.importantDate(item.item.id), item.item);
+                navigation.navigate('TwoPersonImportantDateEditor', {
+                  conversationId,
+                  circleName,
+                  importantDateId: item.item.id,
+                });
+              }}
             />
           );
         }}

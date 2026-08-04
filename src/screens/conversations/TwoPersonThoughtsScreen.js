@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -19,6 +19,7 @@ import {
   listTwoPersonThoughts,
   subscribeToTwoPersonThoughtChanges,
 } from '../../services/twoPersonThoughtService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function formatWhen(value) {
   if (!value) return '';
@@ -81,19 +82,28 @@ function SectionHeader({ title, body, styles }) {
 
 function TwoPersonThoughtsContent({ route, navigation }) {
   const { conversationId, circleName = 'Our Circle' } = route.params || {};
+  const cachedThoughts = readNavigationCache(navigationCacheKeys.twoPersonThoughts(conversationId));
+  const hasInitialThoughts = Array.isArray(cachedThoughts);
+  const initialThoughts = hasInitialThoughts ? cachedThoughts : [];
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [thoughts, setThoughts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [thoughts, setThoughts] = useState(initialThoughts);
+  const [loading, setLoading] = useState(!hasInitialThoughts);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const hasLoadedRef = useRef(hasInitialThoughts);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!conversationId) return;
     if (!quiet) setLoading(true);
     setError('');
     try {
-      setThoughts(await listTwoPersonThoughts(conversationId));
+      const nextThoughts = await listTwoPersonThoughts(conversationId);
+      setThoughts(nextThoughts);
+      writeNavigationCache(navigationCacheKeys.twoPersonThoughts(conversationId), nextThoughts);
+      nextThoughts.forEach((thought) => {
+        writeNavigationCache(navigationCacheKeys.thought(thought.id), thought);
+      });
     } catch (loadError) {
       setError(loadError?.message || 'Could not open your shared thoughts.');
     } finally {
@@ -104,7 +114,9 @@ function TwoPersonThoughtsContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load({ quiet: hasLoadedRef.current }).finally(() => {
+        hasLoadedRef.current = true;
+      });
       return subscribeToTwoPersonThoughtChanges({
         conversationId,
         onChange: () => load({ quiet: true }),
@@ -170,16 +182,19 @@ function TwoPersonThoughtsContent({ route, navigation }) {
               item={item.item}
               styles={styles}
               theme={theme}
-              onPress={() => navigation.navigate(
-                item.item.status === 'draft'
-                  ? 'TwoPersonThoughtEditor'
-                  : 'TwoPersonThoughtDetail',
-                {
-                  conversationId,
-                  circleName,
-                  thoughtId: item.item.id,
-                }
-              )}
+              onPress={() => {
+                writeNavigationCache(navigationCacheKeys.thought(item.item.id), item.item);
+                navigation.navigate(
+                  item.item.status === 'draft'
+                    ? 'TwoPersonThoughtEditor'
+                    : 'TwoPersonThoughtDetail',
+                  {
+                    conversationId,
+                    circleName,
+                    thoughtId: item.item.id,
+                  }
+                );
+              }}
             />
           );
         }}

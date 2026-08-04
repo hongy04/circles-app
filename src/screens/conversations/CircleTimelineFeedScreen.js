@@ -21,6 +21,7 @@ import {
   listConversationTimeline,
   subscribeToConversationChanges,
 } from '../../services/conversationService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function groupTimeline(items) {
   const groups = [];
@@ -117,16 +118,19 @@ function TimelineFeedCard({ group, width, height, navigation, styles, theme }) {
 
 function CircleTimelineFeedContent({ route, navigation }) {
   const { conversationId, initialMediaId } = route.params || {};
+  const cachedItems = readNavigationCache(navigationCacheKeys.circleTimeline(conversationId));
+  const hasInitialItems = Array.isArray(cachedItems);
+  const initialItems = hasInitialItems ? cachedItems : [];
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const stageWidth = Math.min(width - 24, 696);
   const cardHeight = stageWidth + 166;
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState(initialItems);
+  const [loading, setLoading] = useState(!hasInitialItems);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(hasInitialItems);
 
   const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -134,7 +138,9 @@ function CircleTimelineFeedContent({ route, navigation }) {
     setError('');
 
     try {
-      setItems(await listConversationTimeline(conversationId));
+      const nextItems = await listConversationTimeline(conversationId);
+      setItems(nextItems);
+      writeNavigationCache(navigationCacheKeys.circleTimeline(conversationId), nextItems);
     } catch (loadError) {
       setError(loadError?.message || 'Could not load this Circle Timeline.');
     } finally {

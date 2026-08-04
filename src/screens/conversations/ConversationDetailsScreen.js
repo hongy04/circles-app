@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -13,6 +13,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { COLORS } from '../../theme/colors';
 import { getConversationDetails } from '../../services/conversationService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function FeatureCard({ icon, title, body, badge }) {
   return (
@@ -33,17 +34,20 @@ function FeatureCard({ icon, title, body, badge }) {
 
 export function ConversationDetailsScreen({ route, navigation }) {
   const { conversationId } = route.params || {};
-  const [details, setDetails] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cachedDetails = readNavigationCache(navigationCacheKeys.conversationDetails(conversationId));
+  const [details, setDetails] = useState(cachedDetails || null);
+  const [loading, setLoading] = useState(!cachedDetails);
   const [error, setError] = useState(null);
+  const hasLoadedRef = useRef(Boolean(cachedDetails));
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ quiet = false } = {}) => {
     if (!conversationId) return;
-    setLoading(true);
+    if (!quiet) setLoading(true);
     setError(null);
     try {
       const result = await getConversationDetails(conversationId);
       setDetails(result);
+      writeNavigationCache(navigationCacheKeys.conversationDetails(conversationId), result);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this shared private space.');
     } finally {
@@ -51,13 +55,11 @@ export function ConversationDetailsScreen({ route, navigation }) {
     }
   }, [conversationId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load({ quiet: hasLoadedRef.current }).finally(() => {
+        hasLoadedRef.current = true;
+      });
     }, [load])
   );
 
@@ -65,7 +67,7 @@ export function ConversationDetailsScreen({ route, navigation }) {
   const members = details?.members || [];
   const pendingInvitations = details?.pending_invitations || [];
 
-  if (loading) {
+  if (loading && !conversation) {
     return (
       <View style={styles.centerState}>
         <ActivityIndicator />

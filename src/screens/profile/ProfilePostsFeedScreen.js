@@ -34,6 +34,7 @@ import {
   fetchPostComments,
   togglePostLike,
 } from '../../services/feedService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function normalizeMedia(detail) {
   const rows = detail?.media || [];
@@ -230,17 +231,18 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
   const { userId, profileName, initialPostId } = route.params || {};
   const { width } = useWindowDimensions();
   const stageWidth = Math.min(width, 720);
-  const [posts, setPosts] = useState([]);
-  const [resolvedName, setResolvedName] = useState(profileName || 'Posts');
-  const [loading, setLoading] = useState(true);
+  const cachedFeed = readNavigationCache(navigationCacheKeys.profilePostsFeed(userId));
+  const [posts, setPosts] = useState(cachedFeed?.posts || []);
+  const [resolvedName, setResolvedName] = useState(cachedFeed?.resolvedName || profileName || 'Posts');
+  const [loading, setLoading] = useState(!cachedFeed);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [isSelfProfile, setIsSelfProfile] = useState(false);
+  const [isSelfProfile, setIsSelfProfile] = useState(Boolean(cachedFeed?.isSelfProfile));
   const [managedPost, setManagedPost] = useState(null);
   const [deletingPostId, setDeletingPostId] = useState(null);
-  const [mutualPreviewPostId, setMutualPreviewPostId] = useState(null);
+  const [mutualPreviewPostId, setMutualPreviewPostId] = useState(cachedFeed?.mutualPreviewPostId || null);
   const [previewSaving, setPreviewSaving] = useState(false);
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(Boolean(cachedFeed));
   const listRef = useRef(null);
   const didInitialScrollRef = useRef(false);
 
@@ -258,26 +260,32 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
     try {
       const page = await fetchProfilePage(userId);
       const ownProfile = page.profile?.relationship_status === 'self';
-      setResolvedName(page.profile?.display_name || profileName || 'Posts');
-      setIsSelfProfile(ownProfile);
+      const nextResolvedName = page.profile?.display_name || profileName || 'Posts';
+      let nextPreviewPostId = null;
       if (ownProfile) {
         try {
-          setMutualPreviewPostId(await fetchMyMutualPreviewPostId());
+          nextPreviewPostId = await fetchMyMutualPreviewPostId();
         } catch {
-          setMutualPreviewPostId(null);
+          nextPreviewPostId = null;
         }
-      } else {
-        setMutualPreviewPostId(null);
       }
 
       const results = await Promise.allSettled(
         (page.posts || []).map((post) => fetchPostDetail(post.id))
       );
-      setPosts(
-        results
-          .filter((result) => result.status === 'fulfilled')
-          .map((result) => mapDetail(result.value))
-      );
+      const nextPosts = results
+        .filter((result) => result.status === 'fulfilled')
+        .map((result) => mapDetail(result.value));
+      setResolvedName(nextResolvedName);
+      setIsSelfProfile(ownProfile);
+      setMutualPreviewPostId(nextPreviewPostId);
+      setPosts(nextPosts);
+      writeNavigationCache(navigationCacheKeys.profilePostsFeed(userId), {
+        posts: nextPosts,
+        resolvedName: nextResolvedName,
+        isSelfProfile: ownProfile,
+        mutualPreviewPostId: nextPreviewPostId,
+      });
     } catch (loadError) {
       setError(loadError?.message || 'Could not load these posts.');
     } finally {
@@ -454,7 +462,33 @@ export function ProfilePostsFeedScreen({ route, navigation }) {
             <PersonalPostFeedCard
               post={item}
               width={stageWidth}
-              onOpenDetail={() => navigation.navigate('PostDetail', { postId: item.id })}
+              onOpenDetail={() => {
+                writeNavigationCache(navigationCacheKeys.postPreview(item.id), {
+                  post: {
+                    id: item.id,
+                    user_id: item.authorId,
+                    caption: item.caption || '',
+                    created_at: item.createdAt,
+                    display_aspect_ratio: item.presentation?.aspectRatio ?? null,
+                    media_crop_points: item.presentation?.cropPoints || [],
+                    media_presentations: item.presentation?.mediaPresentations || [],
+                  },
+                  author: {
+                    id: item.authorId,
+                    display_name: item.authorName || 'Unknown',
+                    avatar_url: item.authorAvatar || null,
+                  },
+                  media: (item.media || []).map((mediaItem) => ({
+                    ...mediaItem,
+                    media_type: mediaItem.media_type || mediaItem.mediaType || 'image',
+                  })),
+                  likes: Number(item.likes || 0),
+                  commentCount: Number(item.commentCount || 0),
+                  likedByMe: Boolean(item.liked),
+                  isOwner: isSelfProfile,
+                });
+                navigation.navigate('PostDetail', { postId: item.id });
+              }}
               onOpenComments={() => openComments(item)}
               onOpenProfile={() => navigation.navigate('Profile', { userId: item.authorId })}
               onManage={isSelfProfile ? () => setManagedPost(item) : undefined}

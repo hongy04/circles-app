@@ -24,6 +24,7 @@ import {
   respondToTwoPersonPlan,
   subscribeToTwoPersonPlanChanges,
 } from '../../services/twoPersonPlanService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function formatDateTime(value) {
   if (!value) return 'No date chosen yet';
@@ -104,12 +105,14 @@ function TwoPersonPlanDetailContent({ route, navigation }) {
   } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [plan, setPlan] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cachedPlan = readNavigationCache(navigationCacheKeys.plan(planId));
+  const [plan, setPlan] = useState(cachedPlan || null);
+  const [loading, setLoading] = useState(!cachedPlan);
+  const hasLoadedRef = useRef(Boolean(cachedPlan));
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const [showCompletion, setShowCompletion] = useState(false);
-  const [memoryNote, setMemoryNote] = useState('');
+  const [memoryNote, setMemoryNote] = useState(cachedPlan?.memoryNote || '');
   const scrollRef = useRef(null);
 
   const revealCompletionEditor = () => {
@@ -136,6 +139,7 @@ function TwoPersonPlanDetailContent({ route, navigation }) {
     try {
       const nextPlan = await getTwoPersonPlan(planId);
       setPlan(nextPlan);
+      writeNavigationCache(navigationCacheKeys.plan(planId), nextPlan);
       setMemoryNote(nextPlan.memoryNote || '');
       navigation.setOptions({ title: nextPlan.status === 'completed' ? 'Memory' : 'Plan' });
     } catch (loadError) {
@@ -146,7 +150,9 @@ function TwoPersonPlanDetailContent({ route, navigation }) {
   }, [navigation, planId]);
 
   useFocusEffect(useCallback(() => {
-    load();
+    void load({ quiet: hasLoadedRef.current }).finally(() => {
+      hasLoadedRef.current = true;
+    });
   }, [load]));
 
   useEffect(() => {
@@ -162,7 +168,9 @@ function TwoPersonPlanDetailContent({ route, navigation }) {
     setWorking(true);
     setError('');
     try {
-      setPlan(await respondToTwoPersonPlan(planId, action));
+      const nextPlan = await respondToTwoPersonPlan(planId, action);
+      setPlan(nextPlan);
+      writeNavigationCache(navigationCacheKeys.plan(planId), nextPlan);
     } catch (actionError) {
       setError(actionError?.message || 'Could not update this proposal.');
     } finally {
@@ -175,7 +183,9 @@ function TwoPersonPlanDetailContent({ route, navigation }) {
     setWorking(true);
     setError('');
     try {
-      setPlan(await completeTwoPersonPlan(planId, memoryNote));
+      const nextPlan = await completeTwoPersonPlan(planId, memoryNote);
+      setPlan(nextPlan);
+      writeNavigationCache(navigationCacheKeys.plan(planId), nextPlan);
       setShowCompletion(false);
     } catch (actionError) {
       setError(actionError?.message || 'Could not complete this plan.');
@@ -209,7 +219,7 @@ function TwoPersonPlanDetailContent({ route, navigation }) {
     );
   };
 
-  if (loading) {
+  if (loading && !plan) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
         <ActivityIndicator />

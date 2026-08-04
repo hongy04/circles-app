@@ -45,6 +45,7 @@ import {
   removeConversationMedia,
   uploadConversationAsset,
 } from '../../services/conversationMediaService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 const MAX_ATTACHMENTS = 6;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -272,18 +273,24 @@ export function ChatScreen({ route, navigation }) {
   const listRef = useRef(null);
   const screenFocusedRef = useRef(false);
   const appStateRef = useRef(AppState.currentState || 'active');
-  const [conversation, setConversation] = useState({
+  const cachedChat = readNavigationCache(navigationCacheKeys.chat(conversationId));
+  const cachedDetails = readNavigationCache(navigationCacheKeys.conversationDetails(conversationId));
+  const routeConversation = {
     title: name,
     kind,
     avatar_url: initialAvatarUri,
     other_user_id: initialOtherUserId,
     is_circle: initialIsCircle,
-  });
-  const [currentUserId, setCurrentUserId] = useState(null);
-  const [messages, setMessages] = useState([]);
+  };
+  const [conversation, setConversation] = useState(
+    cachedChat?.conversation || cachedDetails?.conversation || routeConversation
+  );
+  const [currentUserId, setCurrentUserId] = useState(cachedChat?.currentUserId || null);
+  const [messages, setMessages] = useState(cachedChat?.messages || []);
   const [input, setInput] = useState('');
   const [selectedAssets, setSelectedAssets] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedChat);
+  const hasLoadedRef = useRef(Boolean(cachedChat));
   const [sending, setSending] = useState(false);
   const [uploadStage, setUploadStage] = useState('');
   const [deletingMessageId, setDeletingMessageId] = useState(null);
@@ -316,7 +323,16 @@ export function ChatScreen({ route, navigation }) {
       ]);
       setCurrentUserId(user.id);
       setMessages(rows);
-      if (details?.conversation) setConversation(details.conversation);
+      const nextConversation = details?.conversation || cachedChat?.conversation || routeConversation;
+      setConversation(nextConversation);
+      if (details?.conversation) {
+        writeNavigationCache(navigationCacheKeys.conversationDetails(conversationId), details);
+      }
+      writeNavigationCache(navigationCacheKeys.chat(conversationId), {
+        conversation: nextConversation,
+        currentUserId: user.id,
+        messages: rows,
+      });
 
       if (checkRomanticReveal && details?.conversation?.kind === 'direct') {
         const mutualReveal = await openRomanticMutualReveal(conversationId);
@@ -346,7 +362,9 @@ export function ChatScreen({ route, navigation }) {
   useFocusEffect(
     useCallback(() => {
       screenFocusedRef.current = true;
-      load({ checkRomanticReveal: true });
+      void load({ quiet: hasLoadedRef.current, checkRomanticReveal: true }).finally(() => {
+        hasLoadedRef.current = true;
+      });
 
       return () => {
         screenFocusedRef.current = false;
@@ -522,7 +540,13 @@ export function ChatScreen({ route, navigation }) {
 
       setMessages((current) => {
         if (current.some((item) => item.id === message.id)) return current;
-        return [message, ...current];
+        const nextMessages = [message, ...current];
+        writeNavigationCache(navigationCacheKeys.chat(conversationId), {
+          conversation,
+          currentUserId,
+          messages: nextMessages,
+        });
+        return nextMessages;
       });
       setInput('');
       setSelectedAssets([]);
@@ -548,9 +572,15 @@ export function ChatScreen({ route, navigation }) {
     setDeletingMessageId(message.id);
     try {
       await deleteOwnConversationMessage(message.id);
-      setMessages((current) =>
-        current.filter((item) => item.id !== message.id)
-      );
+      setMessages((current) => {
+        const nextMessages = current.filter((item) => item.id !== message.id);
+        writeNavigationCache(navigationCacheKeys.chat(conversationId), {
+          conversation,
+          currentUserId,
+          messages: nextMessages,
+        });
+        return nextMessages;
+      });
     } catch (deleteError) {
       Alert.alert(
         'Message not unsent',

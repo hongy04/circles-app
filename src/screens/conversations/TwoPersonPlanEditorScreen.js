@@ -14,14 +14,29 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
+
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 import {
   createTwoPersonPlanIdea,
   getTwoPersonPlan,
   proposeTwoPersonPlan,
   updateTwoPersonPlanIdea,
 } from '../../services/twoPersonPlanService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function formatDateInput(date) {
   const year = date.getFullYear();
@@ -99,13 +114,16 @@ function TwoPersonPlanEditorContent({ route, navigation }) {
     return value;
   }, []);
 
-  const [plan, setPlan] = useState(null);
-  const [title, setTitle] = useState('');
-  const [note, setNote] = useState('');
-  const [locationName, setLocationName] = useState('');
-  const [dateInput, setDateInput] = useState(formatDateInput(tomorrow));
-  const [timeInput, setTimeInput] = useState(formatTimeInput(tomorrow));
-  const [loading, setLoading] = useState(Boolean(planId));
+  const cachedPlan = planId ? readNavigationCache(navigationCacheKeys.plan(planId)) : null;
+  const cachedStart = cachedPlan?.startsAt ? new Date(cachedPlan.startsAt) : null;
+  const cachedStartValid = cachedStart && !Number.isNaN(cachedStart.getTime());
+  const [plan, setPlan] = useState(cachedPlan || null);
+  const [title, setTitle] = useState(cachedPlan?.title || '');
+  const [note, setNote] = useState(cachedPlan?.note || '');
+  const [locationName, setLocationName] = useState(cachedPlan?.locationName || '');
+  const [dateInput, setDateInput] = useState(cachedStartValid ? formatDateInput(cachedStart) : formatDateInput(tomorrow));
+  const [timeInput, setTimeInput] = useState(cachedStartValid ? formatTimeInput(cachedStart) : formatTimeInput(tomorrow));
+  const [loading, setLoading] = useState(Boolean(planId && !cachedPlan));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const scrollRef = useRef(null);
@@ -122,13 +140,14 @@ function TwoPersonPlanEditorContent({ route, navigation }) {
 
   useEffect(() => {
     let active = true;
-    if (!planId) return () => { active = false; };
+    if (!planId || cachedPlan) return () => { active = false; };
 
     (async () => {
       try {
         const nextPlan = await getTwoPersonPlan(planId);
         if (!active) return;
         setPlan(nextPlan);
+        writeNavigationCache(navigationCacheKeys.plan(planId), nextPlan);
         setTitle(nextPlan.title);
         setNote(nextPlan.note);
         setLocationName(nextPlan.locationName);
@@ -145,7 +164,7 @@ function TwoPersonPlanEditorContent({ route, navigation }) {
     })();
 
     return () => { active = false; };
-  }, [planId]);
+  }, [cachedPlan, planId]);
 
   const cleanTitle = title.trim();
 
@@ -177,6 +196,7 @@ function TwoPersonPlanEditorContent({ route, navigation }) {
           note,
           locationName,
         });
+        writeNavigationCache(navigationCacheKeys.plan(updated.id), updated);
         openDetail(updated.id);
       } else {
         const createdId = await createTwoPersonPlanIdea({
@@ -184,6 +204,16 @@ function TwoPersonPlanEditorContent({ route, navigation }) {
           title: cleanTitle,
           note,
           locationName,
+        });
+        writeNavigationCache(navigationCacheKeys.plan(createdId), {
+          id: createdId,
+          conversationId,
+          title: cleanTitle,
+          note,
+          locationName,
+          status: 'idea',
+          startsAt: null,
+          memoryNote: '',
         });
         openDetail(createdId);
       }
@@ -225,6 +255,7 @@ function TwoPersonPlanEditorContent({ route, navigation }) {
         locationName,
         startsAt,
       });
+      writeNavigationCache(navigationCacheKeys.plan(proposed.id), proposed);
       openDetail(proposed.id);
     } catch (saveError) {
       setError(saveError?.message || 'Could not send this proposal.');
@@ -247,6 +278,7 @@ function TwoPersonPlanEditorContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={0.72} decals />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -270,8 +302,14 @@ function TwoPersonPlanEditorContent({ route, navigation }) {
             </View>
           </View>
 
-          <Field label="What do you want to do?">
-            <TextInput
+          <View style={styles.planDetailsCard}>
+            <View style={styles.planDetailsHeading}>
+              <Ionicons name="sparkles-outline" size={17} color={theme.colors.text} />
+              <Text style={styles.planDetailsTitle}>The idea</Text>
+            </View>
+
+            <Field label="What do you want to do?">
+              <TextInput
               value={title}
               onChangeText={setTitle}
               placeholder="Dinner somewhere new"
@@ -295,17 +333,18 @@ function TwoPersonPlanEditorContent({ route, navigation }) {
             />
           </Field>
 
-          <Field label="Place" hint="Optional until you are ready to propose it.">
-            <TextInput
-              value={locationName}
-              onChangeText={setLocationName}
-              placeholder="Restaurant, neighborhood, or address"
-              placeholderTextColor="#9b9b9b"
-              maxLength={200}
-              onFocus={keepFieldVisible}
-              style={styles.input}
-            />
-          </Field>
+            <Field label="Place" hint="Optional until you are ready to propose it.">
+              <TextInput
+                value={locationName}
+                onChangeText={setLocationName}
+                placeholder="Restaurant, neighborhood, or address"
+                placeholderTextColor="#9b9b9b"
+                maxLength={200}
+                onFocus={keepFieldVisible}
+                style={styles.input}
+              />
+            </Field>
+          </View>
 
           <View style={styles.proposalSection}>
             <View style={styles.proposalHeadingRow}>
@@ -392,20 +431,27 @@ export function TwoPersonPlanEditorScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentLine = rgba(theme.circle.accent, 0.20);
+  const accentWash = rgba(theme.circle.accent, 0.10);
   return StyleSheet.create({
-  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
   keyboardView: { flex: 1 },
   content: { width: '100%', maxWidth: 650, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 180 },
-  contextCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 13, borderRadius: 14, backgroundColor: theme.circle.accentSoft },
+  contextCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 13, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: accentLine, backgroundColor: glass },
   contextCopy: { flex: 1 },
   contextTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
   contextBody: { marginTop: 3, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
+  planDetailsCard: { marginTop: 16, padding: 15, paddingTop: 14, paddingBottom: 1, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, borderColor: accentLine, backgroundColor: glass },
+  planDetailsHeading: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: -1 },
+  planDetailsTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
   field: { marginTop: 18 },
   label: { marginBottom: 7, color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
   hint: { marginTop: 5, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 10.5, lineHeight: 15 },
-  input: { minHeight: 44, paddingHorizontal: 12, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.colors.surface, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 13 },
+  input: { minHeight: 44, paddingHorizontal: 12, borderRadius: 11, borderWidth: StyleSheet.hairlineWidth, borderColor: accentLine, backgroundColor: glassStrong, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 13 },
   textArea: { minHeight: 112, paddingTop: 11, paddingBottom: 11 },
-  proposalSection: { marginTop: 20, padding: 14, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.colors.surface },
+  proposalSection: { marginTop: 12, padding: 15, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, borderColor: accentLine, backgroundColor: glass },
   proposalHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   proposalHeading: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
   proposalBody: { marginTop: 5, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 17 },
@@ -416,7 +462,7 @@ function createStyles(theme) {
   errorText: { marginTop: 14, color: '#b42318', fontFamily: 'Manrope_600SemiBold', fontSize: 12, lineHeight: 17 },
   primaryButton: { minHeight: 46, marginTop: 10, borderRadius: 12, backgroundColor: theme.welcome.brandInk, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   primaryButtonText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 13 },
-  secondaryButton: { minHeight: 44, marginTop: 18, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.circle.accentSoft, backgroundColor: theme.circle.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  secondaryButton: { minHeight: 44, marginTop: 18, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: accentLine, backgroundColor: accentWash, alignItems: 'center', justifyContent: 'center' },
   secondaryButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
   centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: theme.colors.surface },
   stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },

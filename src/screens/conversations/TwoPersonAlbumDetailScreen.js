@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -27,6 +27,7 @@ import {
   TWO_PERSON_ALBUM_SELECTION_LIMIT,
   uploadTwoPersonAlbumPhotos,
 } from '../../services/twoPersonAlbumService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function formatDate(value) {
   if (!value) return '';
@@ -88,8 +89,14 @@ function TwoPersonAlbumDetailContent({ route, navigation }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
-  const [album, setAlbum] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cachedAlbum = readNavigationCache(navigationCacheKeys.album(albumId));
+  const cachedHasFullPhotos = Array.isArray(cachedAlbum?.photos);
+  const [album, setAlbum] = useState(() => cachedAlbum
+    ? { ...cachedAlbum, photos: cachedHasFullPhotos ? cachedAlbum.photos : [] }
+    : null);
+  const [loading, setLoading] = useState(!cachedAlbum);
+  const [photosHydrating, setPhotosHydrating] = useState(Boolean(cachedAlbum && !cachedHasFullPhotos));
+  const hasLoadedRef = useRef(Boolean(cachedAlbum));
   const [uploading, setUploading] = useState(false);
   const [uploadStage, setUploadStage] = useState('');
   const [selectedPhoto, setSelectedPhoto] = useState(null);
@@ -107,18 +114,24 @@ function TwoPersonAlbumDetailContent({ route, navigation }) {
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!albumId) return;
     if (!quiet) setLoading(true);
+    if (quiet) setPhotosHydrating(true);
     setError('');
     try {
-      setAlbum(await getTwoPersonAlbum(albumId));
+      const nextAlbum = await getTwoPersonAlbum(albumId);
+      setAlbum(nextAlbum);
+      writeNavigationCache(navigationCacheKeys.album(albumId), nextAlbum);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this shared album.');
     } finally {
       setLoading(false);
+      setPhotosHydrating(false);
     }
   }, [albumId]);
 
   useFocusEffect(useCallback(() => {
-    load();
+    void load({ quiet: hasLoadedRef.current }).finally(() => {
+      hasLoadedRef.current = true;
+    });
   }, [load]));
 
   useFocusEffect(useCallback(() => {
@@ -299,7 +312,12 @@ function TwoPersonAlbumDetailContent({ route, navigation }) {
             <Image source={{ uri: item.url }} style={styles.tileImage} />
           </Pressable>
         )}
-        ListEmptyComponent={(
+        ListEmptyComponent={photosHydrating ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator color={theme.circle.accent} />
+            <Text style={styles.stateText}>Loading photos…</Text>
+          </View>
+        ) : (
           <View style={styles.emptyState}>
             <Ionicons name="images-outline" size={42} color={theme.circle.accent} />
             <Text style={styles.emptyTitle}>No photos yet</Text>

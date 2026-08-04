@@ -14,8 +14,22 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
+
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 import { createCircleAvailabilityPoll } from '../../services/availabilityPollService';
 
 function formatDateInput(date) {
@@ -213,6 +227,7 @@ function CreateAvailabilityPollContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={0.72} decals />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -237,8 +252,16 @@ function CreateAvailabilityPollContent({ route, navigation }) {
             </View>
           </View>
 
-          <Field label="What are you planning?">
-            <TextInput
+          <View style={styles.formCard}>
+            <View style={styles.formCardHeading}>
+              <View style={styles.formCardIcon}>
+                <Ionicons name="sparkles-outline" size={18} color={theme.colors.text} />
+              </View>
+              <Text style={styles.formCardTitle}>Poll details</Text>
+            </View>
+
+            <Field label="What are you planning?">
+              <TextInput
               value={title}
               onChangeText={setTitle}
               placeholder="Game night"
@@ -259,18 +282,19 @@ function CreateAvailabilityPollContent({ route, navigation }) {
             />
           </Field>
 
-          <Field label="Details" hint="Optional context for the plan.">
-            <TextInput
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Bring a game or snack"
-              placeholderTextColor="#a0a0a0"
-              maxLength={2000}
-              multiline
-              textAlignVertical="top"
-              style={[styles.input, styles.textArea]}
-            />
-          </Field>
+            <Field label="Details" hint="Optional context for the plan.">
+              <TextInput
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Bring a game or snack"
+                placeholderTextColor="#a0a0a0"
+                maxLength={2000}
+                multiline
+                textAlignVertical="top"
+                style={[styles.input, styles.textArea]}
+              />
+            </Field>
+          </View>
 
           <View style={styles.optionsHeader}>
             <View>
@@ -371,8 +395,12 @@ export function CreateAvailabilityPollScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentLine = rgba(theme.circle.accent, 0.20);
+  const accentWash = rgba(theme.circle.accent, 0.10);
   return StyleSheet.create({
-  screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
   keyboardView: { flex: 1 },
   content: {
     width: '100%',
@@ -387,8 +415,13 @@ function createStyles(theme) {
     padding: 16,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    shadowColor: '#000',
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   contextIcon: {
     width: 44,
@@ -396,7 +429,7 @@ function createStyles(theme) {
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.circle.accentSoft,
+    backgroundColor: accentWash,
   },
   contextCopy: { flex: 1 },
   contextTitle: {
@@ -411,6 +444,23 @@ function createStyles(theme) {
     fontSize: 12,
     lineHeight: 18,
   },
+  formCard: {
+    marginTop: 18,
+    padding: 15,
+    paddingBottom: 2,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 1,
+  },
+  formCardHeading: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: -2 },
+  formCardIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: accentWash },
+  formCardTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 14 },
   field: { marginTop: 20 },
   label: {
     marginBottom: 7,
@@ -431,8 +481,8 @@ function createStyles(theme) {
     paddingVertical: 11,
     borderRadius: 11,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
     color: theme.colors.text,
     fontFamily: 'Manrope_400Regular',
     fontSize: 14,
@@ -466,8 +516,13 @@ function createStyles(theme) {
     padding: 15,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    shadowColor: '#000',
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   optionHeader: {
     marginBottom: 12,
@@ -492,8 +547,8 @@ function createStyles(theme) {
     minHeight: 46,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -26,6 +26,7 @@ import {
 } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { getTheme } from '../../theme/themes';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function FeatureRow({ icon, title, subtitle, value, onPress, styles, theme }) {
   return (
@@ -56,18 +57,24 @@ function CircleMoreContent({ route, navigation }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { sharedThemeId, canCustomize } = useCircleThemeSettings();
-  const [details, setDetails] = useState(null);
-  const [plans, setPlans] = useState([]);
-  const [importantDates, setImportantDates] = useState([]);
-  const [thoughts, setThoughts] = useState([]);
-  const [albums, setAlbums] = useState([]);
+  const cachedDetails = readNavigationCache(navigationCacheKeys.conversationDetails(conversationId));
+  const cachedPlans = readNavigationCache(navigationCacheKeys.twoPersonPlans(conversationId));
+  const cachedDates = readNavigationCache(navigationCacheKeys.twoPersonDates(conversationId));
+  const cachedThoughts = readNavigationCache(navigationCacheKeys.twoPersonThoughts(conversationId));
+  const cachedAlbums = readNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId));
+  const [details, setDetails] = useState(cachedDetails || null);
+  const [plans, setPlans] = useState(cachedPlans || []);
+  const [importantDates, setImportantDates] = useState(cachedDates || []);
+  const [thoughts, setThoughts] = useState(cachedThoughts || []);
+  const [albums, setAlbums] = useState(cachedAlbums || []);
   const [canInvite, setCanInvite] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedDetails);
   const [error, setError] = useState('');
+  const hasLoadedRef = useRef(Boolean(cachedDetails));
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ quiet = false } = {}) => {
     if (!conversationId) return;
-    setLoading(true);
+    if (!quiet) setLoading(true);
     setError('');
 
     try {
@@ -88,6 +95,7 @@ function CircleMoreContent({ route, navigation }) {
       }
 
       setDetails(result);
+      writeNavigationCache(navigationCacheKeys.conversationDetails(conversationId), result);
 
       if (conversation?.kind !== 'direct') {
         setPlans([]);
@@ -98,6 +106,7 @@ function CircleMoreContent({ route, navigation }) {
         try {
           const people = await getCirclePeople(conversationId);
           setCanInvite(Boolean(people?.permissions?.canInvite));
+          writeNavigationCache(navigationCacheKeys.circlePeople(conversationId), people);
         } catch {
           setCanInvite(false);
         }
@@ -113,10 +122,21 @@ function CircleMoreContent({ route, navigation }) {
         listTwoPersonAlbums(conversationId),
       ]);
 
-      setPlans(results[0].status === 'fulfilled' ? results[0].value : []);
-      setImportantDates(results[1].status === 'fulfilled' ? results[1].value : []);
-      setThoughts(results[2].status === 'fulfilled' ? results[2].value : []);
-      setAlbums(results[3].status === 'fulfilled' ? results[3].value : []);
+      const nextPlans = results[0].status === 'fulfilled' ? results[0].value : [];
+      const nextDates = results[1].status === 'fulfilled' ? results[1].value : [];
+      const nextThoughts = results[2].status === 'fulfilled' ? results[2].value : [];
+      const nextAlbums = results[3].status === 'fulfilled' ? results[3].value : [];
+      setPlans(nextPlans);
+      setImportantDates(nextDates);
+      setThoughts(nextThoughts);
+      setAlbums(nextAlbums);
+      writeNavigationCache(navigationCacheKeys.twoPersonPlans(conversationId), nextPlans);
+      writeNavigationCache(navigationCacheKeys.twoPersonDates(conversationId), nextDates);
+      writeNavigationCache(navigationCacheKeys.twoPersonThoughts(conversationId), nextThoughts);
+      writeNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId), nextAlbums);
+      nextPlans.forEach((plan) => writeNavigationCache(navigationCacheKeys.plan(plan.id), plan));
+      nextThoughts.forEach((thought) => writeNavigationCache(navigationCacheKeys.thought(thought.id), thought));
+      nextAlbums.forEach((album) => writeNavigationCache(navigationCacheKeys.album(album.id), album));
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this Circle’s features.');
     } finally {
@@ -126,7 +146,9 @@ function CircleMoreContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load({ quiet: hasLoadedRef.current }).finally(() => {
+        hasLoadedRef.current = true;
+      });
     }, [load])
   );
 

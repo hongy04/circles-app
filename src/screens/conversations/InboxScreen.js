@@ -17,6 +17,7 @@ import { Avatar } from '../../components/Avatar';
 import { UnreadBadge } from '../../components/UnreadBadge';
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { useThemeTokens } from '../../theme/ThemeProvider';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 import { timeAgo } from '../../utils/timeAgo';
 import {
   listConversationInvitations,
@@ -237,14 +238,15 @@ function InvitationCard({ invitation, busy, onRespond }) {
 export function InboxScreen({ navigation }) {
   const { theme, styles } = useInboxTheme();
   const { width } = useWindowDimensions();
-  const [conversations, setConversations] = useState([]);
-  const [invitations, setInvitations] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedInbox = readNavigationCache(navigationCacheKeys.inbox());
+  const [conversations, setConversations] = useState(cachedInbox?.conversations || []);
+  const [invitations, setInvitations] = useState(cachedInbox?.invitations || []);
+  const [loading, setLoading] = useState(!cachedInbox);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [respondingId, setRespondingId] = useState(null);
-  const [notificationCount, setNotificationCount] = useState(0);
-  const hasLoadedRef = useRef(false);
+  const [notificationCount, setNotificationCount] = useState(Number(cachedInbox?.notificationCount || 0));
+  const hasLoadedRef = useRef(Boolean(cachedInbox));
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
@@ -263,6 +265,11 @@ export function InboxScreen({ navigation }) {
       setConversations(conversationRows);
       setInvitations(invitationRows);
       setNotificationCount(nextNotificationCount);
+      writeNavigationCache(navigationCacheKeys.inbox(), {
+        conversations: conversationRows,
+        invitations: invitationRows,
+        notificationCount: nextNotificationCount,
+      });
     } catch (loadError) {
       setError(loadError?.message || 'Could not load private conversations.');
     } finally {

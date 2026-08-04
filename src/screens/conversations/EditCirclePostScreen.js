@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -27,51 +27,67 @@ import {
   presentationsByAssetId,
   serializeMediaPresentations,
 } from '../../utils/postPresentation';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 const MAX_CAPTION_LENGTH = 2200;
+
+function prepareEditablePost(row) {
+  if (!row) return null;
+  const framingAssets = (row.media || []).map((item, index) => {
+    const saved = row.presentation?.mediaPresentations?.[index] || row.presentation?.cropPoints?.[index] || {};
+    return {
+      id: item.id,
+      uri: item.url,
+      mediaType: item.mediaType,
+      width: Number(saved.width || item.width || 0) || null,
+      height: Number(saved.height || item.height || 0) || null,
+    };
+  });
+  const rawPresentations = row.presentation?.mediaPresentations?.length
+    ? row.presentation.mediaPresentations
+    : framingAssets.map((asset, index) => ({
+        aspectRatio: row.presentation?.aspectRatio || undefined,
+        fit: row.presentation?.aspectRatio ? 'crop' : 'full',
+        ...(row.presentation?.cropPoints?.[index] || {}),
+      }));
+  const presentationById = presentationsByAssetId(framingAssets, rawPresentations);
+  return {
+    post: { ...row, framingAssets },
+    caption: row.caption || '',
+    presentationById,
+    serializedPresentation: JSON.stringify(serializeMediaPresentations(framingAssets, presentationById)),
+  };
+}
 
 function EditCirclePostContent({ route, navigation }) {
   const { postId } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [post, setPost] = useState(null);
-  const [caption, setCaption] = useState('');
-  const [presentationById, setPresentationById] = useState({});
-  const [originalPresentation, setOriginalPresentation] = useState('');
-  const [loading, setLoading] = useState(true);
+  const cachedPost = readNavigationCache(navigationCacheKeys.circlePost(postId));
+  const initialEditor = cachedPost?.canEdit ? prepareEditablePost(cachedPost) : null;
+  const [post, setPost] = useState(initialEditor?.post || null);
+  const [caption, setCaption] = useState(initialEditor?.caption || '');
+  const [presentationById, setPresentationById] = useState(initialEditor?.presentationById || {});
+  const [originalPresentation, setOriginalPresentation] = useState(initialEditor?.serializedPresentation || '');
+  const [loading, setLoading] = useState(!initialEditor);
+  const hasLoadedRef = useRef(Boolean(initialEditor));
+  const skipFirstRefreshRef = useRef(Boolean(initialEditor));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ quiet = false } = {}) => {
     if (!postId) return;
-    setLoading(true);
+    if (!quiet) setLoading(true);
     setError('');
     try {
       const row = await getCirclePost(postId);
       if (!row.canEdit) throw new Error('Only the person who created this post can edit it.');
-      const framingAssets = (row.media || []).map((item, index) => {
-        const saved = row.presentation?.mediaPresentations?.[index] || row.presentation?.cropPoints?.[index] || {};
-        return {
-          id: item.id,
-          uri: item.url,
-          mediaType: item.mediaType,
-          width: Number(saved.width || item.width || 0) || null,
-          height: Number(saved.height || item.height || 0) || null,
-        };
-      });
-      const rawPresentations = row.presentation?.mediaPresentations?.length
-        ? row.presentation.mediaPresentations
-        : framingAssets.map((asset, index) => ({
-            aspectRatio: row.presentation?.aspectRatio || undefined,
-            fit: row.presentation?.aspectRatio ? 'crop' : 'full',
-            ...(row.presentation?.cropPoints?.[index] || {}),
-          }));
-      const nextPresentationById = presentationsByAssetId(framingAssets, rawPresentations);
-
-      setPost({ ...row, framingAssets });
-      setCaption(row.caption || '');
-      setPresentationById(nextPresentationById);
-      setOriginalPresentation(JSON.stringify(serializeMediaPresentations(framingAssets, nextPresentationById)));
+      const prepared = prepareEditablePost(row);
+      setPost(prepared.post);
+      setCaption(prepared.caption);
+      setPresentationById(prepared.presentationById);
+      setOriginalPresentation(prepared.serializedPresentation);
+      writeNavigationCache(navigationCacheKeys.circlePost(postId), row);
     } catch (loadError) {
       setError(loadError?.message || 'Could not edit this Circle post.');
     } finally {
@@ -79,7 +95,16 @@ function EditCirclePostContent({ route, navigation }) {
     }
   }, [postId]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    if (skipFirstRefreshRef.current) {
+      skipFirstRefreshRef.current = false;
+      return undefined;
+    }
+    void load({ quiet: hasLoadedRef.current }).finally(() => {
+      hasLoadedRef.current = true;
+    });
+    return undefined;
+  }, [load]));
 
   const save = async () => {
     if (!post || saving) return;
@@ -89,12 +114,21 @@ function EditCirclePostContent({ route, navigation }) {
     }
     setSaving(true);
     try {
+      const nextMediaPresentations = serializeMediaPresentations(post.framingAssets || [], presentationById);
       await Promise.all([
         updateOwnCirclePostCaption(post.id, caption),
         updateOwnCirclePostPresentation(post.id, {
-          mediaPresentations: serializeMediaPresentations(post.framingAssets || [], presentationById),
+          mediaPresentations: nextMediaPresentations,
         }),
       ]);
+      writeNavigationCache(navigationCacheKeys.circlePost(post.id), {
+        ...post,
+        caption,
+        presentation: {
+          ...(post.presentation || {}),
+          mediaPresentations: nextMediaPresentations,
+        },
+      });
       navigation.goBack();
     } catch (saveError) {
       Alert.alert('Caption not saved', saveError?.message || 'Please try again.');

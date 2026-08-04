@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +21,7 @@ import {
   getAvailabilityPollDetails,
   respondToAvailabilityPoll,
 } from '../../services/availabilityPollService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function formatOptionDate(startsAt, endsAt) {
   const start = new Date(startsAt);
@@ -152,13 +153,58 @@ function MemberRow({ member }) {
   );
 }
 
+
+function detailsFromPollSummary(summary, conversationId, circleName) {
+  if (!summary?.id) return null;
+  const memberCount = Number(summary.memberCount || 0);
+  const responseCount = Number(summary.responseCount || 0);
+  return {
+    poll: {
+      id: summary.id,
+      title: summary.title || 'Availability poll',
+      description: summary.description || '',
+      locationName: summary.locationName || '',
+      status: summary.status || 'open',
+      circleId: conversationId || null,
+      circleName: circleName || 'Circle',
+      hostId: summary.hostId || null,
+      hostName: summary.hostName || 'Circle member',
+      hostAvatar: summary.hostAvatar || null,
+      canManage: false,
+      viewerResponded: Boolean(summary.viewerResponded),
+      finalizedOptionId: null,
+      finalizedEventId: summary.finalizedEventId || null,
+      finalizedAt: null,
+      createdAt: summary.createdAt || null,
+    },
+    counts: {
+      memberCount,
+      responseCount,
+      waitingCount: Math.max(0, memberCount - responseCount),
+    },
+    options: [],
+    members: [],
+  };
+}
+
 function AvailabilityPollDetailContent({ route, navigation }) {
   const { pollId, conversationId, circleName = 'Circle' } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [details, setDetails] = useState(null);
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const initialSnapshot = useMemo(() => {
+    const cachedDetails = readNavigationCache(navigationCacheKeys.pollDetails(pollId));
+    const cachedSummary = readNavigationCache(navigationCacheKeys.pollSummary(pollId));
+    return {
+      details: cachedDetails || detailsFromPollSummary(cachedSummary, conversationId, circleName),
+      hasFullDetails: Boolean(cachedDetails),
+    };
+  }, [circleName, conversationId, pollId]);
+  const [details, setDetails] = useState(initialSnapshot.details || null);
+  const [selectedIds, setSelectedIds] = useState(() => (
+    initialSnapshot.details?.options || []
+  ).filter((option) => option.selectedByViewer).map((option) => option.id));
+  const [loading, setLoading] = useState(!initialSnapshot.hasFullDetails);
+  const hasLoadedRef = useRef(initialSnapshot.hasFullDetails);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [finalizingId, setFinalizingId] = useState('');
@@ -172,6 +218,7 @@ function AvailabilityPollDetailContent({ route, navigation }) {
     try {
       const nextDetails = await getAvailabilityPollDetails(pollId);
       setDetails(nextDetails);
+      writeNavigationCache(navigationCacheKeys.pollDetails(pollId), nextDetails);
       setSelectedIds(
         nextDetails.options
           .filter((option) => option.selectedByViewer)
@@ -187,8 +234,10 @@ function AvailabilityPollDetailContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load])
+      void load({ quiet: hasLoadedRef.current || Boolean(initialSnapshot.details) }).finally(() => {
+        hasLoadedRef.current = true;
+      });
+    }, [initialSnapshot.details, load])
   );
 
   const savedIds = useMemo(
@@ -199,8 +248,10 @@ function AvailabilityPollDetailContent({ route, navigation }) {
     [details]
   );
   const currentIds = useMemo(() => [...selectedIds].sort(), [selectedIds]);
-  const hasChanges = savedIds.join('|') !== currentIds.join('|')
-    || (!details?.poll?.viewerResponded && Boolean(details));
+  const hasChanges = !loading && (
+    savedIds.join('|') !== currentIds.join('|')
+      || (!details?.poll?.viewerResponded && Boolean(details))
+  );
 
   const toggleOption = (optionId) => {
     if (details?.poll?.status !== 'open' || saving || finalizingId) return;
@@ -357,7 +408,11 @@ function AvailabilityPollDetailContent({ route, navigation }) {
           </View>
         </View>
 
-        {options.map((option) => (
+        {loading ? (
+          <View style={styles.inlineLoading}>
+            <ActivityIndicator color={theme.circle.accent} />
+          </View>
+        ) : options.map((option) => (
           <PollOptionCard
             key={option.id}
             option={option}
@@ -406,7 +461,11 @@ function AvailabilityPollDetailContent({ route, navigation }) {
         </View>
 
         <View style={styles.membersCard}>
-          {members.map((member, index) => (
+          {loading ? (
+            <View style={styles.memberLoading}>
+              <ActivityIndicator color={theme.circle.accent} />
+            </View>
+          ) : members.map((member, index) => (
             <View key={member.userId}>
               <MemberRow member={member} />
               {index < members.length - 1 ? <View style={styles.memberDivider} /> : null}
@@ -437,6 +496,8 @@ function createStyles(theme) {
     padding: 16,
     paddingBottom: 50,
   },
+  inlineLoading: { minHeight: 120, alignItems: 'center', justifyContent: 'center' },
+  memberLoading: { minHeight: 82, alignItems: 'center', justifyContent: 'center' },
   heroCard: {
     padding: 20,
     borderRadius: 18,

@@ -42,6 +42,7 @@ import { StoryViewer } from '../../components/stories/StoryViewer';
 import { PostOwnerMenu } from '../../components/posts/PostOwnerMenu';
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { timeAgo } from '../../utils/timeAgo';
+import { navigationCacheKeys, writeNavigationCache } from '../../services/navigationCacheService';
 
 const PAGE_SIZE = 10;
 
@@ -676,11 +677,32 @@ export function FeedScreen({ navigation }) {
             onToggleLike={() => toggleLike(item.id)}
             onDoubleLike={() => toggleLike(item.id)}
             onOpenComments={() => openComments(item.id)}
-            onOpenPost={() =>
+            onOpenPost={() => {
+              writeNavigationCache(navigationCacheKeys.postPreview(item.id), {
+                post: {
+                  id: item.id,
+                  user_id: item.user.id,
+                  caption: item.caption || '',
+                  created_at: item.created_at,
+                  display_aspect_ratio: item.presentation?.aspectRatio ?? null,
+                  media_crop_points: item.presentation?.cropPoints || [],
+                  media_presentations: item.presentation?.mediaPresentations || [],
+                },
+                author: {
+                  id: item.user.id,
+                  display_name: item.user.name || 'Unknown',
+                  avatar_url: item.user.avatarUri || null,
+                },
+                media: item.media || [],
+                likes: Number(item.likes || 0),
+                commentCount: Number(item.commentCount || 0),
+                likedByMe: Boolean(item.liked),
+                isOwner: item.user.id === currentUserId,
+              });
               navigation.navigate('PostDetail', {
                 postId: item.id,
-              })
-            }
+              });
+            }}
             onOpenProfile={
               item.user.id
                 ? () =>

@@ -32,6 +32,7 @@ import {
   subscribeToCirclePostChanges,
   toggleCirclePostLike,
 } from '../../services/circlePostService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function mapCircleComment(comment) {
   return {
@@ -67,10 +68,13 @@ function CirclePostFeedCard({
     }))
   ), [post]);
 
-  const openDetail = () => navigation.navigate('CirclePostDetail', {
-    conversationId,
-    postId: post.id,
-  });
+  const openDetail = () => {
+    writeNavigationCache(navigationCacheKeys.circlePost(post.id), post);
+    navigation.navigate('CirclePostDetail', {
+      conversationId,
+      postId: post.id,
+    });
+  };
 
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const { animatedHeight, onScroll } = usePostCarouselHeight({
@@ -200,12 +204,15 @@ function CirclePostFeedCard({
 
 function CirclePostsFeedContent({ route, navigation }) {
   const { conversationId, initialPostId, circleName } = route.params || {};
+  const cachedPosts = readNavigationCache(navigationCacheKeys.circlePosts(conversationId));
+  const hasInitialPosts = Array.isArray(cachedPosts);
+  const initialPosts = hasInitialPosts ? cachedPosts : [];
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const stageWidth = Math.min(width - 24, 696);
-  const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [posts, setPosts] = useState(initialPosts);
+  const [loading, setLoading] = useState(!hasInitialPosts);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [commentsVisible, setCommentsVisible] = useState(false);
@@ -217,7 +224,7 @@ function CirclePostsFeedContent({ route, navigation }) {
   const didInitialScrollRef = useRef(false);
   const [togglingLikes, setTogglingLikes] = useState({});
   const [deletingPostId, setDeletingPostId] = useState(null);
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(hasInitialPosts);
   const commentsPostIdRef = useRef(null);
 
   useEffect(() => {
@@ -232,6 +239,10 @@ function CirclePostsFeedContent({ route, navigation }) {
     try {
       const rows = await listCirclePosts(conversationId);
       setPosts(rows);
+      writeNavigationCache(navigationCacheKeys.circlePosts(conversationId), rows);
+      rows.forEach((post) => {
+        writeNavigationCache(navigationCacheKeys.circlePost(post.id), post);
+      });
       setCommentsPost((current) => {
         if (!current) return current;
         return rows.find((post) => post.id === current.id) || current;

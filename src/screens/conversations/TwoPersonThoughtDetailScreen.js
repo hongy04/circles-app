@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +20,7 @@ import {
   getTwoPersonThought,
   subscribeToTwoPersonThoughtChanges,
 } from '../../services/twoPersonThoughtService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function formatSharedAt(value) {
   if (!value) return '';
@@ -42,8 +43,10 @@ function TwoPersonThoughtDetailContent({ route, navigation }) {
   } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [thought, setThought] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const cachedThought = readNavigationCache(navigationCacheKeys.thought(thoughtId));
+  const [thought, setThought] = useState(cachedThought || null);
+  const [loading, setLoading] = useState(!cachedThought);
+  const hasLoadedRef = useRef(Boolean(cachedThought));
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
 
@@ -52,7 +55,9 @@ function TwoPersonThoughtDetailContent({ route, navigation }) {
     if (!quiet) setLoading(true);
     setError('');
     try {
-      setThought(await getTwoPersonThought(thoughtId));
+      const nextThought = await getTwoPersonThought(thoughtId);
+      setThought(nextThought);
+      writeNavigationCache(navigationCacheKeys.thought(thoughtId), nextThought);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this thought.');
     } finally {
@@ -62,7 +67,9 @@ function TwoPersonThoughtDetailContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load({ quiet: hasLoadedRef.current }).finally(() => {
+        hasLoadedRef.current = true;
+      });
       return subscribeToTwoPersonThoughtChanges({
         conversationId,
         onChange: () => load({ quiet: true }),
@@ -96,7 +103,7 @@ function TwoPersonThoughtDetailContent({ route, navigation }) {
     );
   };
 
-  if (loading) {
+  if (loading && !thought) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
         <ActivityIndicator color={theme.circle.accent} />

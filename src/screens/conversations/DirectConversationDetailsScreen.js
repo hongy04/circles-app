@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -21,6 +21,7 @@ import {
   listConversationTimeline,
   subscribeToConversationChanges,
 } from '../../services/conversationService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function SharedMediaTile({ item, size, onPress, styles }) {
   return (
@@ -54,9 +55,13 @@ export function DirectConversationDetailsScreen({ route, navigation }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { conversationId } = route.params || {};
   const { width } = useWindowDimensions();
-  const [details, setDetails] = useState(null);
-  const [sharedMedia, setSharedMedia] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedDetails = readNavigationCache(navigationCacheKeys.conversationDetails(conversationId));
+  const cachedTimeline = readNavigationCache(navigationCacheKeys.circleTimeline(conversationId));
+  const hasWarmSnapshot = Boolean(cachedDetails) && Array.isArray(cachedTimeline);
+  const [details, setDetails] = useState(cachedDetails || null);
+  const [sharedMedia, setSharedMedia] = useState(Array.isArray(cachedTimeline) ? cachedTimeline : []);
+  const [loading, setLoading] = useState(!hasWarmSnapshot);
+  const hasLoadedRef = useRef(hasWarmSnapshot);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
@@ -79,6 +84,8 @@ export function DirectConversationDetailsScreen({ route, navigation }) {
       const mediaRows = await listConversationTimeline(conversationId);
       setDetails(detailRows);
       setSharedMedia(mediaRows);
+      writeNavigationCache(navigationCacheKeys.conversationDetails(conversationId), detailRows);
+      writeNavigationCache(navigationCacheKeys.circleTimeline(conversationId), mediaRows);
     } catch (loadError) {
       setError(loadError?.message || 'Could not open conversation details.');
     } finally {
@@ -89,7 +96,9 @@ export function DirectConversationDetailsScreen({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      void load({ quiet: hasLoadedRef.current }).finally(() => {
+        hasLoadedRef.current = true;
+      });
     }, [load])
   );
 

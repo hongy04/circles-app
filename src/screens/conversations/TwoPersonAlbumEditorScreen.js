@@ -23,6 +23,7 @@ import {
   updateTwoPersonAlbum,
 } from '../../services/twoPersonAlbumService';
 import { updateTwoPersonPlanMemoryAlbum } from '../../services/twoPersonPlanService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function normalizeDate(value) {
   const trimmed = String(value || '').trim();
@@ -50,12 +51,13 @@ function TwoPersonAlbumEditorContent({ route, navigation }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const editing = Boolean(albumId);
+  const cachedAlbum = editing ? readNavigationCache(navigationCacheKeys.album(albumId)) : null;
   const scrollRef = useRef(null);
   const fieldRefs = useRef({});
-  const [title, setTitle] = useState(editing ? '' : initialTitle);
-  const [occurredOn, setOccurredOn] = useState(editing ? '' : initialOccurredOn);
-  const [note, setNote] = useState(editing ? '' : initialNote);
-  const [loading, setLoading] = useState(editing);
+  const [title, setTitle] = useState(editing ? (cachedAlbum?.title || '') : initialTitle);
+  const [occurredOn, setOccurredOn] = useState(editing ? (cachedAlbum?.occurredOn || '') : initialOccurredOn);
+  const [note, setNote] = useState(editing ? (cachedAlbum?.note || '') : initialNote);
+  const [loading, setLoading] = useState(Boolean(editing && !cachedAlbum));
   const [saving, setSaving] = useState(false);
 
   const revealField = (key) => {
@@ -75,6 +77,7 @@ function TwoPersonAlbumEditorContent({ route, navigation }) {
     setLoading(true);
     try {
       const album = await getTwoPersonAlbum(albumId);
+      writeNavigationCache(navigationCacheKeys.album(albumId), album);
       setTitle(album.title || '');
       setOccurredOn(album.occurredOn || '');
       setNote(album.note || '');
@@ -87,8 +90,10 @@ function TwoPersonAlbumEditorContent({ route, navigation }) {
   }, [albumId, navigation]);
 
   useFocusEffect(useCallback(() => {
-    load();
-  }, [load]));
+    if (cachedAlbum) return undefined;
+    void load();
+    return undefined;
+  }, [cachedAlbum, load]));
 
   const save = async () => {
     if (saving) return;
@@ -101,11 +106,15 @@ function TwoPersonAlbumEditorContent({ route, navigation }) {
 
       setSaving(true);
       if (editing) {
-        await updateTwoPersonAlbum({
+        const updatedAlbum = await updateTwoPersonAlbum({
           albumId,
           title: cleanTitle,
           note,
           occurredOn: dateValue,
+        });
+        writeNavigationCache(navigationCacheKeys.album(albumId), {
+          ...(cachedAlbum || {}),
+          ...updatedAlbum,
         });
         navigation.goBack();
       } else {
@@ -117,6 +126,15 @@ function TwoPersonAlbumEditorContent({ route, navigation }) {
         });
         if (memoryPlanId) {
           await updateTwoPersonPlanMemoryAlbum(memoryPlanId, createdAlbumId);
+          writeNavigationCache(navigationCacheKeys.album(createdAlbumId), {
+            id: createdAlbumId,
+            conversationId,
+            title: cleanTitle,
+            note,
+            occurredOn: dateValue,
+            photoCount: 0,
+            coverUrl: null,
+          });
           navigation.replace('TwoPersonAlbumDetail', {
             albumId: createdAlbumId,
             conversationId,

@@ -24,57 +24,73 @@ import {
   presentationsByAssetId,
   serializeMediaPresentations,
 } from '../../utils/postPresentation';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 const CAPTION_LIMIT = 2200;
+
+function prepareEditablePost(detail) {
+  if (!detail?.isOwner || !detail?.post) return null;
+  const nextCaption = detail.post.caption || '';
+  const nextAssets = (detail.media || []).map((item, index) => {
+    const saved = detail.post.media_presentations?.[index] || detail.post.media_crop_points?.[index] || {};
+    return {
+      id: item.id,
+      uri: item.url,
+      type: item.media_type === 'video' ? 'video' : 'image',
+      width: Number(saved.width || item.width || 0) || null,
+      height: Number(saved.height || item.height || 0) || null,
+    };
+  });
+  const rawPresentations = Array.isArray(detail.post.media_presentations) && detail.post.media_presentations.length
+    ? detail.post.media_presentations
+    : nextAssets.map((asset, index) => ({
+        aspectRatio: detail.post.display_aspect_ratio || undefined,
+        fit: detail.post.display_aspect_ratio ? 'crop' : 'full',
+        ...(detail.post.media_crop_points?.[index] || {}),
+      }));
+  const nextPresentationById = presentationsByAssetId(nextAssets, rawPresentations);
+  return {
+    caption: nextCaption,
+    assets: nextAssets,
+    presentationById: nextPresentationById,
+    serializedPresentation: JSON.stringify(serializeMediaPresentations(nextAssets, nextPresentationById)),
+  };
+}
 
 export function EditPostScreen({ route, navigation }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { postId } = route.params || {};
-  const [caption, setCaption] = useState('');
-  const [originalCaption, setOriginalCaption] = useState('');
-  const [assets, setAssets] = useState([]);
-  const [presentationById, setPresentationById] = useState({});
-  const [originalPresentation, setOriginalPresentation] = useState('');
-  const [loading, setLoading] = useState(true);
+  const cachedDetail = readNavigationCache(navigationCacheKeys.postPreview(postId));
+  const initialEditor = prepareEditablePost(cachedDetail);
+  const [caption, setCaption] = useState(initialEditor?.caption || '');
+  const [originalCaption, setOriginalCaption] = useState(initialEditor?.caption || '');
+  const [assets, setAssets] = useState(initialEditor?.assets || []);
+  const [presentationById, setPresentationById] = useState(initialEditor?.presentationById || {});
+  const [originalPresentation, setOriginalPresentation] = useState(initialEditor?.serializedPresentation || '');
+  const [loading, setLoading] = useState(!initialEditor);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const mountedRef = useRef(true);
+  const detailRef = useRef(cachedDetail || null);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true);
     setError('');
 
     try {
       const detail = await fetchPostDetail(postId);
-      if (!detail?.isOwner) throw new Error('This post is unavailable or you do not own it.');
+      const prepared = prepareEditablePost(detail);
+      if (!prepared) throw new Error('This post is unavailable or you do not own it.');
       if (!mountedRef.current) return;
 
-      const nextCaption = detail.post.caption || '';
-      const nextAssets = (detail.media || []).map((item, index) => {
-        const saved = detail.post.media_presentations?.[index] || detail.post.media_crop_points?.[index] || {};
-        return {
-          id: item.id,
-          uri: item.url,
-          type: item.media_type === 'video' ? 'video' : 'image',
-          width: Number(saved.width || 0) || null,
-          height: Number(saved.height || 0) || null,
-        };
-      });
-      const rawPresentations = Array.isArray(detail.post.media_presentations) && detail.post.media_presentations.length
-        ? detail.post.media_presentations
-        : nextAssets.map((asset, index) => ({
-            aspectRatio: detail.post.display_aspect_ratio || undefined,
-            fit: detail.post.display_aspect_ratio ? 'crop' : 'full',
-            ...(detail.post.media_crop_points?.[index] || {}),
-          }));
-      const nextPresentationById = presentationsByAssetId(nextAssets, rawPresentations);
-
-      setCaption(nextCaption);
-      setOriginalCaption(nextCaption);
-      setAssets(nextAssets);
-      setPresentationById(nextPresentationById);
-      setOriginalPresentation(JSON.stringify(serializeMediaPresentations(nextAssets, nextPresentationById)));
+      detailRef.current = detail;
+      writeNavigationCache(navigationCacheKeys.postPreview(postId), detail);
+      setCaption(prepared.caption);
+      setOriginalCaption(prepared.caption);
+      setAssets(prepared.assets);
+      setPresentationById(prepared.presentationById);
+      setOriginalPresentation(prepared.serializedPresentation);
     } catch (loadError) {
       if (!mountedRef.current) return;
       setError(loadError?.message || 'The post could not be loaded.');
@@ -85,7 +101,7 @@ export function EditPostScreen({ route, navigation }) {
 
   useEffect(() => {
     mountedRef.current = true;
-    load();
+    if (!initialEditor) void load();
 
     return () => {
       mountedRef.current = false;
@@ -101,12 +117,25 @@ export function EditPostScreen({ route, navigation }) {
 
     setSaving(true);
     try {
+      const nextMediaPresentations = serializeMediaPresentations(assets, presentationById);
       await Promise.all([
         updateOwnPostCaption(postId, caption),
         updateOwnPostPresentation(postId, {
-          mediaPresentations: serializeMediaPresentations(assets, presentationById),
+          mediaPresentations: nextMediaPresentations,
         }),
       ]);
+      if (detailRef.current) {
+        const nextDetail = {
+          ...detailRef.current,
+          post: {
+            ...detailRef.current.post,
+            caption,
+            media_presentations: nextMediaPresentations,
+          },
+        };
+        detailRef.current = nextDetail;
+        writeNavigationCache(navigationCacheKeys.postPreview(postId), nextDetail);
+      }
       navigation.goBack();
     } catch (saveError) {
       Alert.alert(

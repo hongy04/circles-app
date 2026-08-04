@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -18,6 +19,18 @@ import {
   getPushNotificationState,
   openNotificationSystemSettings,
 } from '../../services/pushNotificationService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function statusCopy(state) {
   if (!state?.supported && state?.reason === 'expo_go') {
@@ -102,7 +115,10 @@ export function PushNotificationSettingsScreen() {
   if (loading) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.center}>
-        <ActivityIndicator />
+        <ThemeAtmosphere theme={theme} strength={0.78} decals />
+        <View style={styles.loadingCard}>
+          <ActivityIndicator color={theme.circle.accent} />
+        </View>
       </SafeAreaView>
     );
   }
@@ -114,6 +130,7 @@ export function PushNotificationSettingsScreen() {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={0.80} decals />
       <View style={styles.content}>
         <View style={styles.statusCard}>
           <View style={styles.iconWrap}>
@@ -185,9 +202,28 @@ export function PushNotificationSettingsScreen() {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentBorder = rgba(theme.circle.accent, 0.18);
+
   return StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.bg },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.bg },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.bg,
+  },
+  loadingCard: {
+    width: 82,
+    height: 82,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
+  },
   content: {
     width: '100%',
     maxWidth: 680,
@@ -197,21 +233,26 @@ function createStyles(theme) {
   statusCard: {
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
-    borderRadius: 18,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentBorder,
+    borderRadius: 20,
+    backgroundColor: glassStrong,
     paddingHorizontal: 22,
     paddingVertical: 28,
+    shadowColor: theme.colors.text,
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
   },
   iconWrap: {
     width: 58,
     height: 58,
-    borderRadius: 29,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.surfaceSoft,
+    backgroundColor: rgba(theme.circle.accent, 0.11),
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
+    borderColor: rgba(theme.circle.accent, 0.15),
     marginBottom: 15,
   },
   title: {
@@ -230,9 +271,9 @@ function createStyles(theme) {
   },
   privacyCard: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
-    borderRadius: 14,
-    backgroundColor: theme.colors.surfaceSoft,
+    borderColor: accentBorder,
+    borderRadius: 16,
+    backgroundColor: glass,
     padding: 16,
     marginTop: 16,
   },
@@ -260,27 +301,29 @@ function createStyles(theme) {
   primaryButtonText: {
     color: theme.colors.onPrimary,
     fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
   },
   secondaryButton: {
-    minHeight: 52,
+    minHeight: 50,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-    marginTop: 12,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
+    marginTop: 14,
     paddingHorizontal: 18,
   },
   secondaryButtonText: {
     color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
   },
-  buttonPressed: { opacity: 0.68 },
+  buttonPressed: { opacity: 0.72, transform: [{ scale: 0.995 }] },
   footer: {
     color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
-    fontSize: 11,
+    fontSize: 11.5,
     lineHeight: 17,
     textAlign: 'center',
     marginTop: 18,

@@ -13,14 +13,28 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 import {
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
   subscribeToNotificationChanges,
 } from '../../services/notificationService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function notificationCopy(notification) {
   switch (notification.type) {
@@ -127,11 +141,12 @@ function NotificationRow({ notification, onOpen, styles, theme }) {
 export function NotificationsScreen({ navigation }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedNotifications = readNavigationCache(navigationCacheKeys.notifications());
+  const [notifications, setNotifications] = useState(cachedNotifications || []);
+  const [loading, setLoading] = useState(!cachedNotifications);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(Boolean(cachedNotifications));
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.isRead).length,
@@ -143,7 +158,9 @@ export function NotificationsScreen({ navigation }) {
     setError('');
 
     try {
-      setNotifications(await listNotifications());
+      const nextNotifications = await listNotifications();
+      setNotifications(nextNotifications);
+      writeNavigationCache(navigationCacheKeys.notifications(), nextNotifications);
     } catch (loadError) {
       setError(loadError?.message || 'Could not load notifications.');
     } finally {
@@ -249,14 +266,18 @@ export function NotificationsScreen({ navigation }) {
   if (loading) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.stateText}>Loading activity…</Text>
+        <ThemeAtmosphere theme={theme} strength={0.82} decals />
+        <View style={styles.stateCard}>
+          <ActivityIndicator color={theme.circle.accent} />
+          <Text style={styles.stateText}>Loading activity…</Text>
+        </View>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={0.88} decals />
       <FlatList
         data={notifications}
         keyExtractor={(item) => item.id}
@@ -270,7 +291,7 @@ export function NotificationsScreen({ navigation }) {
               setRefreshing(true);
               load({ quiet: true });
             }}
-            tintColor={theme.colors.text}
+            tintColor={theme.circle.accent}
           />
         )}
         ListHeaderComponent={error ? (
@@ -303,20 +324,40 @@ export function NotificationsScreen({ navigation }) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.86);
+  const glassStrong = rgba(theme.colors.surface, 0.94);
+  const accentBorder = rgba(theme.circle.accent, 0.18);
+  const accentWash = rgba(theme.circle.accent, 0.09);
+
   return StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.bg },
-  listContent: { flexGrow: 1, paddingBottom: 36 },
+  listContent: {
+    flexGrow: 1,
+    paddingTop: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 36,
+  },
   row: {
     minHeight: 78,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.bg,
+    marginBottom: 8,
+    borderRadius: 17,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glass,
+    shadowColor: theme.colors.text,
+    shadowOpacity: 0.035,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
   },
-  unreadRow: { backgroundColor: theme.colors.surfaceSoft },
+  unreadRow: {
+    backgroundColor: rgba(theme.circle.accent, 0.115),
+    borderColor: rgba(theme.circle.accent, 0.30),
+  },
   avatarWrap: { width: 54, height: 54, justifyContent: 'center' },
   systemAvatar: {
     width: 48,
@@ -324,9 +365,9 @@ function createStyles(theme) {
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.surfaceSoft,
+    backgroundColor: glassStrong,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colors.border,
+    borderColor: accentBorder,
   },
   typeBadge: {
     position: 'absolute',
@@ -369,12 +410,13 @@ function createStyles(theme) {
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    marginHorizontal: 12,
-    marginTop: 8,
+    marginBottom: 10,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: theme.colors.surfaceSoft,
+    paddingVertical: 11,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
   },
   errorText: {
     flex: 1,
@@ -389,10 +431,15 @@ function createStyles(theme) {
   },
   emptyState: {
     flex: 1,
-    minHeight: 420,
+    minHeight: 400,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 36,
+    marginBottom: 18,
+    borderRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glass,
   },
   emptyTitle: {
     marginTop: 13,
@@ -413,13 +460,25 @@ function createStyles(theme) {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 24,
     backgroundColor: theme.colors.bg,
+  },
+  stateCard: {
+    minWidth: 190,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 22,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentBorder,
+    backgroundColor: glassStrong,
   },
   stateText: {
     marginTop: 10,
     color: theme.colors.subtext,
     fontFamily: 'Manrope_400Regular',
   },
-  pressed: { opacity: 0.7 },
+  pressed: { opacity: 0.72, transform: [{ scale: 0.995 }] },
   });
 }

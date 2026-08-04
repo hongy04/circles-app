@@ -15,10 +15,24 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+
+import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import * as Haptics from 'expo-haptics';
 import { Avatar } from '../../components/Avatar';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(77,185,229,${alpha})`;
+  }
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 import {
   invitePeopleToCircle,
   listCircleInviteCandidates,
@@ -149,6 +163,7 @@ function InviteCirclePeopleContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <ThemeAtmosphere theme={theme} strength={0.66} decals />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -335,10 +350,14 @@ export function InviteCirclePeopleScreen(props) {
 }
 
 function createStyles(theme) {
+  const glass = rgba(theme.colors.surface, 0.84);
+  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const accentLine = rgba(theme.circle.accent, 0.20);
+  const accentWash = rgba(theme.circle.accent, 0.10);
   return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: theme.circle.profileBackground,
+    backgroundColor: theme.colors.bg,
   },
   keyboardView: {
     flex: 1,
@@ -386,8 +405,13 @@ function createStyles(theme) {
     padding: 13,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
+    shadowColor: '#000',
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   privacyText: {
     flex: 1,
@@ -401,11 +425,16 @@ function createStyles(theme) {
     alignItems: 'center',
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
     padding: 13,
     marginTop: 10,
     marginBottom: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   linkInviteCopy: {
     flex: 1,
@@ -439,8 +468,8 @@ function createStyles(theme) {
     paddingHorizontal: 12,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
   },
   searchInput: {
     flex: 1,
@@ -475,7 +504,7 @@ function createStyles(theme) {
     justifyContent: 'center',
     borderRadius: 9,
     borderWidth: 2,
-    borderColor: theme.circle.profileBackground,
+    borderColor: glassStrong,
     backgroundColor: theme.welcome.brandInk,
   },
   listContent: {
@@ -491,8 +520,8 @@ function createStyles(theme) {
     overflow: 'hidden',
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glass,
   },
   firstRow: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -533,8 +562,8 @@ function createStyles(theme) {
     justifyContent: 'center',
     borderRadius: 13,
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
   },
   checkboxSelected: {
     borderColor: theme.circle.accent,
@@ -574,8 +603,8 @@ function createStyles(theme) {
     paddingTop: 10,
     paddingBottom: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    borderTopColor: accentLine,
+    backgroundColor: glassStrong,
   },
   sendButton: {
     minHeight: 47,

@@ -2,55 +2,78 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { getCircleThemeSettings } from '../services/circleThemeService';
 import { subscribeToConversationChanges } from '../services/conversationService';
-import { ThemeScope, useThemeTokens } from './ThemeProvider';
+import { ThemeScope } from './ThemeProvider';
 
-const CircleThemeContext = createContext({
+const DEFAULT_SETTINGS = {
   sharedThemeId: null,
   canCustomize: false,
   isTwoPerson: false,
+};
+
+// Theme settings are presentation metadata. Keeping the last resolved theme in
+// memory lets every screen in the same Circle render in the correct visual
+// world immediately instead of flashing a full-screen loader for each route.
+// Permissions are still revalidated whenever a boundary gains focus.
+const circleThemeSnapshots = new Map();
+
+function readThemeSnapshot(conversationId) {
+  if (!conversationId) return null;
+  return circleThemeSnapshots.get(String(conversationId)) || null;
+}
+
+function writeThemeSnapshot(conversationId, settings) {
+  if (!conversationId || !settings) return;
+  circleThemeSnapshots.set(String(conversationId), settings);
+}
+
+const CircleThemeContext = createContext({
+  ...DEFAULT_SETTINGS,
   loading: true,
   refreshCircleTheme: async () => {},
 });
 
-function BoundaryLoadingState() {
-  const theme = useThemeTokens();
-  return (
-    <View style={[styles.loading, { backgroundColor: theme.colors.bg }]}>
-      <ActivityIndicator color={theme.circle.accent} />
-    </View>
-  );
-}
-
 export function CircleThemeBoundary({ conversationId, children }) {
-  const [settings, setSettings] = useState({
-    sharedThemeId: null,
-    canCustomize: false,
-    isTwoPerson: false,
-  });
-  const [loading, setLoading] = useState(true);
+  const initialSnapshot = readThemeSnapshot(conversationId);
+  const [settings, setSettings] = useState(initialSnapshot || DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(!initialSnapshot);
+  const conversationIdRef = useRef(conversationId);
 
-  const refreshCircleTheme = useCallback(async ({ quiet = false } = {}) => {
+  // A navigator can reuse a screen component with different params. Reset to a
+  // warm snapshot (or safe global-theme defaults) without ever removing the
+  // child screen from the tree.
+  useEffect(() => {
+    if (conversationIdRef.current === conversationId) return;
+    conversationIdRef.current = conversationId;
+    const snapshot = readThemeSnapshot(conversationId);
+    setSettings(snapshot || DEFAULT_SETTINGS);
+    setLoading(!snapshot);
+  }, [conversationId]);
+
+  const refreshCircleTheme = useCallback(async () => {
     if (!conversationId) {
+      setSettings(DEFAULT_SETTINGS);
       setLoading(false);
       return null;
     }
-    if (!quiet) setLoading(true);
 
     try {
       const next = await getCircleThemeSettings(conversationId);
-      setSettings({
+      const normalized = {
         sharedThemeId: next.themeId,
         canCustomize: next.canCustomize,
         isTwoPerson: next.isTwoPerson,
-      });
+      };
+      writeThemeSnapshot(conversationId, normalized);
+      setSettings(normalized);
       return next;
     } finally {
       setLoading(false);
@@ -59,15 +82,12 @@ export function CircleThemeBoundary({ conversationId, children }) {
 
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-
+      // Crucially, focusing a Circle route never swaps its children for a
+      // loading screen. The existing screen remains mounted and the theme is
+      // revalidated quietly around it.
       refreshCircleTheme().catch(() => {
-        if (active) setLoading(false);
+        setLoading(false);
       });
-
-      return () => {
-        active = false;
-      };
     }, [refreshCircleTheme])
   );
 
@@ -77,7 +97,7 @@ export function CircleThemeBoundary({ conversationId, children }) {
       return subscribeToConversationChanges({
         conversationId,
         onConversationChange: () => {
-          refreshCircleTheme({ quiet: true }).catch(() => {});
+          refreshCircleTheme().catch(() => {});
         },
       });
     }, [conversationId, refreshCircleTheme])
@@ -88,8 +108,6 @@ export function CircleThemeBoundary({ conversationId, children }) {
     loading,
     refreshCircleTheme,
   }), [loading, refreshCircleTheme, settings]);
-
-  if (loading) return <BoundaryLoadingState />;
 
   return (
     <CircleThemeContext.Provider value={value}>
@@ -103,11 +121,3 @@ export function CircleThemeBoundary({ conversationId, children }) {
 export function useCircleThemeSettings() {
   return useContext(CircleThemeContext);
 }
-
-const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

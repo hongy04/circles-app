@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,7 @@ import {
   updateTwoPersonPlanMemoryAlbum,
   updateTwoPersonPlanMemoryPost,
 } from '../../services/twoPersonPlanService';
+import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function dateOnly(value) {
   if (!value) return '';
@@ -127,10 +128,17 @@ function TwoPersonPlanMemoryContent({ route, navigation }) {
   } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [plan, setPlan] = useState(null);
-  const [albums, setAlbums] = useState([]);
-  const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedPlan = readNavigationCache(navigationCacheKeys.plan(planId));
+  const cachedAlbums = readNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId));
+  const cachedPosts = readNavigationCache(navigationCacheKeys.circlePosts(conversationId));
+  const hasWarmSnapshot = Boolean(cachedPlan)
+    && Array.isArray(cachedAlbums)
+    && Array.isArray(cachedPosts);
+  const [plan, setPlan] = useState(cachedPlan || null);
+  const [albums, setAlbums] = useState(Array.isArray(cachedAlbums) ? cachedAlbums : []);
+  const [posts, setPosts] = useState(Array.isArray(cachedPosts) ? cachedPosts : []);
+  const [loading, setLoading] = useState(!hasWarmSnapshot);
+  const hasLoadedRef = useRef(hasWarmSnapshot);
   const [workingKey, setWorkingKey] = useState('');
   const [error, setError] = useState('');
 
@@ -150,6 +158,11 @@ function TwoPersonPlanMemoryContent({ route, navigation }) {
       setPlan(nextPlan);
       setAlbums(nextAlbums);
       setPosts(nextPosts);
+      writeNavigationCache(navigationCacheKeys.plan(planId), nextPlan);
+      writeNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId), nextAlbums);
+      writeNavigationCache(navigationCacheKeys.circlePosts(conversationId), nextPosts);
+      nextAlbums.forEach((album) => writeNavigationCache(navigationCacheKeys.album(album.id), album));
+      nextPosts.forEach((post) => writeNavigationCache(navigationCacheKeys.circlePost(post.id), post));
     } catch (loadError) {
       setError(loadError?.message || 'Could not open this shared memory.');
     } finally {
@@ -158,7 +171,9 @@ function TwoPersonPlanMemoryContent({ route, navigation }) {
   }, [conversationId, planId]);
 
   useFocusEffect(useCallback(() => {
-    load();
+    void load({ quiet: hasLoadedRef.current }).finally(() => {
+      hasLoadedRef.current = true;
+    });
   }, [load]));
 
   const setAlbum = async (albumId) => {
@@ -166,7 +181,9 @@ function TwoPersonPlanMemoryContent({ route, navigation }) {
     setWorkingKey(`album-${albumId || 'none'}`);
     setError('');
     try {
-      setPlan(await updateTwoPersonPlanMemoryAlbum(planId, albumId));
+      const nextPlan = await updateTwoPersonPlanMemoryAlbum(planId, albumId);
+      setPlan(nextPlan);
+      writeNavigationCache(navigationCacheKeys.plan(planId), nextPlan);
     } catch (actionError) {
       setError(actionError?.message || 'Could not update the linked album.');
     } finally {
@@ -179,7 +196,9 @@ function TwoPersonPlanMemoryContent({ route, navigation }) {
     setWorkingKey(`post-${postId || 'none'}`);
     setError('');
     try {
-      setPlan(await updateTwoPersonPlanMemoryPost(planId, postId));
+      const nextPlan = await updateTwoPersonPlanMemoryPost(planId, postId);
+      setPlan(nextPlan);
+      writeNavigationCache(navigationCacheKeys.plan(planId), nextPlan);
     } catch (actionError) {
       setError(actionError?.message || 'Could not update the linked post.');
     } finally {
@@ -202,7 +221,7 @@ function TwoPersonPlanMemoryContent({ route, navigation }) {
     );
   };
 
-  if (loading) {
+  if (loading && !plan) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.centerState}>
         <ActivityIndicator />
