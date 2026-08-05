@@ -11,7 +11,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
 import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
 import { EventLookArtwork } from '../../components/events/EventLookHero';
@@ -431,8 +430,8 @@ function CircleEventsContent({ route, navigation }) {
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.screen}>
-      <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.12} />
-      <ThemeAtmosphere theme={theme} strength={0.34} decals />
+      <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.07} />
+      <View pointerEvents="none" style={styles.wallpaperSoftener} />
       <FlatList
         data={eventRows}
         keyExtractor={(item) => item.rowType === 'section' ? item.id : item.event.id}
@@ -494,12 +493,17 @@ export function CircleEventsScreen(props) {
 }
 
 function createStyles(theme) {
-  const glass = rgba(theme.colors.surface, 0.84);
-  const glassStrong = rgba(theme.colors.surface, 0.93);
+  const glass = rgba(theme.colors.surface, 0.76);
+  const glassStrong = rgba(theme.colors.surface, 0.88);
+  const glassQuiet = rgba(theme.colors.surface, 0.58);
   const accentBorder = rgba(theme.circle.accent, 0.20);
 
   return StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
+  wallpaperSoftener: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: rgba(theme.colors.surface, 0.045),
+  },
   content: {
     width: '100%',
     maxWidth: 720,
@@ -511,11 +515,16 @@ function createStyles(theme) {
   },
   topActions: {
     marginTop: 2,
-    padding: 11,
-    borderRadius: 18,
+    padding: 10,
+    borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: accentBorder,
+    borderColor: rgba(theme.circle.accent, 0.24),
     backgroundColor: glassStrong,
+    shadowColor: theme.colors.text,
+    shadowOpacity: 0.045,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 1,
   },
   actionRow: { flexDirection: 'row', gap: 9 },
   pollButton: {
@@ -524,7 +533,7 @@ function createStyles(theme) {
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: rgba(theme.circle.accent, 0.24),
-    backgroundColor: rgba(theme.colors.surface, 0.74),
+    backgroundColor: rgba(theme.colors.surface, 0.67),
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -556,20 +565,30 @@ function createStyles(theme) {
     fontSize: 13,
   },
   eventSectionHeader: {
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 24,
     marginBottom: 10,
-    paddingHorizontal: 2,
+    paddingHorizontal: 11,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: rgba(theme.circle.accent, 0.15),
+    backgroundColor: glassQuiet,
   },
   sectionHeader: {
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 24,
     marginBottom: 10,
-    paddingHorizontal: 2,
+    paddingHorizontal: 11,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: rgba(theme.circle.accent, 0.15),
+    backgroundColor: glassQuiet,
   },
   sectionTitle: {
     color: theme.colors.text,
@@ -597,6 +616,11 @@ function createStyles(theme) {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    shadowColor: theme.colors.text,
+    shadowOpacity: 0.035,
+    shadowRadius: 11,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   pollIcon: {
     width: 44,
@@ -681,8 +705,8 @@ function createStyles(theme) {
     alignItems: 'center',
     gap: 12,
     shadowColor: theme.colors.text,
-    shadowOpacity: 0.025,
-    shadowRadius: 9,
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 1,
   },
@@ -803,7 +827,7 @@ function createStyles(theme) {
     borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: accentBorder,
-    backgroundColor: glass,
+    backgroundColor: glassStrong,
   },
   emptyTitle: {
     marginTop: 13,
