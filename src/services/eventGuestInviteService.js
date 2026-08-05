@@ -62,6 +62,8 @@ function mapPreview(data) {
       hostAvatar: rawEvent.host_avatar || null,
       status: rawEvent.status || 'scheduled',
       attendanceReviewed: Boolean(rawEvent.attendance_reviewed),
+      appearanceKey: rawEvent.appearance_key || 'circle',
+      coverUrl: null,
     },
     invitation: {
       invitedByName: rawInvitation.invited_by_name || 'A Circle member',
@@ -98,6 +100,9 @@ function mapPhotoGallery(data) {
   return {
     valid: Boolean(data?.valid),
     reason: data?.reason || null,
+    galleryEnabled: data?.gallery_enabled !== false,
+    appearanceKey: data?.appearance_key || 'circle',
+    coverUrl: data?.cover_signed_url || data?.coverSignedUrl || null,
     photoCount: Number(data?.photo_count || 0),
     expiresIn: Number(data?.expires_in || 0) || null,
     photos: (data?.photos || []).map((photo, index) => ({
@@ -136,6 +141,8 @@ function mapAccountClaimPreview(data) {
       hostAvatar: rawEvent.host_avatar || null,
       status: rawEvent.status || 'scheduled',
       attendanceReviewed: Boolean(rawEvent.attendance_reviewed),
+      appearanceKey: rawEvent.appearance_key || 'circle',
+      coverUrl: null,
     },
     invitation: {
       invitedByName: rawInvitation.invited_by_name || 'A Circle member',
@@ -321,9 +328,19 @@ export async function getEventGuestAttendeeList(token) {
 
 export async function previewEventGuestInvite(token) {
   const cleanToken = String(token || '').trim();
-  const [inviteResult, claimResult] = await Promise.all([
+  const settle = (promise) => promise.then(
+    (value) => ({ status: 'fulfilled', value }),
+    (reason) => ({ status: 'rejected', reason })
+  );
+
+  // All private-link reads begin together. The attendee/gallery calls validate
+  // the same token independently, so there is no reason to make the guest wait
+  // through a second network round-trip just to reveal the event cover.
+  const [inviteResult, claimResult, attendeeResult, photoResult] = await Promise.all([
     supabase.rpc('preview_event_guest_invite', { p_token: cleanToken }),
     supabase.rpc('preview_event_guest_account_claim', { p_token: cleanToken }),
+    settle(getEventGuestAttendeeList(cleanToken)),
+    settle(getEventGuestPhotoGallery(cleanToken)),
   ]);
 
   if (inviteResult.error) throw inviteResult.error;
@@ -353,19 +370,22 @@ export async function previewEventGuestInvite(token) {
     };
   }
 
-  const [attendeeResult, photoResult] = await Promise.allSettled([
-    getEventGuestAttendeeList(cleanToken),
-    getEventGuestPhotoGallery(cleanToken),
-  ]);
+  const attendeeList = attendeeResult.status === 'fulfilled'
+    ? attendeeResult.value
+    : { ...mapAttendeeList(null), reason: 'unavailable' };
+  const photoGallery = photoResult.status === 'fulfilled'
+    ? photoResult.value
+    : { ...mapPhotoGallery(null), reason: 'unavailable' };
 
   return {
     ...preview,
-    attendeeList: attendeeResult.status === 'fulfilled'
-      ? attendeeResult.value
-      : { ...mapAttendeeList(null), reason: 'unavailable' },
-    photoGallery: photoResult.status === 'fulfilled'
-      ? photoResult.value
-      : { ...mapPhotoGallery(null), reason: 'unavailable' },
+    event: {
+      ...preview.event,
+      appearanceKey: photoGallery.appearanceKey || preview.event?.appearanceKey || 'circle',
+      coverUrl: photoGallery.coverUrl || null,
+    },
+    attendeeList,
+    photoGallery,
   };
 }
 

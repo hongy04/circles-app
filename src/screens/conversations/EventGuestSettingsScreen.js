@@ -17,6 +17,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
+import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
+import { EventRoomSectionHero } from '../../components/events/EventRoomSectionHero';
 
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
@@ -57,7 +59,7 @@ function SettingRow({ title, body, value, onValueChange, disabled = false, style
 }
 
 function EventGuestSettingsContent({ route, navigation }) {
-  const { eventId } = route.params || {};
+  const { eventId, eventTitle = 'Event', appearanceKey = 'circle', coverUri = null } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [loading, setLoading] = useState(true);
@@ -135,23 +137,28 @@ function EventGuestSettingsContent({ route, navigation }) {
     }
   };
 
-  if (loading) {
+  if (loading || error) {
     return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.stateText}>Loading guest settings…</Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (error) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="people-outline" size={38} color={theme.colors.text} />
-        <Text style={styles.errorText}>{error}</Text>
-        <Pressable onPress={load} style={styles.retryButton}>
-          <Text style={styles.retryText}>Try again</Text>
-        </Pressable>
+      <SafeAreaView edges={['bottom']} style={styles.screen}>
+        <ThemeAtmosphere theme={theme} strength={0.58} decals />
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <EventRoomSectionHero
+            appearanceKey={appearanceKey}
+            coverUri={coverUri}
+            eventTitle={eventTitle}
+            eyebrow="HOST TOOLS"
+            title="Guest settings"
+            body="Set the boundaries once, then let the event stay relaxed."
+            icon="options-outline"
+          />
+          <ContinuityLoadingCard
+            label="Loading guest settings…"
+            body="The settings page is already open while current guest limits and permissions load."
+            icon="options-outline"
+            error={error}
+            onRetry={error ? load : undefined}
+          />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -173,14 +180,25 @@ function EventGuestSettingsContent({ route, navigation }) {
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           showsVerticalScrollIndicator={false}
         >
+          <EventRoomSectionHero
+            appearanceKey={appearanceKey}
+            coverUri={coverUri}
+            eventTitle={eventTitle}
+            eyebrow="HOST TOOLS"
+            title="Guest settings"
+            body="Set the boundaries once, then let the event stay relaxed."
+            icon="options-outline"
+            trailingLabel={`${guestCount} reserved`}
+          />
+
           <View style={styles.contextCard}>
             <View style={styles.contextIcon}>
-              <Ionicons name="shield-checkmark-outline" size={23} color={theme.colors.text} />
+              <Ionicons name="shield-checkmark-outline" size={22} color={theme.colors.text} />
             </View>
             <View style={styles.contextCopy}>
-              <Text style={styles.contextTitle}>Host-controlled guest access</Text>
+              <Text style={styles.contextTitle}>Private by default</Text>
               <Text style={styles.contextBody}>
-                Guest invitations and claimed guests appear only in this private event. They do not gain profile, Circle, message, or onward-invitation access.
+                Guest access stays inside this event. It never opens private profiles, Circle content, or messages.
               </Text>
             </View>
           </View>
@@ -277,6 +295,7 @@ function createStyles(theme) {
     flexDirection: 'row',
     gap: 12,
     padding: 16,
+    marginTop: 12,
     marginBottom: 22,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,

@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
+import { EventRoomSectionHero } from '../../components/events/EventRoomSectionHero';
 
 import { Avatar } from '../../components/Avatar';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
@@ -28,6 +29,16 @@ const RSVP_LABELS = {
   pending: 'No RSVP',
   invited: 'Invited',
 };
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(255,255,255,${alpha})`;
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function formatEventDate(startsAt, endsAt) {
   const start = new Date(startsAt);
@@ -114,7 +125,7 @@ function GuestRow({ guest, selected, onToggle }) {
 }
 
 function EventAttendanceReviewContent({ route, navigation }) {
-  const { eventId, eventTitle = 'Event', conversationId } = route.params || {};
+  const { eventId, eventTitle = 'Event', conversationId, appearanceKey = 'circle', coverUri = null } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [review, setReview] = useState(null);
@@ -216,10 +227,15 @@ function EventAttendanceReviewContent({ route, navigation }) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.screen}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.reviewContext}>
-            <Text style={styles.eventName}>{eventTitle}</Text>
-            <Text style={styles.eventDate}>Correct attendance</Text>
-          </View>
+          <EventRoomSectionHero
+            appearanceKey={appearanceKey}
+            coverUri={coverUri}
+            eventTitle={eventTitle}
+            eyebrow="EVENT MEMORY"
+            title="Correct attendance"
+            body="Only step in if the RSVP-based memory needs a small correction."
+            icon="checkmark-done-outline"
+          />
           <ContinuityLoadingCard
             label="Preparing attendance…"
             body="The review workspace is already open while the attendee list loads."
@@ -238,17 +254,25 @@ function EventAttendanceReviewContent({ route, navigation }) {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.reviewContext}>
-          <Text style={styles.eventName}>{review?.event?.title || 'Event'}</Text>
-          <Text style={styles.eventDate}>
-            {formatEventDate(review?.event?.startsAt, review?.event?.endsAt)}
-          </Text>
+        <EventRoomSectionHero
+          appearanceKey={review?.event?.appearanceKey || appearanceKey}
+          coverUri={coverUri}
+          eventTitle={review?.event?.title || eventTitle}
+          eyebrow="EVENT MEMORY"
+          title="Correct attendance"
+          body={formatEventDate(review?.event?.startsAt, review?.event?.endsAt)}
+          icon="checkmark-done-outline"
+          trailingLabel={`${attendedCount}/${totalCount} attended`}
+        />
+
+        <View style={styles.correctionCard}>
+          <Text style={styles.correctionEyebrow}>ONLY IF SOMETHING CHANGED</Text>
           <Text style={styles.reviewIntro}>
             {attendanceSource === 'rsvp_assumed'
-              ? 'Going responses were used automatically. Only change the people whose actual attendance was different.'
+              ? 'Going responses were remembered automatically. Change only the people whose actual attendance was different.'
               : attendanceSource === 'host_reviewed'
-                ? 'You already corrected this attendance record. Make another adjustment only if something still needs fixing.'
-                : 'Going responses are preselected as a starting point. You can correct the record now, or leave it alone and Circles will settle it automatically.'}
+                ? 'This record has already been corrected. Make another adjustment only if something is still off.'
+                : 'Going responses are preselected. You can leave this page without doing anything unless the real attendance was different.'}
           </Text>
           <View style={styles.summaryRow}>
             <View>
@@ -380,7 +404,20 @@ function createStyles(theme) {
     backgroundColor: theme.welcome.brandInk,
   },
   retryText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 12 },
-  reviewContext: { paddingHorizontal: 2, paddingTop: 4, paddingBottom: 4 },
+  correctionCard: {
+    marginTop: 12,
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: rgba(theme.colors.surface, 0.84),
+  },
+  correctionEyebrow: {
+    color: theme.circle.accent,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 10,
+    letterSpacing: 0.7,
+  },
   eventName: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 18 },
   eventDate: { marginTop: 3, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 12 },
   reviewIntro: {
@@ -429,7 +466,7 @@ function createStyles(theme) {
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: rgba(theme.colors.surface, 0.86),
   },
   personRow: {
     minHeight: 72,
@@ -467,7 +504,7 @@ function createStyles(theme) {
     marginTop: 22,
     padding: 14,
     borderRadius: 13,
-    backgroundColor: '#efefef',
+    backgroundColor: rgba(theme.colors.surface, 0.70),
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 9,

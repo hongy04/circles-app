@@ -81,34 +81,32 @@ Deno.serve(async (request) => {
   }
 
   const sourcePhotos = Array.isArray(gallery?.photos) ? gallery.photos : [];
-  const storagePaths = sourcePhotos
+  const coverStoragePath = String(gallery?.cover_storage_path || '').trim();
+  const galleryStoragePaths = sourcePhotos
     .map((photo) => String(photo?.storage_path || '').trim())
     .filter(Boolean);
+  const storagePaths = Array.from(new Set([
+    ...(coverStoragePath ? [coverStoragePath] : []),
+    ...galleryStoragePaths,
+  ]));
 
-  if (storagePaths.length === 0) {
-    return jsonResponse({
-      valid: true,
-      reason: null,
-      photo_count: 0,
-      expires_in: SIGNED_URL_TTL_SECONDS,
-      photos: [],
-    });
-  }
+  let signedByPath = new Map<string, string>();
+  if (storagePaths.length > 0) {
+    const { data: signedRows, error: signingError } = await admin.storage
+      .from('event-media')
+      .createSignedUrls(storagePaths, SIGNED_URL_TTL_SECONDS);
 
-  const { data: signedRows, error: signingError } = await admin.storage
-    .from('event-media')
-    .createSignedUrls(storagePaths, SIGNED_URL_TTL_SECONDS);
+    if (signingError) {
+      console.error('Guest event-media signing failed:', signingError.message);
+      return jsonResponse({ error: 'Photo delivery is unavailable.' }, 500);
+    }
 
-  if (signingError) {
-    console.error('Guest photo signing failed:', signingError.message);
-    return jsonResponse({ error: 'Photo delivery is unavailable.' }, 500);
-  }
-
-  const signedByPath = new Map<string, string>();
-  for (const row of signedRows || []) {
-    const path = String(row?.path || '').trim();
-    const signedUrl = String(row?.signedUrl || row?.signedURL || '').trim();
-    if (path && signedUrl) signedByPath.set(path, signedUrl);
+    signedByPath = new Map<string, string>();
+    for (const row of signedRows || []) {
+      const path = String(row?.path || '').trim();
+      const signedUrl = String(row?.signedUrl || row?.signedURL || '').trim();
+      if (path && signedUrl) signedByPath.set(path, signedUrl);
+    }
   }
 
   const photos = sourcePhotos.flatMap((photo, index) => {
@@ -128,6 +126,9 @@ Deno.serve(async (request) => {
   return jsonResponse({
     valid: true,
     reason: null,
+    gallery_enabled: gallery?.gallery_enabled !== false,
+    appearance_key: String(gallery?.appearance_key || 'circle'),
+    cover_signed_url: coverStoragePath ? signedByPath.get(coverStoragePath) || null : null,
     photo_count: photos.length,
     expires_in: SIGNED_URL_TTL_SECONDS,
     photos,

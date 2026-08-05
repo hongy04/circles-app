@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as ImagePicker from 'expo-image-picker';
 
 import { Avatar } from '../../components/Avatar';
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
@@ -38,6 +39,7 @@ import {
   revokeEventGuestInvitation,
 } from '../../services/eventGuestInviteService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+import { removeEventCoverPhoto, uploadEventCoverPhoto } from '../../services/eventCoverService';
 
 const EVENT_DETAIL_FOCUS_FRESH_MS = 10_000;
 
@@ -351,6 +353,7 @@ function EventDetailContent({ route, navigation }) {
   const [updatingRepeatSignal, setUpdatingRepeatSignal] = useState(false);
   const [planningRepeatEvent, setPlanningRepeatEvent] = useState(false);
   const [error, setError] = useState('');
+  const [updatingCover, setUpdatingCover] = useState(false);
 
   const load = useCallback(async ({ quiet = false, force = false } = {}) => {
     if (!eventId) return;
@@ -421,6 +424,96 @@ function EventDetailContent({ route, navigation }) {
       }
     }, [initialDetails, load])
   );
+
+  const chooseEventCover = async () => {
+    if (!eventId || updatingCover) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Photos permission needed', 'Allow photo access to choose an event photo.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.9,
+      selectionLimit: 1,
+    });
+    const asset = result.canceled ? null : result.assets?.[0];
+    if (!asset?.uri) return;
+
+    setUpdatingCover(true);
+    try {
+      const cover = await uploadEventCoverPhoto({ eventId, asset });
+      setDetails((current) => {
+        if (!current?.event) return current;
+        const next = {
+          ...current,
+          event: {
+            ...current.event,
+            coverStoragePath: cover.storagePath,
+            coverUrl: cover.url || asset.uri,
+            coverWidth: cover.width,
+            coverHeight: cover.height,
+            coverUpdatedAt: new Date().toISOString(),
+          },
+        };
+        writeNavigationCache(navigationCacheKeys.eventDetails(eventId), next);
+        return next;
+      });
+      if (!cover.url) void load({ quiet: true, force: true });
+    } catch (coverError) {
+      Alert.alert('Could not update event photo', coverError?.message || 'Please try again.');
+    } finally {
+      setUpdatingCover(false);
+    }
+  };
+
+  const removeCurrentEventCover = async () => {
+    if (!eventId || updatingCover) return;
+    setUpdatingCover(true);
+    try {
+      await removeEventCoverPhoto(eventId);
+      setDetails((current) => {
+        if (!current?.event) return current;
+        const next = {
+          ...current,
+          event: {
+            ...current.event,
+            coverStoragePath: null,
+            coverUrl: null,
+            coverWidth: null,
+            coverHeight: null,
+            coverUpdatedAt: new Date().toISOString(),
+          },
+        };
+        writeNavigationCache(navigationCacheKeys.eventDetails(eventId), next);
+        return next;
+      });
+    } catch (coverError) {
+      Alert.alert('Could not remove event photo', coverError?.message || 'Please try again.');
+    } finally {
+      setUpdatingCover(false);
+    }
+  };
+
+  const manageEventCover = () => {
+    if (updatingCover) return;
+    if (!details?.event?.coverUrl) {
+      void chooseEventCover();
+      return;
+    }
+    Alert.alert(
+      'Event photo',
+      'Change the custom event photo or return to the selected preset Event Look.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Use preset instead', style: 'destructive', onPress: removeCurrentEventCover },
+        { text: 'Choose another photo', onPress: chooseEventCover },
+      ]
+    );
+  };
 
   const updateRsvp = async (status) => {
     if (updatingStatus || status === details?.event?.viewerRsvpStatus) return;
@@ -667,6 +760,7 @@ function EventDetailContent({ route, navigation }) {
     <View>
       <EventLookHero
         appearanceKey={event.appearanceKey || 'circle'}
+        coverUri={event.coverUrl || null}
         circleLabel={formatCircleContext(event)}
         title={event.title}
         dateLabel={formatEventDate(event.startsAt, event.endsAt)}
@@ -685,7 +779,20 @@ function EventDetailContent({ route, navigation }) {
               : 'A private Circle gathering'}
           </Text>
         </View>
-        {event.circleCount > 1 ? (
+        {event.canManage ? (
+          <Pressable
+            onPress={manageEventCover}
+            disabled={updatingCover}
+            style={({ pressed }) => [styles.coverButton, (pressed || updatingCover) && styles.pressed]}
+          >
+            {updatingCover ? (
+              <ActivityIndicator size="small" color={theme.colors.text} />
+            ) : (
+              <Ionicons name={event.coverUrl ? 'images-outline' : 'image-outline'} size={15} color={theme.colors.text} />
+            )}
+            <Text style={styles.coverButtonText}>{event.coverUrl ? 'Change photo' : 'Add photo'}</Text>
+          </Pressable>
+        ) : event.circleCount > 1 ? (
           <View style={styles.circleCountPill}>
             <Ionicons name="people-outline" size={13} color={theme.colors.text} />
             <Text style={styles.circleCountPillText}>{event.circleCount}</Text>
@@ -794,6 +901,11 @@ function EventDetailContent({ route, navigation }) {
                 eventTitle: event.title,
                 conversationId,
                 circleName,
+                appearanceKey: event.appearanceKey || 'circle',
+                coverUri: event.coverUrl || null,
+                eventStartsAt: event.startsAt || null,
+                eventEndsAt: event.endsAt || null,
+                eventLocation: event.locationName || '',
               })}
               style={({ pressed }) => [styles.memoryButton, pressed && styles.pressed]}
             >
@@ -811,6 +923,11 @@ function EventDetailContent({ route, navigation }) {
               eventTitle: event.title,
               conversationId,
               circleName,
+              appearanceKey: event.appearanceKey || 'circle',
+              coverUri: event.coverUrl || null,
+              eventStartsAt: event.startsAt || null,
+              eventEndsAt: event.endsAt || null,
+              eventLocation: event.locationName || '',
             })}
             style={({ pressed }) => [styles.actionTile, pressed && styles.pressed]}
           >
@@ -829,6 +946,11 @@ function EventDetailContent({ route, navigation }) {
               eventTitle: event.title,
               conversationId,
               circleName,
+              appearanceKey: event.appearanceKey || 'circle',
+              coverUri: event.coverUrl || null,
+              eventStartsAt: event.startsAt || null,
+              eventEndsAt: event.endsAt || null,
+              eventLocation: event.locationName || '',
             })}
             style={({ pressed }) => [styles.actionTile, pressed && styles.pressed]}
           >
@@ -889,7 +1011,7 @@ function EventDetailContent({ route, navigation }) {
         <View style={styles.guestActionRow}>
           {event.canManage ? (
             <Pressable
-              onPress={() => navigation.navigate('EventGuestSettings', { eventId, eventTitle: event.title, conversationId, circleName })}
+              onPress={() => navigation.navigate('EventGuestSettings', { eventId, eventTitle: event.title, conversationId, circleName, appearanceKey: event.appearanceKey || 'circle', coverUri: event.coverUrl || null, eventStartsAt: event.startsAt || null, eventEndsAt: event.endsAt || null, eventLocation: event.locationName || '' })}
               style={({ pressed }) => [styles.secondaryGuestButton, pressed && styles.pressed]}
             >
               <Ionicons name="options-outline" size={18} color={theme.colors.text} />
@@ -906,6 +1028,11 @@ function EventDetailContent({ route, navigation }) {
                 allowPlusOnes: event.allowPlusOnes,
                 remainingGuestSlots: event.remainingGuestSlots,
                 guestInviteLinksEnabled,
+                appearanceKey: event.appearanceKey || 'circle',
+                coverUri: event.coverUrl || null,
+                eventStartsAt: event.startsAt || null,
+                eventEndsAt: event.endsAt || null,
+                eventLocation: event.locationName || '',
               })}
               style={({ pressed }) => [styles.primaryGuestButton, pressed && styles.pressed]}
             >
@@ -1117,6 +1244,16 @@ function createStyles(theme) {
     alignItems: 'center',
     gap: 10,
   },
+  coverButton: {
+    minHeight: 32,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: accentWash,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  coverButtonText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 9 },
   circleCountPill: {
     minHeight: 30,
     paddingHorizontal: 9,

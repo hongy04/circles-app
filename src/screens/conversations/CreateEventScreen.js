@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as ImagePicker from 'expo-image-picker';
 
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { EVENT_LOOK_OPTIONS, EventLookArtwork } from '../../components/events/EventLookHero';
@@ -33,6 +34,7 @@ function rgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 import { createCircleEvent } from '../../services/eventService';
+import { uploadEventCoverPhoto } from '../../services/eventCoverService';
 import { listMyConversations } from '../../services/conversationService';
 import {
   FEATURE_FLAGS,
@@ -156,6 +158,7 @@ function CreateEventContent({ route, navigation }) {
   const [endInput, setEndInput] = useState(defaults.end);
   const [location, setLocation] = useState(repeatFrom?.locationName || '');
   const [appearanceKey, setAppearanceKey] = useState(repeatFrom?.appearanceKey || 'circle');
+  const [coverAsset, setCoverAsset] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [multiCircleEnabled, setMultiCircleEnabled] = useState(false);
   const [availableCircles, setAvailableCircles] = useState([]);
@@ -236,6 +239,29 @@ function CreateEventContent({ route, navigation }) {
     ));
   };
 
+  const chooseEventCover = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        'Photos permission needed',
+        'Allow photo access to choose a custom event image. Preset Event Looks still work without it.'
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.9,
+      selectionLimit: 1,
+    });
+
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      setCoverAsset(result.assets[0]);
+    }
+  };
+
   const submit = async () => {
     if (submitting) return;
 
@@ -296,6 +322,19 @@ function CreateEventContent({ route, navigation }) {
           }
         })(),
       });
+
+      if (coverAsset?.uri) {
+        try {
+          await uploadEventCoverPhoto({ eventId, asset: coverAsset });
+        } catch (coverError) {
+          Alert.alert(
+            'Event created',
+            `Your event is ready, but the custom event photo could not be saved. The ${EVENT_LOOK_OPTIONS.find((option) => option.key === appearanceKey)?.label || 'Circle'} preset will be used for now. You can add the photo from the event page later.
+
+${coverError?.message || ''}`.trim()
+          );
+        }
+      }
 
       navigation.replace('EventDetail', { eventId, conversationId, circleName });
     } catch (error) {
@@ -499,6 +538,45 @@ function CreateEventContent({ route, navigation }) {
                 <Text style={styles.lookHeadingBody}>Optional · just gives this gathering its own little mood.</Text>
               </View>
             </View>
+            <View style={styles.customCoverBlock}>
+              <Pressable
+                onPress={chooseEventCover}
+                style={({ pressed }) => [styles.customCoverPreview, pressed && styles.pressed]}
+              >
+                <EventLookArtwork appearanceKey={appearanceKey} coverUri={coverAsset?.uri || null} compact>
+                  <View style={styles.customCoverOverlay}>
+                    <View style={styles.customCoverIcon}>
+                      <Ionicons
+                        name={coverAsset ? 'images-outline' : 'image-outline'}
+                        size={20}
+                        color={coverAsset ? '#fff' : theme.colors.text}
+                      />
+                    </View>
+                    <View style={styles.customCoverCopy}>
+                      <Text style={[styles.customCoverTitle, coverAsset && styles.customCoverTitleOnPhoto]}>
+                        {coverAsset ? 'Custom event photo' : 'Add your own photo'}
+                      </Text>
+                      <Text style={[styles.customCoverBody, coverAsset && styles.customCoverBodyOnPhoto]}>
+                        {coverAsset ? 'Tap to choose a different photo.' : 'Optional · cropped wide for the event header and private guest invite.'}
+                      </Text>
+                    </View>
+                  </View>
+                </EventLookArtwork>
+              </Pressable>
+
+              {coverAsset ? (
+                <Pressable
+                  onPress={() => setCoverAsset(null)}
+                  hitSlop={8}
+                  style={({ pressed }) => [styles.removeCoverButton, pressed && styles.pressed]}
+                >
+                  <Ionicons name="close-circle-outline" size={16} color={theme.colors.subtext} />
+                  <Text style={styles.removeCoverText}>Use preset instead</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
+            <Text style={styles.presetLabel}>PRESET FALLBACK</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -876,6 +954,38 @@ function createStyles(theme) {
     fontSize: 10,
     lineHeight: 14,
   },
+  customCoverBlock: { marginBottom: 12, gap: 7 },
+  customCoverPreview: {
+    borderRadius: 17,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: accentLine,
+  },
+  customCoverOverlay: {
+    minHeight: 92,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  customCoverIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.62)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.72)',
+  },
+  customCoverCopy: { flex: 1, gap: 2 },
+  customCoverTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 13 },
+  customCoverTitleOnPhoto: { color: '#fff', textShadowColor: 'rgba(0,0,0,0.30)', textShadowRadius: 4 },
+  customCoverBody: { color: theme.colors.subtext, fontFamily: 'Manrope_500Medium', fontSize: 10, lineHeight: 14 },
+  customCoverBodyOnPhoto: { color: 'rgba(255,255,255,0.88)', textShadowColor: 'rgba(0,0,0,0.28)', textShadowRadius: 4 },
+  removeCoverButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 2 },
+  removeCoverText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10 },
+  presetLabel: { marginBottom: 7, color: theme.colors.subtext, fontFamily: 'Manrope_700Bold', fontSize: 8, letterSpacing: 0.8 },
   lookGrid: {
     gap: 9,
     paddingRight: 4,

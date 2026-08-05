@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
 import { trackAppEvent } from './analyticsService';
 import { FEATURE_FLAGS, requireFeature } from './featureFlagService';
+import { getCachedSignedUrls } from './storageSignedUrlCacheService';
 
 function mapEventSummary(row) {
   return {
@@ -30,7 +31,7 @@ function mapEventSummary(row) {
   };
 }
 
-function mapEventDetails(data, rawInvitations = [], attendanceSummary = {}) {
+function mapEventDetails(data, rawInvitations = [], attendanceSummary = {}, visualIdentity = {}) {
   const rawEvent = data?.event || {};
   const counts = data?.counts || {};
   const guestInvitations = (rawInvitations || []).map((invitation) => ({
@@ -94,7 +95,12 @@ function mapEventDetails(data, rawInvitations = [], attendanceSummary = {}) {
       attendanceReviewedAt,
       completedAt: attendanceSummary?.completed_at || null,
       attendedCount: Number(attendanceSummary?.attended_count || 0),
-      appearanceKey: attendanceSummary?.appearance_key || 'circle',
+      appearanceKey: visualIdentity?.appearance_key || attendanceSummary?.appearance_key || 'circle',
+      coverStoragePath: visualIdentity?.cover_storage_path || null,
+      coverUrl: null,
+      coverWidth: Number(visualIdentity?.cover_width || 0) || null,
+      coverHeight: Number(visualIdentity?.cover_height || 0) || null,
+      coverUpdatedAt: visualIdentity?.cover_updated_at || null,
       timezoneName: attendanceSummary?.timezone_name || null,
       attendanceSource: attendanceSummary?.attendance_source || null,
       attendanceAssumedAt: attendanceSummary?.attendance_assumed_at || null,
@@ -264,21 +270,39 @@ export async function getEventDetails(eventId) {
 
   if (!eventId) throw new Error('Event is missing.');
 
-  const [detailsResult, invitationsResult, attendanceResult] = await Promise.all([
+  const [detailsResult, invitationsResult, attendanceResult, visualResult] = await Promise.all([
     supabase.rpc('get_event_details', { p_event_id: eventId }),
     supabase.rpc('list_event_guest_invitations', { p_event_id: eventId }),
     supabase.rpc('get_event_attendance_summary', { p_event_id: eventId }),
+    supabase.rpc('get_event_visual_identity', { p_event_id: eventId }),
   ]);
 
   if (detailsResult.error) throw detailsResult.error;
   if (invitationsResult.error) throw invitationsResult.error;
   if (attendanceResult.error) throw attendanceResult.error;
+  // During a staged rollout, Event Detail should still open against Migration
+  // 079 even if the custom-cover RPC has not reached the database yet.
+  const visualIdentity = visualResult.error ? {} : (visualResult.data || {});
   if (!detailsResult.data?.event?.id) throw new Error('Event not found or unavailable.');
-  return mapEventDetails(
+
+  const mapped = mapEventDetails(
     detailsResult.data,
     invitationsResult.data || [],
-    attendanceResult.data || {}
+    attendanceResult.data || {},
+    visualIdentity
   );
+
+  if (mapped.event.coverStoragePath) {
+    try {
+      const signed = await getCachedSignedUrls('event-media', [mapped.event.coverStoragePath], 10 * 60);
+      mapped.event.coverUrl = signed.get(mapped.event.coverStoragePath) || null;
+    } catch {
+      // The event remains usable with its preset Event Look if signing is
+      // briefly unavailable. A later refresh can resolve the cover.
+    }
+  }
+
+  return mapped;
 }
 
 export async function respondToEvent(eventId, status) {
@@ -437,6 +461,7 @@ export async function getEventAttendanceReview(eventId) {
       attendanceReviewedAt: data.event.attendance_reviewed_at || null,
       completedAt: data.event.completed_at || null,
       attendanceSource: experience?.attendance_source || null,
+      appearanceKey: experience?.appearance_key || 'circle',
     },
     members: (data.members || []).map((member) => ({
       userId: member.user_id,

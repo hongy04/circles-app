@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
+import { EventRoomSectionHero } from '../../components/events/EventRoomSectionHero';
 
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
@@ -78,6 +79,8 @@ function AddEventGuestContent({ route, navigation }) {
     allowPlusOnes = false,
     remainingGuestSlots = 0,
     guestInviteLinksEnabled = true,
+    appearanceKey = 'circle',
+    coverUri = null,
   } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -156,19 +159,27 @@ function AddEventGuestContent({ route, navigation }) {
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           showsVerticalScrollIndicator={false}
         >
+          <EventRoomSectionHero
+            appearanceKey={appearanceKey}
+            coverUri={coverUri}
+            eventTitle={eventTitle}
+            eyebrow="OUTSIDE GUESTS"
+            title={mode === 'invite' ? 'Invite someone in' : 'Add someone manually'}
+            body={mode === 'invite'
+              ? 'Send a private event link and let your guest enter their own name and RSVP.'
+              : 'For someone who replied elsewhere, add only the details the event needs.'}
+            icon={mode === 'invite' ? 'link-outline' : 'person-add-outline'}
+            trailingLabel={`${remainingGuestSlots} ${remainingGuestSlots === 1 ? 'spot' : 'spots'} left`}
+          />
+
           <View style={styles.contextCard}>
             <View style={styles.contextIcon}>
-              <Ionicons name="link-outline" size={22} color={theme.colors.text} />
+              <Ionicons name="shield-checkmark-outline" size={21} color={theme.colors.text} />
             </View>
             <View style={styles.contextCopy}>
-              <Text style={styles.contextTitle}>
-                {mode === 'invite' ? 'Send a claimable guest invite' : 'Add a guest manually'}
-              </Text>
+              <Text style={styles.contextTitle}>Private event access only</Text>
               <Text style={styles.contextBody}>
-                {remainingGuestSlots} guest {remainingGuestSlots === 1 ? 'spot' : 'spots'} remaining.{' '}
-                {mode === 'invite'
-                  ? 'The recipient will enter their own name and RSVP from the private link.'
-                  : 'Use this only when someone responds outside Circles or will not open a link.'}
+                Guest links do not open private profiles, Circle posts, chats, or unrelated events.
               </Text>
             </View>
           </View>
@@ -329,6 +340,7 @@ function createStyles(theme) {
     flexDirection: 'row',
     gap: 12,
     padding: 16,
+    marginTop: 12,
     marginBottom: 22,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,

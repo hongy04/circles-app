@@ -14,6 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
+import { EventRoomSectionHero } from '../../components/events/EventRoomSectionHero';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -22,6 +23,16 @@ import {
   respondToAvailabilityPoll,
 } from '../../services/availabilityPollService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(255,255,255,${alpha})`;
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function formatOptionDate(startsAt, endsAt) {
   const start = new Date(startsAt);
@@ -120,7 +131,7 @@ function PollOptionCard({
           style={({ pressed }) => [styles.finalizeButton, pressed && styles.pressed]}
         >
           <Ionicons name="calendar-outline" size={16} color={theme.colors.text} />
-          <Text style={styles.finalizeButtonText}>Choose this date</Text>
+          <Text style={styles.finalizeButtonText}>Make this the event</Text>
         </Pressable>
       ) : null}
     </View>
@@ -188,7 +199,7 @@ function detailsFromPollSummary(summary, conversationId, circleName) {
 }
 
 function AvailabilityPollDetailContent({ route, navigation }) {
-  const { pollId, conversationId, circleName = 'Circle' } = route.params || {};
+  const { pollId, pollTitle = 'Availability poll', conversationId, circleName = 'Circle' } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const initialSnapshot = useMemo(() => {
@@ -319,23 +330,34 @@ function AvailabilityPollDetailContent({ route, navigation }) {
   const members = details?.members || [];
   const isOpen = poll?.status === 'open';
 
-  if (loading && !poll) {
+  if ((loading || error) && !poll) {
     return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.stateText}>Opening availability poll…</Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (error && !poll) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="options-outline" size={38} color={theme.colors.text} />
-        <Text style={styles.errorText}>{error}</Text>
-        <Pressable onPress={() => load()} style={styles.retryButton}>
-          <Text style={styles.retryText}>Try again</Text>
-        </Pressable>
+      <SafeAreaView edges={['bottom']} style={styles.screen}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <EventRoomSectionHero
+            appearanceKey="circle"
+            eventTitle={pollTitle}
+            eyebrow="POLL DATES"
+            title="Find a time together"
+            body="Pick the times that work. The host can turn one into the event when everyone has enough context."
+            icon="options-outline"
+          />
+          <View style={styles.inlineLoading}>
+            {error ? (
+              <>
+                <Text style={styles.errorText}>{error}</Text>
+                <Pressable onPress={() => load()} style={styles.retryButton}>
+                  <Text style={styles.retryText}>Try again</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <ActivityIndicator color={theme.circle.accent} />
+                <Text style={styles.stateText}>Loading the proposed times…</Text>
+              </>
+            )}
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -356,24 +378,19 @@ function AvailabilityPollDetailContent({ route, navigation }) {
           />
         )}
       >
-        <View style={styles.heroCard}>
-          <View style={styles.privacyRow}>
-            <Ionicons name="lock-closed" size={12} color={theme.colors.subtext} />
-            <Text style={styles.privacyText}>{poll?.circleName}</Text>
-            <View style={[styles.statusPill, !isOpen && styles.statusPillClosed]}>
-              <Text style={styles.statusPillText}>{isOpen ? 'Open poll' : 'Finalized'}</Text>
-            </View>
-          </View>
+        <EventRoomSectionHero
+          appearanceKey="circle"
+          eventTitle={poll?.title || pollTitle}
+          eyebrow="POLL DATES"
+          title={isOpen ? 'Find a time together' : 'The date is set'}
+          body={isOpen
+            ? 'Choose every option that works for you. Availability is private to this Circle.'
+            : 'This poll has done its job. The chosen time now lives in the event.'}
+          icon="options-outline"
+          trailingLabel={isOpen ? `${counts?.responseCount || 0}/${counts?.memberCount || 0} replied` : 'Finalized'}
+        />
 
-          <Text style={styles.title}>{poll?.title}</Text>
-
-          {poll?.locationName ? (
-            <View style={styles.detailRow}>
-              <Ionicons name="location-outline" size={19} color={theme.colors.text} />
-              <Text style={styles.detailText}>{poll.locationName}</Text>
-            </View>
-          ) : null}
-
+        <View style={styles.pollMetaCard}>
           <View style={styles.hostRow}>
             <Avatar size={40} name={poll?.hostName} uri={poll?.hostAvatar} />
             <View style={styles.hostCopy}>
@@ -381,7 +398,12 @@ function AvailabilityPollDetailContent({ route, navigation }) {
               <Text style={styles.hostBody}>Started this availability poll</Text>
             </View>
           </View>
-
+          {poll?.locationName ? (
+            <View style={styles.detailRow}>
+              <Ionicons name="location-outline" size={18} color={theme.colors.text} />
+              <Text style={styles.detailText}>{poll.locationName}</Text>
+            </View>
+          ) : null}
           {poll?.description ? <Text style={styles.description}>{poll.description}</Text> : null}
         </View>
 
@@ -505,6 +527,14 @@ function createStyles(theme) {
     borderColor: theme.circle.accentSoft,
     backgroundColor: theme.colors.surface,
   },
+  pollMetaCard: {
+    marginTop: 12,
+    padding: 15,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: rgba(theme.colors.surface, 0.84),
+  },
   privacyRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   privacyText: {
     color: theme.colors.subtext,
@@ -577,7 +607,7 @@ function createStyles(theme) {
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: rgba(theme.colors.surface, 0.80),
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',

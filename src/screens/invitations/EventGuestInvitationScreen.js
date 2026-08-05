@@ -18,6 +18,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '../../components/Avatar';
 import { MonoRingWithRipples } from '../../components/MonoRingWithRipples';
+import { EventLookHero } from '../../components/events/EventLookHero';
 import { COLORS } from '../../theme/colors';
 import { supabase } from '../../lib/supabase';
 import {
@@ -395,6 +396,8 @@ export function EventGuestInvitationScreen({ route, navigation }) {
   const greeting = guest.claimed && guest.displayName
     ? `${guest.displayName}, you’re invited`
     : 'You’re invited';
+  const eventEndsAt = event.endsAt || event.startsAt;
+  const isPastEvent = eventEndsAt ? new Date(eventEndsAt).getTime() <= Date.now() : false;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -413,11 +416,22 @@ export function EventGuestInvitationScreen({ route, navigation }) {
             <Text style={styles.eyebrow}>PRIVATE EVENT INVITATION</Text>
           </View>
 
-          <View style={styles.heroCard}>
+          <View style={styles.inviteHeroWrap}>
             <Text style={styles.greeting}>{greeting}</Text>
-            <Text style={styles.title}>{event.title}</Text>
+            <EventLookHero
+              appearanceKey={event.appearanceKey || 'circle'}
+              coverUri={event.coverUrl || null}
+              circleLabel="Private event invitation"
+              title={event.title}
+              dateLabel={formatEventDate(event.startsAt, event.endsAt)}
+              locationLabel={event.locationName}
+              isPast={isPastEvent}
+              isCancelled={event.status === 'cancelled'}
+            />
+          </View>
 
-            <View style={styles.hostRow}>
+          <View style={styles.heroCard}>
+            <View style={[styles.hostRow, styles.hostRowStandalone]}>
               <Avatar size={46} name={event.hostName} uri={event.hostAvatar} />
               <View style={styles.hostCopy}>
                 <Text style={styles.hostName}>{event.hostName}</Text>
@@ -425,17 +439,11 @@ export function EventGuestInvitationScreen({ route, navigation }) {
               </View>
             </View>
 
-            <DetailRow icon="calendar-outline">
-              {formatEventDate(event.startsAt, event.endsAt)}
-            </DetailRow>
-
-            {event.locationName ? (
-              <DetailRow icon="location-outline">{event.locationName}</DetailRow>
-            ) : null}
-
             {event.description ? (
               <Text style={styles.description}>{event.description}</Text>
-            ) : null}
+            ) : (
+              <Text style={styles.descriptionMuted}>A private gathering shared with you through Circles.</Text>
+            )}
           </View>
 
           <View style={styles.rsvpCard}>
@@ -581,7 +589,7 @@ export function EventGuestInvitationScreen({ route, navigation }) {
             </View>
           ) : null}
 
-          {photoGallery?.valid ? (
+          {photoGallery?.valid && photoGallery?.galleryEnabled !== false ? (
             <View style={styles.photosCard}>
               <View style={styles.photosHeader}>
                 <View>
@@ -745,8 +753,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 1.2,
   },
+  inviteHeroWrap: { gap: 8, marginBottom: 10 },
   heroCard: {
-    padding: 20,
+    padding: 18,
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
@@ -772,6 +781,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  hostRowStandalone: { marginTop: 0, paddingTop: 0, borderTopWidth: 0 },
   hostCopy: { flex: 1, marginLeft: 11 },
   hostName: {
     color: COLORS.text,
@@ -809,6 +819,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     fontSize: 14,
     lineHeight: 21,
+  },
+  descriptionMuted: {
+    marginTop: 14,
+    color: COLORS.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 13,
+    lineHeight: 19,
   },
   rsvpCard: {
     marginTop: 12,

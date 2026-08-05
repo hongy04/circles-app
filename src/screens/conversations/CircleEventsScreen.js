@@ -319,7 +319,7 @@ function CircleEventsContent({ route, navigation }) {
       poll_status: poll.status,
     });
     writeNavigationCache(navigationCacheKeys.pollSummary(poll.id), poll);
-    navigation.navigate('AvailabilityPollDetail', { pollId: poll.id, conversationId, circleName });
+    navigation.navigate('AvailabilityPollDetail', { pollId: poll.id, pollTitle: poll.title, conversationId, circleName });
   };
 
   const header = (

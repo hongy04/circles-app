@@ -12,9 +12,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
 
 import { Avatar } from '../../components/Avatar';
 import { EventRepeatCard } from '../../components/events/EventRepeatCard';
+import { EventRoomSectionHero } from '../../components/events/EventRoomSectionHero';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -23,6 +25,16 @@ import {
   sendEventConnectionRequest,
   setEventRepeatSignal,
 } from '../../services/eventService';
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(255,255,255,${alpha})`;
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function sharedEventLabel(count) {
   const safeCount = Number(count || 0);
@@ -131,6 +143,8 @@ function CandidateRow({
 
 function EventConnectionsContent({ navigation, route }) {
   const eventId = route?.params?.eventId;
+  const appearanceKey = route?.params?.appearanceKey || 'circle';
+  const coverUri = route?.params?.coverUri || null;
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const fallbackTitle = route?.params?.eventTitle || 'this event';
@@ -212,23 +226,27 @@ function EventConnectionsContent({ navigation, route }) {
     }
   };
 
-  if (loading && !data) {
+  if (!data) {
     return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.stateText}>Opening event connections…</Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (error && !data) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.centerState}>
-        <Ionicons name="people-outline" size={38} color={theme.colors.text} />
-        <Text style={styles.errorText}>{error}</Text>
-        <Pressable onPress={() => load()} style={styles.retryButton}>
-          <Text style={styles.retryText}>Try again</Text>
-        </Pressable>
+      <SafeAreaView edges={['bottom']} style={styles.screen}>
+        <View style={styles.shellContent}>
+          <EventRoomSectionHero
+            appearanceKey={appearanceKey}
+            coverUri={coverUri}
+            eventTitle={fallbackTitle}
+            eyebrow="SHARED ATTENDANCE"
+            title="People from this event"
+            body="Reconnect with people you actually shared the gathering with."
+            icon="people-outline"
+          />
+          <ContinuityLoadingCard
+            label="Loading confirmed attendees…"
+            body="This event connection space is already visible while eligibility loads."
+            icon="people-outline"
+            error={error}
+            onRetry={error ? () => load() : undefined}
+          />
+        </View>
       </SafeAreaView>
     );
   }
@@ -239,26 +257,26 @@ function EventConnectionsContent({ navigation, route }) {
 
   const header = (
     <View>
+      <EventRoomSectionHero
+        appearanceKey={appearanceKey}
+        coverUri={coverUri}
+        eventTitle={title}
+        eyebrow="SHARED ATTENDANCE"
+        title={viewerAttended ? 'People you were there with' : 'Event history'}
+        body={viewerAttended
+          ? 'Shared attendance gives a little context. Connecting still takes a request and acceptance.'
+          : 'You were not marked as attended, so this remains a private historical view.'}
+        icon={viewerAttended ? 'checkmark-circle-outline' : 'shield-outline'}
+        trailingLabel={viewerAttended ? 'Confirmed' : 'View only'}
+      />
+
       <View style={styles.contextCard}>
         <View style={styles.contextIcon}>
-          <Ionicons
-            name={viewerAttended ? 'checkmark-circle-outline' : 'shield-outline'}
-            size={22}
-            color={theme.colors.text}
-          />
+          <Ionicons name="shield-checkmark-outline" size={20} color={theme.colors.text} />
         </View>
         <View style={styles.contextCopy}>
-          <Text style={styles.contextEyebrow} numberOfLines={1}>
-            {title}
-          </Text>
-          <Text style={styles.contextTitle}>
-            {viewerAttended ? 'You were both there' : 'Historical view only'}
-          </Text>
-          <Text style={styles.contextBody}>
-            {viewerAttended
-              ? 'Shared attendance gives limited profile context. Every connection still requires a request and acceptance.'
-              : 'You were not marked as attended, so this event cannot be used to open profiles or send connection requests.'}
-          </Text>
+          <Text style={styles.contextTitle}>Context, not automatic access</Text>
+          <Text style={styles.contextBody}>Profiles stay private until normal connection rules allow them to open.</Text>
         </View>
       </View>
 
@@ -340,11 +358,12 @@ function createStyles(theme) {
     paddingBottom: 44,
   },
   contextCard: {
-    padding: 15,
+    marginTop: 12,
+    padding: 14,
     borderRadius: 15,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: rgba(theme.colors.surface, 0.82),
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 11,
@@ -481,6 +500,13 @@ function createStyles(theme) {
     fontSize: 12,
     lineHeight: 18,
     textAlign: 'center',
+  },
+  shellContent: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
   centerState: {
     flex: 1,

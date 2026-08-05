@@ -17,6 +17,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 
 import { Avatar } from '../../components/Avatar';
+import { EventRoomSectionHero } from '../../components/events/EventRoomSectionHero';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -28,6 +29,16 @@ import {
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 const EVENT_GALLERY_FOCUS_FRESH_MS = 12_000;
+
+function rgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(255,255,255,${alpha})`;
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function formatAddedAt(value) {
   if (!value) return '';
@@ -108,7 +119,7 @@ function PhotoViewer({ photo, visible, deleting, onClose, onDelete }) {
 }
 
 function EventPhotoGalleryContent({ route }) {
-  const { eventId, conversationId } = route.params || {};
+  const { eventId, conversationId, eventTitle = 'Event', appearanceKey = 'circle', coverUri = null } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
@@ -259,42 +270,54 @@ function EventPhotoGalleryContent({ route }) {
   };
 
   const header = (
-    <View style={styles.galleryTools}>
-      <View style={styles.galleryActionRow}>
-        <Text style={styles.countText}>
-          {loading
-            ? 'Loading photos…'
-            : (gallery.photoCount === 1 ? '1 photo' : `${gallery.photoCount} photos`)}
-        </Text>
-        {gallery.canUpload ? (
-          <Pressable
-            onPress={pickPhotos}
-            disabled={uploading}
-            style={({ pressed }) => [
-              styles.uploadButton,
-              (pressed || uploading) && styles.pressed,
-            ]}
-          >
-            {uploading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Ionicons name="add" size={20} color="#fff" />
-            )}
-            <Text style={styles.uploadButtonText}>
-              {uploading ? uploadStage || 'Uploading…' : 'Add photos'}
-            </Text>
-          </Pressable>
-        ) : null}
-      </View>
-      {!loading && !gallery.canUpload ? (
-        <View style={styles.uploadNotice}>
-          <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.subtext} />
-          <Text style={styles.uploadNoticeText}>
-            The host, people marked Going, and confirmed attendees can add photos. You can still view everything shared here.
-          </Text>
+    <View style={styles.headerWrap}>
+      <EventRoomSectionHero
+        appearanceKey={appearanceKey}
+        coverUri={coverUri}
+        eventTitle={eventTitle}
+        eyebrow="EVENT MEMORY"
+        title="Shared photos"
+        body="A quiet gallery for the moments everyone wants to keep."
+        icon="images-outline"
+        trailingLabel={loading ? 'Loading…' : (gallery.photoCount === 1 ? '1 photo' : `${gallery.photoCount} photos`)}
+      />
+
+      <View style={styles.galleryTools}>
+        <View style={styles.galleryActionRow}>
+          <View style={styles.galleryCopy}>
+            <Text style={styles.galleryTitle}>The gallery</Text>
+            <Text style={styles.countText}>Photos stay with this private event.</Text>
+          </View>
+          {gallery.canUpload ? (
+            <Pressable
+              onPress={pickPhotos}
+              disabled={uploading}
+              style={({ pressed }) => [
+                styles.uploadButton,
+                (pressed || uploading) && styles.pressed,
+              ]}
+            >
+              {uploading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Ionicons name="add" size={20} color="#fff" />
+              )}
+              <Text style={styles.uploadButtonText}>
+                {uploading ? uploadStage || 'Uploading…' : 'Add photos'}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
-      ) : null}
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {!loading && !gallery.canUpload ? (
+          <View style={styles.uploadNotice}>
+            <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.subtext} />
+            <Text style={styles.uploadNoticeText}>
+              The host, people marked Going, and confirmed attendees can add photos. You can still view everything shared here.
+            </Text>
+          </View>
+        ) : null}
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      </View>
     </View>
   );
 
@@ -386,8 +409,17 @@ function createStyles(theme) {
     paddingBottom: 44,
   },
   row: { justifyContent: 'flex-start' },
-  galleryTools: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 8 },
+  headerWrap: { paddingTop: 14, paddingHorizontal: 2, paddingBottom: 8, gap: 12 },
+  galleryTools: {
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.circle.accentSoft,
+    backgroundColor: rgba(theme.colors.surface, 0.82),
+  },
   galleryActionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  galleryCopy: { flex: 1, minWidth: 0 },
+  galleryTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 15 },
   uploadButton: {
     minHeight: 48,
     borderRadius: 12,

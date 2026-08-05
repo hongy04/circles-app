@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ImageBackground, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -46,11 +46,33 @@ function paletteFor(key, theme) {
   }
 }
 
-export function EventLookArtwork({ appearanceKey = 'circle', compact = false, children }) {
+export function EventLookArtwork({ appearanceKey = 'circle', coverUri = null, compact = false, children }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const colors = paletteFor(appearanceKey, theme);
-  const dark = appearanceKey === 'twilight';
+  const dark = Boolean(coverUri) || appearanceKey === 'twilight';
+
+  if (coverUri) {
+    return (
+      <ImageBackground
+        source={{ uri: coverUri }}
+        resizeMode="cover"
+        style={[styles.artwork, compact && styles.artworkCompact]}
+        imageStyle={styles.coverImage}
+      >
+        <LinearGradient
+          colors={compact
+            ? ['rgba(7,13,27,0.12)', 'rgba(7,13,27,0.48)']
+            : ['rgba(7,13,27,0.08)', 'rgba(7,13,27,0.18)', 'rgba(7,13,27,0.62)']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={[styles.coverGlow, compact && styles.coverGlowCompact]} />
+        {children}
+      </ImageBackground>
+    );
+  }
 
   return (
     <LinearGradient
@@ -78,6 +100,7 @@ export function EventLookArtwork({ appearanceKey = 'circle', compact = false, ch
 
 export function EventLookHero({
   appearanceKey = 'circle',
+  coverUri = null,
   circleLabel,
   title,
   dateLabel,
@@ -87,13 +110,13 @@ export function EventLookHero({
 }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const dark = appearanceKey === 'twilight';
+  const dark = Boolean(coverUri) || appearanceKey === 'twilight';
   const textColor = dark ? '#FFFFFF' : theme.colors.text;
   const softText = dark ? 'rgba(255,255,255,0.82)' : theme.colors.subtext;
 
   return (
     <View style={styles.heroShell}>
-      <EventLookArtwork appearanceKey={appearanceKey}>
+      <EventLookArtwork appearanceKey={appearanceKey} coverUri={coverUri}>
         <View style={styles.heroContent}>
           <View style={styles.heroTopRow}>
             <View style={[styles.glassPill, dark && styles.glassPillDark]}>
@@ -153,6 +176,19 @@ function createStyles(theme) {
       position: 'relative',
     },
     artworkCompact: { minHeight: 74, borderRadius: 16 },
+    coverImage: { borderRadius: 0 },
+    coverGlow: {
+      position: 'absolute',
+      width: 150,
+      height: 150,
+      borderRadius: 999,
+      right: -38,
+      top: -54,
+      backgroundColor: 'rgba(255,255,255,0.13)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.16)',
+    },
+    coverGlowCompact: { width: 92, height: 92, right: -24, top: -34 },
     tint: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: 'rgba(255,255,255,0.11)',
