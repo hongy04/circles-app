@@ -14,6 +14,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
 import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
+import { EventLookArtwork } from '../../components/events/EventLookHero';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { listCircleEvents } from '../../services/eventService';
@@ -78,10 +79,63 @@ function formatEventDate(startsAt, endsAt) {
 function EventCard({ event, onPress, styles, theme }) {
   const endTime = new Date(event.endsAt || event.startsAt).getTime();
   const isPast = event.status === 'completed' || endTime < Date.now();
-  const historyLabel = 'Past';
-  const historySummary = event.attendanceReviewedAt
-    ? `${event.attendedCount} attended`
-    : `${event.goingCount} marked going`;
+
+  if (isPast) {
+    const memoryReady = Boolean(event.attendanceReviewedAt || event.status === 'completed');
+    const attended = event.attendanceReviewedAt
+      ? Number(event.attendedCount || 0)
+      : Number(event.goingCount || 0);
+    const photoCount = Number(event.photoCount || 0);
+    const memoryMeta = [
+      event.attendanceReviewedAt
+        ? `${attended} ${attended === 1 ? 'person' : 'people'}`
+        : `${attended} marked going`,
+      photoCount > 0 ? `${photoCount} ${photoCount === 1 ? 'photo' : 'photos'}` : null,
+    ].filter(Boolean).join(' · ');
+
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [styles.memoryEventCard, pressed && styles.pressed]}
+      >
+        <View style={styles.memoryArtworkShell}>
+          <EventLookArtwork
+            appearanceKey={event.appearanceKey || 'circle'}
+            coverUri={event.coverUrl || null}
+            compact
+            style={styles.memoryArtwork}
+          >
+            <View style={styles.memoryArtworkOverlay}>
+              <View style={styles.memoryBadge}>
+                <Ionicons name="sparkles" size={11} color="#fff" />
+                <Text style={styles.memoryBadgeText}>{memoryReady ? 'MEMORY' : 'AFTER GATHERING'}</Text>
+              </View>
+            </View>
+          </EventLookArtwork>
+        </View>
+
+        <View style={styles.memoryEventCopy}>
+          <Text style={styles.memoryEventTitle} numberOfLines={2}>{event.title}</Text>
+          <Text style={styles.memoryEventDate} numberOfLines={1}>
+            {formatEventDate(event.startsAt, event.endsAt)}
+          </Text>
+          {event.locationName ? (
+            <View style={styles.memoryMetaRow}>
+              <Ionicons name="location-outline" size={13} color={theme.colors.subtext} />
+              <Text style={styles.memoryMetaText} numberOfLines={1}>{event.locationName}</Text>
+            </View>
+          ) : null}
+          <View style={styles.memoryFooterRow}>
+            <Text style={styles.memorySummaryText} numberOfLines={1}>{memoryMeta}</Text>
+            <View style={styles.viewMemoryPill}>
+              <Text style={styles.viewMemoryText}>{memoryReady ? 'View memory' : 'Open gathering'}</Text>
+              <Ionicons name="chevron-forward" size={12} color={theme.colors.text} />
+            </View>
+          </View>
+        </View>
+      </Pressable>
+    );
+  }
 
   return (
     <Pressable
@@ -90,7 +144,7 @@ function EventCard({ event, onPress, styles, theme }) {
     >
       <View style={styles.dateIcon}>
         <Ionicons
-          name={isPast ? 'checkmark-circle-outline' : 'calendar-outline'}
+          name="calendar-outline"
           size={23}
           color={theme.colors.text}
         />
@@ -99,7 +153,6 @@ function EventCard({ event, onPress, styles, theme }) {
       <View style={styles.eventCopy}>
         <View style={styles.titleRow}>
           <Text style={styles.eventTitle} numberOfLines={1}>{event.title}</Text>
-          {isPast ? <Text style={styles.pastLabel}>{historyLabel}</Text> : null}
         </View>
 
         <Text style={styles.eventDate} numberOfLines={1}>
@@ -123,27 +176,14 @@ function EventCard({ event, onPress, styles, theme }) {
         ) : null}
 
         <View style={styles.summaryRow}>
-          {isPast ? (
-            <>
-              <View style={styles.rsvpPill}>
-                <Text style={styles.rsvpPillText}>
-                  {event.status === 'completed' ? 'Completed' : 'Past event'}
-                </Text>
-              </View>
-              <Text style={styles.countText}>{historySummary}</Text>
-            </>
-          ) : (
-            <>
-              <View style={styles.rsvpPill}>
-                <Text style={styles.rsvpPillText}>
-                  {RSVP_LABELS[event.viewerRsvpStatus] || 'No response'}
-                </Text>
-              </View>
-              <Text style={styles.countText}>
-                {event.goingCount} going · {event.maybeCount} maybe
-              </Text>
-            </>
-          )}
+          <View style={styles.rsvpPill}>
+            <Text style={styles.rsvpPillText}>
+              {RSVP_LABELS[event.viewerRsvpStatus] || 'No response'}
+            </Text>
+          </View>
+          <Text style={styles.countText}>
+            {event.goingCount} going · {event.maybeCount} maybe
+          </Text>
         </View>
       </View>
 
@@ -267,6 +307,8 @@ function CircleEventsContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
+      const warmEvents = readNavigationCache(navigationCacheKeys.circleEvents(conversationId));
+      if (Array.isArray(warmEvents)) setEvents(warmEvents);
       const isFresh = hasLoadedRef.current
         && Date.now() - lastRefreshAtRef.current < CIRCLE_EVENTS_FOCUS_FRESH_MS;
       if (!isFresh) {
@@ -279,13 +321,13 @@ function CircleEventsContent({ route, navigation }) {
 
   const upcomingEvents = useMemo(
     () => events.filter((event) => (
-      event.status !== 'completed' && new Date(event.startsAt).getTime() >= Date.now()
+      event.status !== 'completed' && new Date(event.endsAt || event.startsAt).getTime() >= Date.now()
     )),
     [events]
   );
   const pastEvents = useMemo(
     () => events.filter((event) => (
-      event.status === 'completed' || new Date(event.startsAt).getTime() < Date.now()
+      event.status === 'completed' || new Date(event.endsAt || event.startsAt).getTime() < Date.now()
     )),
     [events]
   );
@@ -644,6 +686,51 @@ function createStyles(theme) {
     shadowOffset: { width: 0, height: 4 },
     elevation: 1,
   },
+  memoryEventCard: {
+    marginBottom: 11,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: rgba(theme.circle.accent, 0.22),
+    backgroundColor: glassStrong,
+    overflow: 'hidden',
+    shadowColor: theme.colors.text,
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
+  },
+  memoryArtworkShell: { height: 104, overflow: 'hidden' },
+  memoryArtwork: { minHeight: 104, height: 104, borderRadius: 0 },
+  memoryArtworkOverlay: { flex: 1, padding: 11, justifyContent: 'flex-start', alignItems: 'flex-start' },
+  memoryBadge: {
+    minHeight: 26,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(15,23,42,0.46)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.30)',
+  },
+  memoryBadgeText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 9, letterSpacing: 0.7 },
+  memoryEventCopy: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 13 },
+  memoryEventTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 17, lineHeight: 21 },
+  memoryEventDate: { marginTop: 3, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 11.5 },
+  memoryMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },
+  memoryMetaText: { flex: 1, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11 },
+  memoryFooterRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  memorySummaryText: { flex: 1, color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
+  viewMemoryPill: {
+    minHeight: 29,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    backgroundColor: rgba(theme.circle.accent, 0.11),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  viewMemoryText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 9.5 },
   dateIcon: {
     width: 46,
     height: 46,

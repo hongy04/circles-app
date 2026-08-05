@@ -28,6 +28,14 @@ function mapEventSummary(row) {
     attendanceReviewedAt: row.attendance_reviewed_at || null,
     completedAt: row.completed_at || null,
     attendedCount: Number(row.attended_count || 0),
+    attendanceSource: row.attendance_source || null,
+    appearanceKey: row.appearance_key || 'circle',
+    coverStoragePath: row.cover_storage_path || null,
+    coverUrl: null,
+    coverWidth: Number(row.cover_width || 0) || null,
+    coverHeight: Number(row.cover_height || 0) || null,
+    coverUpdatedAt: row.cover_updated_at || null,
+    photoCount: Number(row.photo_count || 0),
   };
 }
 
@@ -101,6 +109,7 @@ function mapEventDetails(data, rawInvitations = [], attendanceSummary = {}, visu
       coverWidth: Number(visualIdentity?.cover_width || 0) || null,
       coverHeight: Number(visualIdentity?.cover_height || 0) || null,
       coverUpdatedAt: visualIdentity?.cover_updated_at || null,
+      photoCount: Number(visualIdentity?.photo_count || 0),
       timezoneName: attendanceSummary?.timezone_name || null,
       attendanceSource: attendanceSummary?.attendance_source || null,
       attendanceAssumedAt: attendanceSummary?.attendance_assumed_at || null,
@@ -162,7 +171,40 @@ export async function listCircleEvents(conversationId) {
   });
 
   if (error) throw error;
-  return (data || []).map(mapEventSummary);
+
+  const events = (data || []).map(mapEventSummary);
+  const now = Date.now();
+  const coverPaths = events
+    .filter((event) => {
+      const endAt = event.endsAt || event.startsAt;
+      const endMs = endAt ? new Date(endAt).getTime() : Number.NaN;
+      return event.status === 'completed' || (!Number.isNaN(endMs) && endMs < now);
+    })
+    .map((event) => event.coverStoragePath)
+    .filter(Boolean);
+  if (coverPaths.length > 0) {
+    try {
+      const signed = await getCachedSignedUrls('event-media', coverPaths, 10 * 60);
+      events.forEach((event) => {
+        if (event.coverStoragePath) {
+          event.coverUrl = signed.get(event.coverStoragePath) || null;
+        }
+      });
+    } catch {
+      // Preset Event Looks remain a complete fallback if short-lived signing is
+      // temporarily unavailable. A later refresh can resolve custom covers.
+    }
+  }
+
+  return events;
+}
+
+export async function listCircleEventMemories(conversationId) {
+  const events = await listCircleEvents(conversationId);
+  return events.filter((event) => (
+    event.status !== 'cancelled'
+    && Boolean(event.attendanceReviewedAt || event.status === 'completed')
+  ));
 }
 
 export async function createCircleEvent({

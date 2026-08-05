@@ -140,6 +140,11 @@ function detailsFromEventSummary(summary, conversationId, circleName) {
       completedAt: summary.completedAt || null,
       attendedCount: Number(summary.attendedCount || 0),
       appearanceKey: summary.appearanceKey || 'circle',
+      coverStoragePath: summary.coverStoragePath || null,
+      coverUrl: summary.coverUrl || null,
+      coverWidth: summary.coverWidth || null,
+      coverHeight: summary.coverHeight || null,
+      photoCount: Number(summary.photoCount || 0),
       attendanceSource: summary.attendanceSource || null,
     },
     counts: {
@@ -415,6 +420,8 @@ function EventDetailContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
+      const warmDetails = readNavigationCache(navigationCacheKeys.eventDetails(eventId));
+      if (warmDetails?.event) setDetails(warmDetails);
       const isFresh = hasLoadedRef.current
         && Date.now() - lastRefreshAtRef.current < EVENT_DETAIL_FOCUS_FRESH_MS;
       if (!isFresh) {
@@ -725,6 +732,13 @@ function EventDetailContent({ route, navigation }) {
       ? attendee.attended
       : attendee.rsvpStatus === 'going' || attendee.rsvpStatus === 'maybe'
   ));
+  const visibleGuests = isPastEvent && attendanceFinalized
+    ? guests.filter((guest) => guest.attended)
+    : guests;
+  const memoryPeopleCount = attendanceFinalized
+    ? Number(event?.attendedCount || 0)
+    : Number(counts?.going || 0) + Number(counts?.guestGoing || 0);
+  const memoryPhotoCount = Number(event?.photoCount || 0);
 
   if (!event) {
     return (
@@ -873,27 +887,47 @@ function EventDetailContent({ route, navigation }) {
       ) : null}
 
       {eventHistoryEnabled && isPastEvent ? (
-        <View style={styles.memoryCard}>
-          <View style={styles.memoryIcon}>
-            <Ionicons
-              name={attendanceFinalized ? 'sparkles-outline' : 'time-outline'}
-              size={22}
-              color={theme.colors.text}
-            />
+        <View style={styles.memoryRecapCard}>
+          <View style={styles.memoryRecapHeading}>
+            <View style={styles.memoryIcon}>
+              <Ionicons
+                name={attendanceFinalized ? 'sparkles' : 'time-outline'}
+                size={22}
+                color={theme.colors.text}
+              />
+            </View>
+            <View style={styles.memoryCopy}>
+              <Text style={styles.memoryEyebrow}>SHARED MEMORY</Text>
+              <Text style={styles.memoryTitle}>
+                {attendanceFinalized ? 'This gathering now lives in your Circle history' : 'This gathering is settling into a memory'}
+              </Text>
+              <Text style={styles.memoryBody}>
+                {attendanceFinalized
+                  ? (event.attendanceSource === 'host_reviewed'
+                    ? 'Attendance was corrected by the host. Photos and people from the gathering stay together here.'
+                    : 'Going responses became the starting attendance memory automatically. Photos and people from the gathering stay together here.')
+                  : 'The next morning, Going responses become the starting attendance memory automatically. No host checklist is required.'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.memoryCopy}>
-            <Text style={styles.memoryEyebrow}>AFTER THE GATHERING</Text>
-            <Text style={styles.memoryTitle}>
-              {attendanceFinalized
-                ? (event.attendanceSource === 'host_reviewed' ? 'Attendance corrected by the host' : 'Attendance remembered from RSVPs')
-                : 'We’ll remember attendance automatically'}
-            </Text>
-            <Text style={styles.memoryBody}>
-              {attendanceFinalized
-                ? `${event.attendedCount} ${event.attendedCount === 1 ? 'person is' : 'people are'} in the attendance record.${event.attendanceSource === 'host_reviewed' ? ' The host adjusted the original RSVP-based record.' : ' Going responses became the starting attendance record.'}`
-                : 'The next morning, Going responses become the attendance record automatically. The host only needs to step in if something changed.'}
-            </Text>
+
+          <View style={styles.memoryMetricsRow}>
+            <View style={styles.memoryMetric}>
+              <Text style={styles.memoryMetricValue}>{memoryPeopleCount}</Text>
+              <Text style={styles.memoryMetricLabel}>{memoryPeopleCount === 1 ? 'person' : 'people'}</Text>
+            </View>
+            <View style={styles.memoryMetricDivider} />
+            <View style={styles.memoryMetric}>
+              <Text style={styles.memoryMetricValue}>{memoryPhotoCount}</Text>
+              <Text style={styles.memoryMetricLabel}>{memoryPhotoCount === 1 ? 'photo' : 'photos'}</Text>
+            </View>
+            <View style={styles.memoryMetricDivider} />
+            <View style={styles.memoryMetric}>
+              <Ionicons name="lock-closed-outline" size={15} color={theme.colors.text} />
+              <Text style={styles.memoryMetricLabel}>private</Text>
+            </View>
           </View>
+
           {event.canManage ? (
             <Pressable
               onPress={() => navigation.navigate('EventAttendanceReview', {
@@ -907,9 +941,10 @@ function EventDetailContent({ route, navigation }) {
                 eventEndsAt: event.endsAt || null,
                 eventLocation: event.locationName || '',
               })}
-              style={({ pressed }) => [styles.memoryButton, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.correctionLink, pressed && styles.pressed]}
             >
-              <Text style={styles.memoryButtonText}>Correct</Text>
+              <Ionicons name="create-outline" size={14} color={theme.colors.subtext} />
+              <Text style={styles.correctionLinkText}>Something was different? Correct attendance</Text>
             </Pressable>
           ) : null}
         </View>
@@ -935,7 +970,7 @@ function EventDetailContent({ route, navigation }) {
               <Ionicons name="images-outline" size={22} color={theme.colors.text} />
             </View>
             <Text style={styles.actionTitle}>Photos</Text>
-            <Text style={styles.actionBody}>Keep the gathering together.</Text>
+            <Text style={styles.actionBody}>{memoryPhotoCount > 0 ? `${memoryPhotoCount} ${memoryPhotoCount === 1 ? 'photo' : 'photos'} from this gathering.` : 'Keep the gathering together.'}</Text>
           </Pressable>
         ) : null}
 
@@ -987,19 +1022,19 @@ function EventDetailContent({ route, navigation }) {
     </View>
   ) : null;
 
-  const guestFooter = event && (event.outsideGuestCap > 0 || event.canManage || guests.length > 0 || guestInvitations.length > 0) ? (
+  const guestFooter = event && (isPastEvent ? visibleGuests.length > 0 : (event.outsideGuestCap > 0 || event.canManage || guests.length > 0 || guestInvitations.length > 0)) ? (
     <View style={styles.guestSection}>
       <View style={styles.sectionHeader}>
         <View>
-          <Text style={styles.sectionEyebrow}>OUTSIDE THE CIRCLE</Text>
-          <Text style={styles.sectionTitle}>Guests</Text>
+          <Text style={styles.sectionEyebrow}>{isPastEvent ? 'PART OF THE MEMORY' : 'OUTSIDE THE CIRCLE'}</Text>
+          <Text style={styles.sectionTitle}>{isPastEvent ? 'Outside guests who were there' : 'Guests'}</Text>
         </View>
         <Text style={styles.sectionCount}>
-          {event.reservedGuestCount}/{event.outsideGuestCap || 0} spots
+          {isPastEvent ? `${visibleGuests.length} ${visibleGuests.length === 1 ? 'guest' : 'guests'}` : `${event.reservedGuestCount}/${event.outsideGuestCap || 0} spots`}
         </Text>
       </View>
 
-      {event.outsideGuestCap > 0 ? (
+      {!isPastEvent && event.outsideGuestCap > 0 ? (
         <Text style={styles.guestPolicyLine}>
           {event.membersCanInviteGuests ? 'Members can invite' : 'Host invites'}
           {'  ·  '}
@@ -1043,9 +1078,9 @@ function EventDetailContent({ route, navigation }) {
         </View>
       ) : null}
 
-      {guestInvitations.length > 0 || guests.length > 0 ? (
+      {(isPastEvent ? visibleGuests.length > 0 : (guestInvitations.length > 0 || guests.length > 0)) ? (
         <View style={styles.guestList}>
-          {guestInvitations.map((invitation) => (
+          {!isPastEvent ? guestInvitations.map((invitation) => (
             <GuestInvitationRow
               key={invitation.id}
               invitation={invitation}
@@ -1054,8 +1089,8 @@ function EventDetailContent({ route, navigation }) {
               onShare={sharePendingInvitation}
               onRevoke={confirmRevokeInvitation}
             />
-          ))}
-          {guests.map((guest) => (
+          )) : null}
+          {visibleGuests.map((guest) => (
             <GuestRow
               key={guest.id}
               guest={guest}
@@ -1477,6 +1512,40 @@ function createStyles(theme) {
     alignItems: 'center',
     gap: 11,
   },
+  memoryRecapCard: {
+    marginTop: 13,
+    padding: 16,
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: accentLine,
+    backgroundColor: glassStrong,
+  },
+  memoryRecapHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
+  memoryMetricsRow: {
+    marginTop: 14,
+    minHeight: 58,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    backgroundColor: accentWash,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  memoryMetric: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  memoryMetricValue: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 18 },
+  memoryMetricLabel: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 9.5 },
+  memoryMetricDivider: { width: StyleSheet.hairlineWidth, height: 30, backgroundColor: rgba(theme.colors.subtext, 0.22) },
+  correctionLink: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    minHeight: 30,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: rgba(theme.colors.surface, 0.54),
+  },
+  correctionLinkText: { color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 9.5 },
   memoryIcon: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: accentWash },
   memoryCopy: { flex: 1, minWidth: 0 },
   memoryEyebrow: { color: theme.colors.subtext, fontFamily: 'Manrope_700Bold', fontSize: 8, letterSpacing: 0.8 },

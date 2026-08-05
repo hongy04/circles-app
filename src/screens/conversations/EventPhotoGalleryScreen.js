@@ -139,6 +139,42 @@ function EventPhotoGalleryContent({ route }) {
   const [deletingPhotoId, setDeletingPhotoId] = useState('');
   const [error, setError] = useState('');
 
+  const syncPhotoCountToEventCaches = useCallback((photoCount) => {
+    const count = Math.max(0, Number(photoCount || 0));
+    const detailsKey = navigationCacheKeys.eventDetails(eventId);
+    const cachedDetails = readNavigationCache(detailsKey);
+    if (cachedDetails?.event) {
+      writeNavigationCache(detailsKey, {
+        ...cachedDetails,
+        event: { ...cachedDetails.event, photoCount: count },
+      });
+    }
+
+    const summaryKey = navigationCacheKeys.eventSummary(eventId);
+    const cachedSummary = readNavigationCache(summaryKey);
+    if (cachedSummary) {
+      writeNavigationCache(summaryKey, { ...cachedSummary, photoCount: count });
+    }
+
+    if (conversationId) {
+      const memoryKey = navigationCacheKeys.circleEventMemories(conversationId);
+      const cachedMemories = readNavigationCache(memoryKey);
+      if (Array.isArray(cachedMemories)) {
+        writeNavigationCache(memoryKey, cachedMemories.map((event) => (
+          event.id === eventId ? { ...event, photoCount: count } : event
+        )));
+      }
+
+      const eventsKey = navigationCacheKeys.circleEvents(conversationId);
+      const cachedEvents = readNavigationCache(eventsKey);
+      if (Array.isArray(cachedEvents)) {
+        writeNavigationCache(eventsKey, cachedEvents.map((event) => (
+          event.id === eventId ? { ...event, photoCount: count } : event
+        )));
+      }
+    }
+  }, [conversationId, eventId]);
+
   const columns = width >= 720 ? 4 : 3;
   const maxContentWidth = Math.min(width, 760);
   const gap = 4;
@@ -156,6 +192,7 @@ function EventPhotoGalleryContent({ route }) {
       const next = await listEventPhotos(eventId);
       setGallery(next);
       writeNavigationCache(navigationCacheKeys.eventPhotos(eventId), next);
+      syncPhotoCountToEventCaches(next.photoCount);
       lastRefreshAtRef.current = Date.now();
     } catch (loadError) {
       setError(loadError?.message || 'Could not load event photos.');
@@ -163,7 +200,7 @@ function EventPhotoGalleryContent({ route }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [eventId]);
+  }, [eventId, syncPhotoCountToEventCaches]);
 
   useFocusEffect(
     useCallback(() => {
@@ -215,6 +252,7 @@ function EventPhotoGalleryContent({ route }) {
           photos: [...uploaded.reverse(), ...current.photos],
         };
         writeNavigationCache(navigationCacheKeys.eventPhotos(eventId), next);
+        syncPhotoCountToEventCaches(next.photoCount);
         return next;
       });
       setUploadStage('');
@@ -252,6 +290,7 @@ function EventPhotoGalleryContent({ route }) {
                   photos: current.photos.filter((item) => item.id !== photo.id),
                 };
                 writeNavigationCache(navigationCacheKeys.eventPhotos(eventId), next);
+                syncPhotoCountToEventCaches(next.photoCount);
                 return next;
               });
             } catch (deleteError) {

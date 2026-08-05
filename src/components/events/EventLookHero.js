@@ -46,7 +46,7 @@ function paletteFor(key, theme) {
   }
 }
 
-export function EventLookArtwork({ appearanceKey = 'circle', coverUri = null, compact = false, children }) {
+export function EventLookArtwork({ appearanceKey = 'circle', coverUri = null, compact = false, style = null, children }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const colors = paletteFor(appearanceKey, theme);
@@ -57,7 +57,7 @@ export function EventLookArtwork({ appearanceKey = 'circle', coverUri = null, co
       <ImageBackground
         source={{ uri: coverUri }}
         resizeMode="cover"
-        style={[styles.artwork, compact && styles.artworkCompact]}
+        style={[styles.artwork, compact && styles.artworkCompact, style]}
         imageStyle={styles.coverImage}
       >
         <LinearGradient
@@ -79,7 +79,7 @@ export function EventLookArtwork({ appearanceKey = 'circle', coverUri = null, co
       colors={colors}
       start={{ x: 0.08, y: 0.05 }}
       end={{ x: 0.92, y: 0.95 }}
-      style={[styles.artwork, compact && styles.artworkCompact]}
+      style={[styles.artwork, compact && styles.artworkCompact, style]}
     >
       <View style={[styles.orb, styles.orbOne, compact && styles.orbCompact]} />
       <View style={[styles.orb, styles.orbTwo, compact && styles.orbCompact]} />
@@ -127,7 +127,7 @@ export function EventLookHero({
             </View>
             <View style={[styles.stagePill, dark && styles.stagePillDark]}>
               <Text style={[styles.stagePillText, { color: textColor }]}>
-                {isCancelled ? 'CANCELLED' : isPast ? 'PAST GATHERING' : 'UPCOMING'}
+                {isCancelled ? 'CANCELLED' : isPast ? 'SHARED MEMORY' : 'UPCOMING'}
               </Text>
             </View>
           </View>

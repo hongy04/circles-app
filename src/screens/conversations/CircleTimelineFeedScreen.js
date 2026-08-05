@@ -15,6 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
+import { EventLookArtwork } from '../../components/events/EventLookHero';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
@@ -22,6 +23,7 @@ import {
   listConversationTimeline,
   subscribeToConversationChanges,
 } from '../../services/conversationService';
+import { listCircleEventMemories } from '../../services/eventService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 import { reconcileRowsById } from '../../utils/reconcileRows';
 
@@ -138,11 +140,95 @@ const TimelineFeedCard = React.memo(function TimelineFeedCard({ group, width, he
   );
 });
 
+function formatMemoryDate(startsAt) {
+  const date = new Date(startsAt);
+  if (Number.isNaN(date.getTime())) return 'Past gathering';
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...(date.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  });
+}
+
+const EventMemoryFeedCard = React.memo(function EventMemoryFeedCard({ event, width, height, navigation, styles, theme, conversationId, circleName }) {
+  const heroHeight = Math.min(272, Math.max(210, Math.round(width * 0.66)));
+  const attended = event.attendanceReviewedAt
+    ? Number(event.attendedCount || 0)
+    : Number(event.goingCount || 0);
+  const photoCount = Number(event.photoCount || 0);
+
+  return (
+    <Pressable
+      onPress={() => {
+        writeNavigationCache(navigationCacheKeys.eventSummary(event.id), event);
+        navigation.navigate('EventDetail', {
+          eventId: event.id,
+          eventTitle: event.title,
+          conversationId,
+          circleName,
+        });
+      }}
+      style={({ pressed }) => [styles.eventMemoryCard, { height }, pressed && styles.pressed]}
+    >
+      <EventLookArtwork
+        appearanceKey={event.appearanceKey || 'circle'}
+        coverUri={event.coverUrl || null}
+        style={[styles.eventMemoryHero, { minHeight: heroHeight, height: heroHeight }]}
+      >
+        <View style={styles.eventMemoryHeroContent}>
+          <View style={styles.eventMemoryTopRow}>
+            <View style={styles.eventMemoryPill}>
+              <Ionicons name="sparkles" size={11} color="#fff" />
+              <Text style={styles.eventMemoryPillText}>SHARED MEMORY</Text>
+            </View>
+            <Text style={styles.eventMemoryDate}>{formatMemoryDate(event.startsAt)}</Text>
+          </View>
+          <Text style={styles.eventMemoryHeroTitle} numberOfLines={3}>{event.title}</Text>
+        </View>
+      </EventLookArtwork>
+
+      <View style={styles.eventMemoryDetails}>
+        <View style={styles.eventMemoryMetricRow}>
+          <View style={styles.eventMemoryMetric}>
+            <Ionicons name="people-outline" size={16} color={theme.colors.text} />
+            <Text style={styles.eventMemoryMetricText}>{attended} {attended === 1 ? 'person' : 'people'} there</Text>
+          </View>
+          <View style={styles.eventMemoryMetric}>
+            <Ionicons name="images-outline" size={16} color={theme.colors.text} />
+            <Text style={styles.eventMemoryMetricText}>{photoCount} {photoCount === 1 ? 'photo' : 'photos'}</Text>
+          </View>
+        </View>
+
+        {event.locationName ? (
+          <View style={styles.eventMemoryLocationRow}>
+            <Ionicons name="location-outline" size={15} color={theme.colors.subtext} />
+            <Text style={styles.eventMemoryLocation} numberOfLines={1}>{event.locationName}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.eventMemoryBottomRow}>
+          <Text style={styles.eventMemoryBody} numberOfLines={2}>
+            {event.description || 'A gathering your Circle chose to keep.'}
+          </Text>
+          <View style={styles.eventMemoryOpenPill}>
+            <Text style={styles.eventMemoryOpenText}>Open memory</Text>
+            <Ionicons name="chevron-forward" size={13} color={theme.colors.text} />
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  );
+});
+
 function CircleTimelineFeedContent({ route, navigation }) {
-  const { conversationId, initialMediaId } = route.params || {};
+  const { conversationId, initialMediaId, initialEventId, circleName = 'Circle' } = route.params || {};
   const cachedItems = readNavigationCache(navigationCacheKeys.circleTimeline(conversationId));
   const hasInitialItems = Array.isArray(cachedItems);
   const initialItems = hasInitialItems ? cachedItems : [];
+  const cachedMemories = readNavigationCache(navigationCacheKeys.circleEventMemories(conversationId));
+  const hasInitialMemories = Array.isArray(cachedMemories);
+  const initialMemories = hasInitialMemories ? cachedMemories : [];
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
@@ -150,11 +236,12 @@ function CircleTimelineFeedContent({ route, navigation }) {
   const cardHeight = stageWidth + 166;
   const [items, setItems] = useState(initialItems);
   const itemsRef = useRef(initialItems);
-  const [loading, setLoading] = useState(!hasInitialItems);
+  const [eventMemories, setEventMemories] = useState(initialMemories);
+  const [loading, setLoading] = useState(!hasInitialItems && !hasInitialMemories);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const hasLoadedRef = useRef(hasInitialItems);
-  const lastRefreshAtRef = useRef(hasInitialItems ? Date.now() : 0);
+  const hasLoadedRef = useRef(hasInitialItems && hasInitialMemories);
+  const lastRefreshAtRef = useRef(hasInitialItems && hasInitialMemories ? Date.now() : 0);
   const loadInFlightRef = useRef(null);
   const realtimeTimerRef = useRef(null);
 
@@ -166,16 +253,43 @@ function CircleTimelineFeedContent({ route, navigation }) {
 
     const request = (async () => {
       try {
-        const nextItems = await listConversationTimeline(conversationId);
-        const reconciled = reconcileRowsById(
-          itemsRef.current,
-          nextItems,
-          sameTimelineItem
-        );
-        itemsRef.current = reconciled;
-        setItems(reconciled);
+        const [timelineResult, memoriesResult] = await Promise.allSettled([
+          listConversationTimeline(conversationId),
+          listCircleEventMemories(conversationId),
+        ]);
+
+        if (memoriesResult.status === 'fulfilled') {
+          setEventMemories(memoriesResult.value);
+          writeNavigationCache(navigationCacheKeys.circleEventMemories(conversationId), memoriesResult.value);
+          memoriesResult.value.forEach((event) => {
+            writeNavigationCache(navigationCacheKeys.eventSummary(event.id), event);
+          });
+        } else {
+          // A direct/Our Circle has no group-event history. Keep chat Timeline
+          // media fully usable and remember the empty additive layer briefly.
+          setEventMemories([]);
+          writeNavigationCache(navigationCacheKeys.circleEventMemories(conversationId), []);
+        }
+
+        if (timelineResult.status === 'fulfilled') {
+          const reconciled = reconcileRowsById(
+            itemsRef.current,
+            timelineResult.value,
+            sameTimelineItem
+          );
+          itemsRef.current = reconciled;
+          setItems(reconciled);
+          writeNavigationCache(navigationCacheKeys.circleTimeline(conversationId), reconciled);
+        } else if (memoriesResult.status === 'fulfilled' && memoriesResult.value.length > 0) {
+          // Event memories are independently useful. If chat-media Timeline
+          // hydration has a transient failure, keep the memory feed usable and
+          // surface only a quiet warning rather than blanking the destination.
+          setError('Some shared media could not be refreshed. Event memories are still available.');
+        } else {
+          throw timelineResult.reason;
+        }
+
         lastRefreshAtRef.current = Date.now();
-        writeNavigationCache(navigationCacheKeys.circleTimeline(conversationId), reconciled);
       } catch (loadError) {
         setError(loadError?.message || 'Could not load this Circle Timeline.');
       } finally {
@@ -192,10 +306,12 @@ function CircleTimelineFeedContent({ route, navigation }) {
 
   useFocusEffect(
     useCallback(() => {
+      const warmMemories = readNavigationCache(navigationCacheKeys.circleEventMemories(conversationId));
+      if (Array.isArray(warmMemories)) setEventMemories(warmMemories);
       const isFresh = hasLoadedRef.current
         && Date.now() - lastRefreshAtRef.current < TIMELINE_FOCUS_FRESH_MS;
       if (!isFresh) {
-        void load({ quiet: hasLoadedRef.current }).finally(() => {
+        void load({ quiet: hasLoadedRef.current || hasInitialItems || hasInitialMemories }).finally(() => {
           hasLoadedRef.current = true;
         });
       }
@@ -225,23 +341,47 @@ function CircleTimelineFeedContent({ route, navigation }) {
   );
 
   const groups = useMemo(() => groupTimeline(items), [items]);
+  const feedItems = useMemo(() => [
+    ...groups.map((group) => ({ ...group, kind: 'media_group', sortAt: group.createdAt })),
+    ...eventMemories.map((event) => ({
+      ...event,
+      kind: 'event_memory',
+      sortAt: event.completedAt || event.endsAt || event.startsAt,
+    })),
+  ].sort((left, right) => new Date(right.sortAt || 0) - new Date(left.sortAt || 0)), [eventMemories, groups]);
+
   const initialIndex = useMemo(() => {
-    const index = groups.findIndex((group) =>
-      group.media.some((item) => item.id === initialMediaId)
-    );
+    const index = feedItems.findIndex((item) => (
+      item.kind === 'event_memory'
+        ? Boolean(initialEventId && item.id === initialEventId)
+        : item.media.some((media) => media.id === initialMediaId)
+    ));
     return index >= 0 ? index : 0;
-  }, [groups, initialMediaId]);
+  }, [feedItems, initialEventId, initialMediaId]);
 
   const renderTimelineGroup = useCallback(({ item }) => (
-    <TimelineFeedCard
-      group={item}
-      width={stageWidth}
-      height={cardHeight}
-      navigation={navigation}
-      styles={styles}
-      theme={theme}
-    />
-  ), [cardHeight, navigation, stageWidth, styles, theme]);
+    item.kind === 'event_memory' ? (
+      <EventMemoryFeedCard
+        event={item}
+        width={stageWidth}
+        height={cardHeight}
+        navigation={navigation}
+        styles={styles}
+        theme={theme}
+        conversationId={conversationId}
+        circleName={circleName}
+      />
+    ) : (
+      <TimelineFeedCard
+        group={item}
+        width={stageWidth}
+        height={cardHeight}
+        navigation={navigation}
+        styles={styles}
+        theme={theme}
+      />
+    )
+  ), [cardHeight, circleName, conversationId, navigation, stageWidth, styles, theme]);
 
   if (loading) {
     return (
@@ -259,7 +399,7 @@ function CircleTimelineFeedContent({ route, navigation }) {
     <SafeAreaView edges={['bottom']} style={styles.screen}>
       <CircleBackdrop conversationId={conversationId} />
 
-      {error && !groups.length ? (
+      {error && !feedItems.length ? (
         <View style={styles.centerState}>
           <View style={styles.stateIcon}>
             <Ionicons name="alert-circle-outline" size={28} color={theme.colors.text} />
@@ -271,9 +411,9 @@ function CircleTimelineFeedContent({ route, navigation }) {
         </View>
       ) : (
         <FlatList
-          data={groups}
-          keyExtractor={(item) => item.id}
-          initialScrollIndex={groups.length ? initialIndex : undefined}
+          data={feedItems}
+          keyExtractor={(item) => `${item.kind}:${item.id}`}
+          initialScrollIndex={feedItems.length ? initialIndex : undefined}
           getItemLayout={(_, index) => ({
             length: cardHeight + 12,
             offset: (cardHeight + 12) * index,
@@ -296,8 +436,8 @@ function CircleTimelineFeedContent({ route, navigation }) {
               <View style={styles.stateIcon}>
                 <Ionicons name="images-outline" size={28} color={theme.colors.text} />
               </View>
-              <Text style={styles.errorText}>No Timeline media yet.</Text>
-              <Text style={styles.emptyBody}>Photos and videos shared in Chat will gather here automatically.</Text>
+              <Text style={styles.errorText}>No Circle memories yet.</Text>
+              <Text style={styles.emptyBody}>Shared chat media and completed gatherings will gather here automatically.</Text>
             </View>
           )}
           showsVerticalScrollIndicator={false}
@@ -371,6 +511,65 @@ function createStyles(theme) {
     caption: { color: theme.colors.text, fontFamily: 'Manrope_400Regular', lineHeight: 19 },
     captionAuthor: { fontFamily: 'Manrope_700Bold' },
     captionMuted: { color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },
+    eventMemoryCard: {
+      width: '100%',
+      maxWidth: 696,
+      alignSelf: 'center',
+      marginBottom: 12,
+      backgroundColor: 'rgba(255,255,255,0.91)',
+      borderRadius: 20,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.circle.accentSoft,
+      overflow: 'hidden',
+      shadowColor: theme.circle.accent,
+      shadowOpacity: 0.08,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 7 },
+      elevation: 2,
+    },
+    eventMemoryHero: { width: '100%', borderRadius: 0 },
+    eventMemoryHeroContent: { flex: 1, padding: 15, justifyContent: 'space-between' },
+    eventMemoryTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+    eventMemoryPill: {
+      minHeight: 27,
+      paddingHorizontal: 9,
+      borderRadius: 999,
+      backgroundColor: 'rgba(10,18,42,0.48)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.28)',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+    },
+    eventMemoryPillText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 9, letterSpacing: 0.7 },
+    eventMemoryDate: { color: 'rgba(255,255,255,0.88)', fontFamily: 'Manrope_700Bold', fontSize: 10, textShadowColor: 'rgba(0,0,0,0.24)', textShadowRadius: 4 },
+    eventMemoryHeroTitle: { maxWidth: '88%', color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 27, lineHeight: 31, textShadowColor: 'rgba(0,0,0,0.28)', textShadowRadius: 6 },
+    eventMemoryDetails: { flex: 1, paddingHorizontal: 15, paddingTop: 14, paddingBottom: 14 },
+    eventMemoryMetricRow: { flexDirection: 'row', gap: 8 },
+    eventMemoryMetric: {
+      minHeight: 38,
+      paddingHorizontal: 10,
+      borderRadius: 13,
+      backgroundColor: theme.circle.accentSoft,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    eventMemoryMetricText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 10.5 },
+    eventMemoryLocationRow: { marginTop: 11, flexDirection: 'row', alignItems: 'center', gap: 5 },
+    eventMemoryLocation: { flex: 1, color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
+    eventMemoryBottomRow: { flex: 1, marginTop: 10, flexDirection: 'row', alignItems: 'flex-end', gap: 12 },
+    eventMemoryBody: { flex: 1, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 12, lineHeight: 17 },
+    eventMemoryOpenPill: {
+      minHeight: 34,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+      backgroundColor: theme.circle.accentSoft,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+    },
+    eventMemoryOpenText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 9.5 },
     centerState: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: 'transparent' },
     stateIcon: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: theme.circle.accentSoft },
     stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },

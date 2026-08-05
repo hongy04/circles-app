@@ -74,6 +74,7 @@ export const navigationCacheKeys = {
   circleTimeline: (conversationId) => `circle-timeline:${conversationId}`,
   circleDecoration: (conversationId) => `circle-decoration:${conversationId}`,
   circleEvents: (conversationId) => `circle-events:${conversationId}`,
+  circleEventMemories: (conversationId) => `circle-event-memories:${conversationId}`,
   circlePolls: (conversationId) => `circle-polls:${conversationId}`,
   twoPersonPlans: (conversationId) => `two-person-plans:${conversationId}`,
   twoPersonDates: (conversationId) => `two-person-dates:${conversationId}`,

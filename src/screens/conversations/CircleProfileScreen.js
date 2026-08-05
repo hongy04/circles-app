@@ -16,6 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { StickerCanvas } from '../../components/decorations/StickerCanvas';
+import { EventLookArtwork } from '../../components/events/EventLookHero';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -41,6 +42,7 @@ import {
 } from '../../services/twoPersonAlbumService';
 import { listTwoPersonThoughts } from '../../services/twoPersonThoughtService';
 import { fetchCircleDecoration } from '../../services/circleDecorationService';
+import { listCircleEventMemories } from '../../services/eventService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function rgba(hex, alpha) {
@@ -157,6 +159,43 @@ function PlanMemoryTile({ item, size, onPress, styles, theme }) {
   );
 }
 
+function EventMemoryTile({ item, size, onPress, styles }) {
+  const memoryPeople = item.attendanceReviewedAt
+    ? Number(item.attendedCount || 0)
+    : Number(item.goingCount || 0);
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.gridTile,
+        styles.eventMemoryTile,
+        { width: size, height: size },
+        pressed && styles.pressed,
+      ]}
+    >
+      <EventLookArtwork
+        appearanceKey={item.appearanceKey || 'circle'}
+        coverUri={item.coverUrl || null}
+        style={[styles.eventMemoryArtwork, { minHeight: size, height: size }]}
+      >
+        <View style={styles.eventMemoryShade}>
+          <View style={styles.eventMemoryBadge}>
+            <Ionicons name="sparkles" size={10} color="#fff" />
+            <Text style={styles.eventMemoryBadgeText}>EVENT</Text>
+          </View>
+          <View>
+            <Text style={styles.eventMemoryTitle} numberOfLines={2}>{item.title}</Text>
+            <Text style={styles.eventMemoryMeta} numberOfLines={1}>
+              {memoryPeople} there
+              {Number(item.photoCount || 0) > 0 ? ` · ${item.photoCount} photos` : ''}
+            </Text>
+          </View>
+        </View>
+      </EventLookArtwork>
+    </Pressable>
+  );
+}
+
 function PostTile({ post, size, slotSize, onPress, styles }) {
   const firstMedia = post.media?.[0];
 
@@ -204,6 +243,7 @@ function CircleProfileContent({ route, navigation }) {
   const cachedImportantDates = readNavigationCache(navigationCacheKeys.twoPersonDates(conversationId));
   const cachedAlbums = readNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId));
   const cachedDecoration = readNavigationCache(navigationCacheKeys.circleDecoration(conversationId));
+  const cachedEventMemories = readNavigationCache(navigationCacheKeys.circleEventMemories(conversationId));
   const hasWarmGridSnapshot = Array.isArray(cachedTimeline) && Array.isArray(cachedPosts);
 
   const [details, setDetails] = useState(cachedDetails || null);
@@ -215,6 +255,7 @@ function CircleProfileContent({ route, navigation }) {
   );
   const [albums, setAlbums] = useState(Array.isArray(cachedAlbums) ? cachedAlbums : []);
   const [decoration, setDecoration] = useState(cachedDecoration || null);
+  const [eventMemories, setEventMemories] = useState(Array.isArray(cachedEventMemories) ? cachedEventMemories : []);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [loading, setLoading] = useState(!cachedDetails);
   const [contentResolved, setContentResolved] = useState(hasWarmGridSnapshot);
@@ -225,6 +266,8 @@ function CircleProfileContent({ route, navigation }) {
   const hasLoadedRef = useRef(false);
   const lastLoadedAtRef = useRef(0);
   const hadWarmIdentityRef = useRef(Boolean(cachedDetails));
+  const eventMemoryLoadedAtRef = useRef(Array.isArray(cachedEventMemories) ? Date.now() : 0);
+  const eventMemoryInFlightRef = useRef(null);
 
   useEffect(() => {
     if (initialTab === 'timeline' || initialTab === 'posts') {
@@ -375,8 +418,41 @@ function CircleProfileContent({ route, navigation }) {
     }
   }, [conversationId]);
 
+  const loadEventMemories = useCallback(async ({ force = false } = {}) => {
+    if (!conversationId) return [];
+    if (!force && Date.now() - eventMemoryLoadedAtRef.current < 20_000) {
+      return eventMemories;
+    }
+    if (eventMemoryInFlightRef.current) return eventMemoryInFlightRef.current;
+
+    const request = (async () => {
+      try {
+        const rows = await listCircleEventMemories(conversationId);
+        setEventMemories(rows);
+        writeNavigationCache(navigationCacheKeys.circleEventMemories(conversationId), rows);
+        rows.forEach((event) => {
+          writeNavigationCache(navigationCacheKeys.eventSummary(event.id), event);
+        });
+        eventMemoryLoadedAtRef.current = Date.now();
+        return rows;
+      } catch {
+        // Event memories are an additive history layer. The Circle profile and
+        // chat-media Timeline remain fully usable if events are disabled or a
+        // staged backend migration has not landed yet.
+        return [];
+      } finally {
+        eventMemoryInFlightRef.current = null;
+      }
+    })();
+
+    eventMemoryInFlightRef.current = request;
+    return request;
+  }, [conversationId, eventMemories]);
+
   useFocusEffect(
     useCallback(() => {
+      const warmMemories = readNavigationCache(navigationCacheKeys.circleEventMemories(conversationId));
+      if (Array.isArray(warmMemories)) setEventMemories(warmMemories);
       const hasLoaded = hasLoadedRef.current;
       const recentlyLoaded = hasLoaded
         && Date.now() - lastLoadedAtRef.current < 20_000;
@@ -453,6 +529,11 @@ function CircleProfileContent({ route, navigation }) {
 
   const conversation = details?.conversation;
   const members = details?.members || [];
+
+  useEffect(() => {
+    if (activeTab !== 'timeline' || conversation?.kind !== 'group') return;
+    void loadEventMemories();
+  }, [activeTab, conversation?.kind, loadEventMemories]);
   const isTwoPersonCircle = conversation?.kind === 'direct';
   const circleLocked = isTwoPersonCircle
     && !conversation?.circle_access_active;
@@ -475,6 +556,13 @@ function CircleProfileContent({ route, navigation }) {
       planId: plan.id,
       kind: 'plan_memory',
       createdAt: plan.completedAt || plan.updatedAt,
+    })),
+    ...eventMemories.map((event) => ({
+      ...event,
+      id: `event-memory-${event.id}`,
+      eventId: event.id,
+      kind: 'event_memory',
+      createdAt: event.completedAt || event.endsAt || event.startsAt,
     })),
   ].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
@@ -614,7 +702,7 @@ function CircleProfileContent({ route, navigation }) {
             />
           ) : null}
           <Stat
-            value={Number(conversation.timeline_count || timeline.length) + completedPlans.length}
+            value={Number(conversation.timeline_count || timeline.length) + completedPlans.length + eventMemories.length}
             label="Timeline"
             onPress={() => setActiveTab('timeline')}
             styles={styles}
@@ -840,7 +928,23 @@ function CircleProfileContent({ route, navigation }) {
           ListHeaderComponent={header}
           renderItem={({ item, index }) => (
             activeTab === 'timeline' ? (
-              item.kind === 'plan_memory' ? (
+              item.kind === 'event_memory' ? (
+                <EventMemoryTile
+                  item={item}
+                  size={tileSize}
+                  onPress={() => {
+                    const summary = { ...item, id: item.eventId };
+                    writeNavigationCache(navigationCacheKeys.eventSummary(item.eventId), summary);
+                    navigation.navigate('EventDetail', {
+                      eventId: item.eventId,
+                      eventTitle: item.title,
+                      conversationId,
+                      circleName: conversation?.title || 'Circle',
+                    });
+                  }}
+                  styles={styles}
+                />
+              ) : item.kind === 'plan_memory' ? (
                 <PlanMemoryTile
                   item={item}
                   size={tileSize}
@@ -900,12 +1004,12 @@ function CircleProfileContent({ route, navigation }) {
                 />
                 <Text style={styles.emptyTitle}>
                   {activeTab === 'timeline'
-                    ? 'No shared media yet'
+                    ? 'No memories yet'
                     : 'No Circle posts yet'}
                 </Text>
                 <Text style={styles.emptyBody}>
                   {activeTab === 'timeline'
-                    ? 'Photos and videos sent in Chat will appear here automatically, without being uploaded twice.'
+                    ? 'Shared media and completed gatherings will collect here as your Circle history grows.'
                     : 'Posts are intentional moments created for this private Circle. They stay separate from the automatic chat Timeline.'}
                 </Text>
                 {activeTab === 'posts' ? (
@@ -928,6 +1032,9 @@ function CircleProfileContent({ route, navigation }) {
               onRefresh={() => {
                 setRefreshing(true);
                 load({ quiet: true });
+                if (activeTab === 'timeline' && conversation?.kind === 'group') {
+                  void loadEventMemories({ force: true });
+                }
               }}
               tintColor={theme.colors.text}
             />
@@ -1117,6 +1224,27 @@ function createStyles(theme) {
     fontFamily: theme.typography.semibold,
     fontSize: 9.5,
   },
+  eventMemoryTile: { overflow: 'hidden', backgroundColor: theme.circle.accentSoft },
+  eventMemoryArtwork: { flex: 1, width: '100%', borderRadius: 0 },
+  eventMemoryShade: {
+    flex: 1,
+    padding: 9,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(8,15,34,0.16)',
+  },
+  eventMemoryBadge: {
+    alignSelf: 'flex-start',
+    minHeight: 23,
+    paddingHorizontal: 7,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(10,18,42,0.48)',
+  },
+  eventMemoryBadgeText: { color: '#fff', fontFamily: theme.typography.bold, fontSize: 8, letterSpacing: 0.55 },
+  eventMemoryTitle: { color: '#fff', fontFamily: theme.typography.bold, fontSize: 12, lineHeight: 15, textShadowColor: 'rgba(0,0,0,0.25)', textShadowRadius: 5 },
+  eventMemoryMeta: { marginTop: 3, color: 'rgba(255,255,255,0.86)', fontFamily: theme.typography.semibold, fontSize: 8.5 },
   silentMessageCard: {
     width: '100%',
     maxWidth: 440,
