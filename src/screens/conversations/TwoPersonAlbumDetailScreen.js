@@ -231,7 +231,16 @@ function TwoPersonAlbumDetailContent({ route, navigation }) {
   const commitAlbum = useCallback((nextAlbum) => {
     setAlbum(nextAlbum);
     writeNavigationCache(navigationCacheKeys.album(albumId), nextAlbum);
-  }, [albumId]);
+
+    const warmAlbums = readNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId));
+    if (Array.isArray(warmAlbums)) {
+      const { photos: _photos, ...summary } = nextAlbum || {};
+      const nextAlbums = warmAlbums.map((candidate) => (
+        candidate?.id === albumId ? { ...candidate, ...summary } : candidate
+      ));
+      writeNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId), nextAlbums);
+    }
+  }, [albumId, conversationId]);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!albumId) return;
@@ -288,17 +297,32 @@ function TwoPersonAlbumDetailContent({ route, navigation }) {
       setAlbum((current) => {
         if (!current) return current;
         const nextPhotos = [...uploaded.slice().reverse(), ...(current.photos || [])];
+        const uploadedUrls = uploaded.map((photo) => photo.url).filter(Boolean);
         const nextPreviews = Array.from(new Set([
           ...(current.previewUrls || []),
-          ...uploaded.map((photo) => photo.url).filter(Boolean),
+          ...uploadedUrls,
         ])).slice(0, 3);
+        const nextTimelineUrls = Array.from(new Set([
+          ...(current.timelineUrls || current.previewUrls || []),
+          ...uploadedUrls,
+        ])).slice(0, 6);
         const next = {
           ...current,
           photoCount: current.photoCount + uploaded.length,
           photos: nextPhotos,
           previewUrls: nextPreviews,
+          timelineUrls: nextTimelineUrls,
         };
         writeNavigationCache(navigationCacheKeys.album(albumId), next);
+
+        const warmAlbums = readNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId));
+        if (Array.isArray(warmAlbums)) {
+          const { photos: _photos, ...summary } = next;
+          writeNavigationCache(
+            navigationCacheKeys.twoPersonAlbums(conversationId),
+            warmAlbums.map((candidate) => (candidate?.id === albumId ? { ...candidate, ...summary } : candidate))
+          );
+        }
         return next;
       });
     } catch (uploadError) {

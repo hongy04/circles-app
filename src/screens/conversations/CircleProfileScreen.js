@@ -40,7 +40,10 @@ import {
   listTwoPersonAlbums,
   subscribeToTwoPersonAlbumChanges,
 } from '../../services/twoPersonAlbumService';
-import { listTwoPersonThoughts } from '../../services/twoPersonThoughtService';
+import {
+  listTwoPersonThoughts,
+  subscribeToTwoPersonThoughtChanges,
+} from '../../services/twoPersonThoughtService';
 import { fetchCircleDecoration } from '../../services/circleDecorationService';
 import { listCircleEventMemories } from '../../services/eventService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
@@ -53,6 +56,26 @@ function rgba(hex, alpha) {
   const g = (value >> 8) & 255;
   const b = value & 255;
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function importantDateHasHappened(dateValue) {
+  const match = String(dateValue || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const moment = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);
+  if (Number.isNaN(moment.getTime())) return false;
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  return moment <= today;
+}
+
+function formatImportantDateTile(dateValue) {
+  const match = String(dateValue || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return { month: 'DATE', day: '—' };
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);
+  return {
+    month: date.toLocaleDateString([], { month: 'short' }).toUpperCase(),
+    day: String(date.getDate()),
+  };
 }
 
 function preserveDecorationImageUrls(current, next) {
@@ -159,6 +182,54 @@ function PlanMemoryTile({ item, size, onPress, styles, theme }) {
   );
 }
 
+function ImportantDateMemoryTile({ item, size, onPress, styles, theme }) {
+  const dateParts = formatImportantDateTile(item.dateValue);
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.gridTile,
+        styles.importantDateMemoryTile,
+        { width: size, height: size },
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={styles.importantDateGlowOne} />
+      <View style={styles.importantDateGlowTwo} />
+      <Text style={styles.importantDateMonth}>{dateParts.month}</Text>
+      <Text style={styles.importantDateDay}>{dateParts.day}</Text>
+      <View style={styles.importantDateTileBottom}>
+        <Text style={styles.importantDateTileLabel}>MILESTONE</Text>
+        <Text style={styles.importantDateTileTitle} numberOfLines={2}>{item.title}</Text>
+      </View>
+      <Ionicons name="heart-outline" size={15} color={theme.colors.text} style={styles.importantDateTileIcon} />
+    </Pressable>
+  );
+}
+
+function SharedThoughtMemoryTile({ item, size, onPress, styles, theme }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.gridTile,
+        styles.sharedThoughtMemoryTile,
+        { width: size, height: size },
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={styles.sharedThoughtQuoteIcon}>
+        <Ionicons name="chatbubble-ellipses-outline" size={17} color={theme.colors.text} />
+      </View>
+      <Text style={styles.sharedThoughtTileLabel}>SHARED NOTE</Text>
+      <Text style={styles.sharedThoughtTileTitle} numberOfLines={2}>
+        {item.title || 'A shared thought'}
+      </Text>
+      <Text style={styles.sharedThoughtTileExcerpt} numberOfLines={4}>{item.body}</Text>
+    </Pressable>
+  );
+}
+
 function EventMemoryTile({ item, size, onPress, styles }) {
   const memoryPeople = item.attendanceReviewedAt
     ? Number(item.attendedCount || 0)
@@ -244,6 +315,7 @@ function CircleProfileContent({ route, navigation }) {
   const cachedPosts = readNavigationCache(navigationCacheKeys.circlePosts(conversationId));
   const cachedPlans = readNavigationCache(navigationCacheKeys.twoPersonPlans(conversationId));
   const cachedImportantDates = readNavigationCache(navigationCacheKeys.twoPersonDates(conversationId));
+  const cachedThoughts = readNavigationCache(navigationCacheKeys.twoPersonThoughts(conversationId));
   const cachedAlbums = readNavigationCache(navigationCacheKeys.twoPersonAlbums(conversationId));
   const cachedDecoration = readNavigationCache(navigationCacheKeys.circleDecoration(conversationId));
   const cachedEventMemories = readNavigationCache(navigationCacheKeys.circleEventMemories(conversationId));
@@ -256,6 +328,7 @@ function CircleProfileContent({ route, navigation }) {
   const [importantDates, setImportantDates] = useState(
     Array.isArray(cachedImportantDates) ? cachedImportantDates : []
   );
+  const [thoughts, setThoughts] = useState(Array.isArray(cachedThoughts) ? cachedThoughts : []);
   const [albums, setAlbums] = useState(Array.isArray(cachedAlbums) ? cachedAlbums : []);
   const [decoration, setDecoration] = useState(cachedDecoration || null);
   const [eventMemories, setEventMemories] = useState(Array.isArray(cachedEventMemories) ? cachedEventMemories : []);
@@ -356,6 +429,7 @@ function CircleProfileContent({ route, navigation }) {
         setPosts([]);
         setPlans([]);
         setImportantDates([]);
+        setThoughts([]);
         setAlbums([]);
         setDecoration(null);
         return;
@@ -396,6 +470,7 @@ function CircleProfileContent({ route, navigation }) {
 
         setPlans(planRows);
         setImportantDates(importantDateRows);
+        setThoughts(thoughtRows);
         setAlbums(albumRows);
         writeNavigationCache(navigationCacheKeys.twoPersonPlans(conversationId), planRows);
         writeNavigationCache(navigationCacheKeys.twoPersonDates(conversationId), importantDateRows);
@@ -530,6 +605,16 @@ function CircleProfileContent({ route, navigation }) {
     }, [conversationId, load])
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) return undefined;
+      return subscribeToTwoPersonThoughtChanges({
+        conversationId,
+        onChange: () => load({ quiet: true }),
+      });
+    }, [conversationId, load])
+  );
+
   const conversation = details?.conversation;
   const members = details?.members || [];
 
@@ -551,6 +636,8 @@ function CircleProfileContent({ route, navigation }) {
   const tileSize = Math.floor(gridWidth / 3);
   const postCircleSize = Math.max(72, tileSize - 14);
   const completedPlans = plans.filter((plan) => plan.status === 'completed');
+  const milestoneDates = importantDates.filter((item) => importantDateHasHappened(item.dateValue));
+  const sharedThoughts = thoughts.filter((item) => item.status === 'shared');
   const timelineItems = [
     ...timeline.map((item) => ({ ...item, kind: 'media' })),
     ...completedPlans.map((plan) => ({
@@ -566,6 +653,20 @@ function CircleProfileContent({ route, navigation }) {
       eventId: event.id,
       kind: 'event_memory',
       createdAt: event.completedAt || event.endsAt || event.startsAt,
+    })),
+    ...milestoneDates.map((item) => ({
+      ...item,
+      id: `important-date-memory-${item.id}`,
+      importantDateId: item.id,
+      kind: 'important_date_memory',
+      createdAt: item.dateValue,
+    })),
+    ...sharedThoughts.map((item) => ({
+      ...item,
+      id: `thought-memory-${item.id}`,
+      thoughtId: item.id,
+      kind: 'thought_memory',
+      createdAt: item.sharedAt || item.updatedAt,
     })),
   ].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
@@ -705,7 +806,11 @@ function CircleProfileContent({ route, navigation }) {
             />
           ) : null}
           <Stat
-            value={Number(conversation.timeline_count || timeline.length) + completedPlans.length + eventMemories.length}
+            value={Number(conversation.timeline_count || timeline.length)
+              + completedPlans.length
+              + eventMemories.length
+              + milestoneDates.length
+              + sharedThoughts.length}
             label="Timeline"
             onPress={() => setActiveTab('timeline')}
             styles={styles}
@@ -950,10 +1055,37 @@ function CircleProfileContent({ route, navigation }) {
                 <PlanMemoryTile
                   item={item}
                   size={tileSize}
-                  onPress={() => navigation.navigate('TwoPersonPlanDetail', {
-                    planId: item.planId,
+                  onPress={() => navigation.navigate('CircleTimelineFeed', {
                     conversationId,
                     circleName: conversation?.title || 'Our Circle',
+                    isTwoPersonCircle: true,
+                    initialPlanId: item.planId,
+                  })}
+                  styles={styles}
+                  theme={theme}
+                />
+              ) : item.kind === 'important_date_memory' ? (
+                <ImportantDateMemoryTile
+                  item={item}
+                  size={tileSize}
+                  onPress={() => navigation.navigate('CircleTimelineFeed', {
+                    conversationId,
+                    circleName: conversation?.title || 'Our Circle',
+                    isTwoPersonCircle: true,
+                    initialImportantDateId: item.importantDateId,
+                  })}
+                  styles={styles}
+                  theme={theme}
+                />
+              ) : item.kind === 'thought_memory' ? (
+                <SharedThoughtMemoryTile
+                  item={item}
+                  size={tileSize}
+                  onPress={() => navigation.navigate('CircleTimelineFeed', {
+                    conversationId,
+                    circleName: conversation?.title || 'Our Circle',
+                    isTwoPersonCircle: true,
+                    initialThoughtId: item.thoughtId,
                   })}
                   styles={styles}
                   theme={theme}
@@ -966,6 +1098,7 @@ function CircleProfileContent({ route, navigation }) {
                     conversationId,
                     initialMediaId: item.id,
                     circleName: conversation?.title || 'Circle',
+                    isTwoPersonCircle,
                   })}
                   styles={styles}
                 />
@@ -1011,7 +1144,7 @@ function CircleProfileContent({ route, navigation }) {
                 </Text>
                 <Text style={styles.emptyBody}>
                   {activeTab === 'timeline'
-                    ? 'Shared media and completed gatherings will collect here as your Circle history grows.'
+                    ? 'Shared media, completed plans, milestones, notes, and gatherings will collect here as your Circle history grows.'
                     : 'Posts are intentional moments created for this private Circle. They stay separate from the automatic chat Timeline.'}
                 </Text>
                 {activeTab === 'posts' ? (
@@ -1225,6 +1358,93 @@ function createStyles(theme) {
     color: theme.colors.subtext,
     fontFamily: theme.typography.semibold,
     fontSize: 9.5,
+  },
+  importantDateMemoryTile: {
+    padding: 10,
+    overflow: 'hidden',
+    backgroundColor: rgba(theme.circle.accentSoft, 0.92),
+  },
+  importantDateGlowOne: {
+    position: 'absolute',
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    right: -22,
+    top: -18,
+    backgroundColor: rgba(theme.circle.accent, 0.14),
+  },
+  importantDateGlowTwo: {
+    position: 'absolute',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    right: 18,
+    top: 24,
+    borderWidth: 1.5,
+    borderColor: rgba(theme.circle.accent, 0.22),
+  },
+  importantDateMonth: {
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.bold,
+    fontSize: 9,
+    letterSpacing: 1.15,
+  },
+  importantDateDay: {
+    marginTop: -2,
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
+    fontSize: 34,
+    lineHeight: 39,
+  },
+  importantDateTileBottom: { marginTop: 'auto' },
+  importantDateTileLabel: {
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.bold,
+    fontSize: 8,
+    letterSpacing: 0.7,
+  },
+  importantDateTileTitle: {
+    marginTop: 3,
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
+    fontSize: 11.5,
+    lineHeight: 15,
+  },
+  importantDateTileIcon: { position: 'absolute', right: 10, bottom: 10, opacity: 0.72 },
+  sharedThoughtMemoryTile: {
+    padding: 10,
+    backgroundColor: rgba(theme.colors.surface, 0.90),
+    borderColor: rgba(theme.circle.accent, 0.22),
+  },
+  sharedThoughtQuoteIcon: {
+    width: 29,
+    height: 29,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: rgba(theme.circle.accentSoft, 0.86),
+  },
+  sharedThoughtTileLabel: {
+    marginTop: 8,
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.bold,
+    fontSize: 8,
+    letterSpacing: 0.7,
+  },
+  sharedThoughtTileTitle: {
+    marginTop: 3,
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
+    fontSize: 11.5,
+    lineHeight: 15,
+  },
+  sharedThoughtTileExcerpt: {
+    flex: 1,
+    marginTop: 5,
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.regular,
+    fontSize: 9,
+    lineHeight: 12.5,
   },
   eventMemoryTile: { overflow: 'hidden', backgroundColor: theme.circle.accentSoft },
   eventMemoryArtwork: { flex: 1, width: '100%', borderRadius: 0 },

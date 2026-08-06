@@ -36,10 +36,26 @@ function normalizePreviewPaths(row = {}) {
   return Array.from(new Set(clean)).slice(0, 3);
 }
 
+function normalizeTimelinePaths(row = {}) {
+  const raw = row.timeline_storage_paths;
+  const paths = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.paths)
+      ? raw.paths
+      : [];
+  const clean = paths.map((path) => String(path || '').trim()).filter(Boolean);
+
+  // Before Migration 085, use the three-photo scrapbook preview as the
+  // bounded inline Timeline set so the feature degrades gracefully.
+  if (!clean.length) clean.push(...normalizePreviewPaths(row));
+  return Array.from(new Set(clean)).slice(0, 6);
+}
+
 function albumStoragePaths(row = {}) {
   return [
     row.cover_storage_path,
     ...normalizePreviewPaths(row),
+    ...normalizeTimelinePaths(row),
   ].filter(Boolean);
 }
 
@@ -66,6 +82,10 @@ function mapAlbumWithUrls(row = {}, signedUrls = new Map()) {
     coverUrl: coverStoragePath ? (signedUrls.get(coverStoragePath) || null) : null,
     previewStoragePaths,
     previewUrls: previewStoragePaths
+      .map((path) => signedUrls.get(path) || null)
+      .filter(Boolean),
+    timelineStoragePaths: normalizeTimelinePaths(row),
+    timelineUrls: normalizeTimelinePaths(row)
       .map((path) => signedUrls.get(path) || null)
       .filter(Boolean),
   };
