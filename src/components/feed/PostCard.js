@@ -12,8 +12,8 @@ import { PostMediaCarousel } from './PostMediaCarousel';
 
 const COLLAPSED_CAPTION_LENGTH = 120;
 
-function commentsLabel(count) {
-  if (!count) return 'Add a comment';
+function commentsLabel(count, isCirclePost) {
+  if (!count) return isCirclePost ? 'Add a private comment' : 'Add a comment';
   return `View all ${count} ${count === 1 ? 'comment' : 'comments'}`;
 }
 
@@ -25,15 +25,17 @@ export function PostCard({
   onOpenComments,
   onOpenPost,
   onOpenProfile,
+  onOpenCircle,
   onOpenMenu,
 }) {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [captionExpanded, setCaptionExpanded] = useState(false);
+  const isCirclePost = post.sourceType === 'circle' && post.circle?.id;
 
   useEffect(() => {
     setCaptionExpanded(false);
-  }, [post.id]);
+  }, [post.feedKey || post.id]);
 
   const captionNeedsCollapse =
     post.caption.length > COLLAPSED_CAPTION_LENGTH;
@@ -46,31 +48,69 @@ export function PostCard({
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <Pressable
-          onPress={onOpenProfile}
-          disabled={!onOpenProfile}
-          style={styles.authorButton}
-        >
-          <Avatar
-            size={38}
-            name={post.user.name}
-            uri={post.user.avatarUri}
-          />
+        <View style={styles.identityCluster}>
+          <Pressable
+            onPress={onOpenProfile}
+            disabled={!onOpenProfile}
+            hitSlop={6}
+          >
+            <Avatar
+              size={38}
+              name={post.user.name}
+              uri={post.user.avatarUri}
+            />
+          </Pressable>
 
           <View style={styles.authorText}>
-            <Text style={styles.authorName} numberOfLines={1}>
-              {post.user.name}
-            </Text>
-            <Text style={styles.time}>{post.time}</Text>
+            <Pressable
+              onPress={onOpenProfile}
+              disabled={!onOpenProfile}
+              hitSlop={4}
+              style={styles.authorNameButton}
+            >
+              <Text style={styles.authorName} numberOfLines={1}>
+                {post.user.name}
+              </Text>
+            </Pressable>
+
+            {isCirclePost ? (
+              <View style={styles.circleContextRow}>
+                <Ionicons
+                  name="ellipse-outline"
+                  size={12}
+                  color={theme.circle.accent}
+                />
+                <Text style={styles.contextPrefix}>in</Text>
+                <Pressable
+                  onPress={onOpenCircle}
+                  disabled={!onOpenCircle}
+                  hitSlop={5}
+                  style={styles.circleNameButton}
+                >
+                  <Text style={styles.circleName} numberOfLines={1}>
+                    {post.circle.name}
+                  </Text>
+                </Pressable>
+                <Ionicons
+                  name="lock-closed"
+                  size={9}
+                  color={theme.colors.subtext}
+                  style={styles.contextLock}
+                />
+                <Text style={styles.contextTime}>· {post.time}</Text>
+              </View>
+            ) : (
+              <Text style={styles.time}>{post.time}</Text>
+            )}
           </View>
-        </Pressable>
+        </View>
 
         {onOpenMenu ? (
           <Pressable
             onPress={onOpenMenu}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Manage post"
+            accessibilityLabel={isCirclePost ? 'Manage Circle post' : 'Manage post'}
             style={styles.menuButton}
           >
             <Ionicons
@@ -154,7 +194,7 @@ export function PostCard({
 
         <Pressable onPress={onOpenComments}>
           <Text style={styles.commentsLink}>
-            {commentsLabel(post.commentCount)}
+            {commentsLabel(post.commentCount, isCirclePost)}
           </Text>
         </Pressable>
       </View>
@@ -178,8 +218,9 @@ function createStyles(theme) {
     paddingHorizontal: 12,
     paddingVertical: 11,
   },
-  authorButton: {
+  identityCluster: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -192,6 +233,11 @@ function createStyles(theme) {
   authorText: {
     marginLeft: 10,
     flex: 1,
+    minWidth: 0,
+  },
+  authorNameButton: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
   },
   authorName: {
     fontFamily: 'Manrope_700Bold',
@@ -202,6 +248,37 @@ function createStyles(theme) {
     fontFamily: 'Manrope_400Regular',
     color: theme.colors.subtext,
     fontSize: 12,
+  },
+  circleContextRow: {
+    marginTop: 2,
+    minHeight: 17,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+  },
+  contextPrefix: {
+    marginLeft: 4,
+    color: theme.colors.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11.5,
+  },
+  circleNameButton: {
+    marginLeft: 3,
+    flexShrink: 1,
+  },
+  circleName: {
+    color: theme.circle.accent,
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 11.5,
+  },
+  contextLock: {
+    marginLeft: 5,
+  },
+  contextTime: {
+    marginLeft: 3,
+    color: theme.colors.subtext,
+    fontFamily: 'Manrope_400Regular',
+    fontSize: 11.5,
   },
   actionRow: {
     height: 46,

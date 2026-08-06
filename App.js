@@ -158,6 +158,7 @@ function themeRgba(hex, alpha) {
 /* ---------------- Navigation ---------------- */
 const RootStack = createNativeStackNavigator();
 const CirclesStackNav = createNativeStackNavigator();
+const FeedStackNav = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
 
 const APP_LINKING = {
@@ -441,6 +442,44 @@ function nextRelationshipTabBadgeChannelName() {
   return `relationship_tab_badges_${Date.now()}_${relationshipTabBadgeChannelCounter}`;
 }
 
+function FeedStack() {
+  const theme = useThemeTokens();
+
+  return (
+    <FeedStackNav.Navigator
+      screenOptions={{
+        headerShadowVisible: false,
+        headerTitleStyle: { fontFamily: 'Manrope_700Bold', color: theme.colors.text },
+        headerTintColor: theme.colors.text,
+        headerStyle: { backgroundColor: theme.colors.surface },
+        headerBackTitleVisible: false,
+        contentStyle: { backgroundColor: theme.colors.bg },
+      }}
+    >
+      <FeedStackNav.Screen
+        name="FeedHome"
+        component={FeedScreen}
+        options={{ headerShown: false }}
+      />
+      <FeedStackNav.Screen
+        name="CirclePostDetail"
+        component={CirclePostDetailScreen}
+        options={{ title: 'Circle Post' }}
+      />
+      <FeedStackNav.Screen
+        name="EditCirclePost"
+        component={EditCirclePostScreen}
+        options={{ title: 'Edit Circle Post' }}
+      />
+      <FeedStackNav.Screen
+        name="ConversationMedia"
+        component={ConversationMediaViewerScreen}
+        options={{ headerShown: false, presentation: 'fullScreenModal' }}
+      />
+    </FeedStackNav.Navigator>
+  );
+}
+
 function AppTabs({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { themeReady } = useTheme();
@@ -640,7 +679,7 @@ function AppTabs({ navigation, route }) {
       >
         <Tabs.Screen name="Circles" component={CirclesStack} />
         <Tabs.Screen name="Mutuals" component={MutualsScreen} />
-        <Tabs.Screen name="Feed" component={FeedScreen} />
+        <Tabs.Screen name="Feed" component={FeedStack} />
         <Tabs.Screen name="Me" component={MeScreen} />
       </Tabs.Navigator>
         </>

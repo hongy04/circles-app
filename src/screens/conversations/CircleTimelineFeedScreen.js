@@ -13,9 +13,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 import { Avatar } from '../../components/Avatar';
 import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
 import { EventAlbumMemoryCover } from '../../components/events/EventAlbumMemoryCover';
+import { MemoryLiftSurface } from '../../components/memories/MemoryLiftSurface';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
@@ -45,6 +47,66 @@ import { reconcileRowsById } from '../../utils/reconcileRows';
 
 const TIMELINE_FOCUS_FRESH_MS = 12_000;
 const TIMELINE_REALTIME_DEBOUNCE_MS = 220;
+const TIMELINE_CHAPTER_SLOT_HEIGHT = 26;
+const TIMELINE_CARD_GAP = 12;
+
+function timelineDate(value) {
+  if (!value) return null;
+  const dateOnly = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]), 12, 0, 0, 0)
+    : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function timelineChapter(value) {
+  const date = timelineDate(value);
+  if (!date) return { key: 'unknown', label: 'EARLIER' };
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayDiff = Math.round((today.getTime() - target.getTime()) / 86_400_000);
+
+  if (dayDiff === 0) return { key: 'today', label: 'TODAY' };
+  if (dayDiff === 1) return { key: 'yesterday', label: 'YESTERDAY' };
+  if (dayDiff > 1 && dayDiff < 7) return { key: 'this-week', label: 'EARLIER THIS WEEK' };
+  if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()) {
+    return { key: 'this-month', label: 'THIS MONTH' };
+  }
+
+  const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  const label = date.toLocaleDateString([], {
+    month: 'long',
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  }).toUpperCase();
+  return { key, label };
+}
+
+const MemoryPagerDots = React.memo(function MemoryPagerDots({ total, activeIndex, styles }) {
+  if (total <= 1) return null;
+  const visibleCount = Math.min(total, 7);
+  const start = total <= visibleCount
+    ? 0
+    : Math.max(0, Math.min(total - visibleCount, activeIndex - Math.floor(visibleCount / 2)));
+
+  return (
+    <View style={styles.eventMemoryDots} accessibilityLabel={`Page ${activeIndex + 1} of ${total}`}>
+      {Array.from({ length: visibleCount }, (_, offset) => {
+        const index = start + offset;
+        return (
+          <View
+            key={`pager:${index}`}
+            style={[
+              styles.eventMemoryDot,
+              index === activeIndex && styles.eventMemoryDotActive,
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+});
 
 function sameTimelineItem(left, right) {
   return left?.id === right?.id
@@ -90,6 +152,13 @@ function groupTimeline(items) {
 }
 
 const TimelineFeedCard = React.memo(function TimelineFeedCard({ group, width, height, navigation, styles, theme }) {
+  const [pageIndex, setPageIndex] = useState(0);
+  const handlePageSettled = useCallback((scrollEvent) => {
+    const x = Number(scrollEvent?.nativeEvent?.contentOffset?.x || 0);
+    const nextIndex = width > 0 ? Math.round(x / width) : 0;
+    setPageIndex(Math.max(0, Math.min(group.media.length - 1, nextIndex)));
+  }, [group.media.length, width]);
+
   return (
     <View style={[styles.card, { height }]}>
       <Pressable
@@ -114,9 +183,14 @@ const TimelineFeedCard = React.memo(function TimelineFeedCard({ group, width, he
         horizontal
         style={{ height: width, flexGrow: 0 }}
         pagingEnabled
+        directionalLockEnabled
+        nestedScrollEnabled
+        decelerationRate="fast"
+        disableIntervalMomentum
         data={group.media}
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={handlePageSettled}
         renderItem={({ item, index }) => (
           <Pressable
             onPress={() => navigation.navigate('ConversationMedia', {
@@ -138,9 +212,9 @@ const TimelineFeedCard = React.memo(function TimelineFeedCard({ group, width, he
 
       <View style={styles.details}>
         {group.media.length > 1 ? (
-          <View style={styles.mediaCountPill}>
-            <Ionicons name="copy-outline" size={11} color={theme.colors.text} />
-            <Text style={styles.mediaCount}>{group.media.length} shared items</Text>
+          <View style={styles.mediaPagerRow}>
+            <MemoryPagerDots total={group.media.length} activeIndex={pageIndex} styles={styles} />
+            <Text style={styles.mediaPagerLabel}>From Chat · {pageIndex + 1}/{group.media.length}</Text>
           </View>
         ) : null}
         {group.messageBody ? (
@@ -235,6 +309,10 @@ const EventMemoryFeedCard = React.memo(function EventMemoryFeedCard({ event, wid
       <FlatList
         horizontal
         pagingEnabled
+        directionalLockEnabled
+        nestedScrollEnabled
+        decelerationRate="fast"
+        disableIntervalMomentum
         data={pages}
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
@@ -305,19 +383,9 @@ const EventMemoryFeedCard = React.memo(function EventMemoryFeedCard({ event, wid
 
       <View style={styles.eventMemoryDetails}>
         <View style={styles.eventMemoryPagerRow}>
-          <View style={styles.eventMemoryDots}>
-            {pages.map((page, index) => (
-              <View
-                key={page.id}
-                style={[
-                  styles.eventMemoryDot,
-                  index === pageIndex && styles.eventMemoryDotActive,
-                ]}
-              />
-            ))}
-          </View>
+          <MemoryPagerDots total={pages.length} activeIndex={pageIndex} styles={styles} />
           <Text style={styles.eventMemoryPageLabel} numberOfLines={1}>
-            {eventTitle}
+            {eventTitle} · {pageIndex + 1}/{pages.length}
           </Text>
         </View>
 
@@ -440,6 +508,10 @@ const PlanMemoryFeedCard = React.memo(function PlanMemoryFeedCard({ plan, linked
       <FlatList
         horizontal
         pagingEnabled
+        directionalLockEnabled
+        nestedScrollEnabled
+        decelerationRate="fast"
+        disableIntervalMomentum
         data={pages}
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
@@ -500,19 +572,9 @@ const PlanMemoryFeedCard = React.memo(function PlanMemoryFeedCard({ plan, linked
       <View style={styles.storyMemoryDetails}>
         {pages.length > 1 ? (
           <View style={styles.planMemoryPagerRow}>
-            <View style={styles.eventMemoryDots}>
-              {pages.map((page, index) => (
-                <View
-                  key={page.id}
-                  style={[
-                    styles.eventMemoryDot,
-                    index === pageIndex && styles.eventMemoryDotActive,
-                  ]}
-                />
-              ))}
-            </View>
+            <MemoryPagerDots total={pages.length} activeIndex={pageIndex} styles={styles} />
             <Text style={styles.planMemoryAlbumLabel} numberOfLines={1}>
-              {linkedAlbum?.title || 'Linked album'}
+              {linkedAlbum?.title || 'Linked album'} · {pageIndex + 1}/{pages.length}
             </Text>
           </View>
         ) : null}
@@ -700,6 +762,13 @@ function CircleTimelineFeedContent({ route, navigation }) {
   const { width } = useWindowDimensions();
   const stageWidth = Math.min(width - 24, 696);
   const cardHeight = stageWidth + 186;
+  const timelineRowHeight = cardHeight + TIMELINE_CARD_GAP + TIMELINE_CHAPTER_SLOT_HEIGHT;
+  const timelineScrollY = useSharedValue(0);
+  const handleTimelineScroll = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      timelineScrollY.value = event.contentOffset.y;
+    },
+  });
   const [items, setItems] = useState(initialItems);
   const itemsRef = useRef(initialItems);
   const [eventMemories, setEventMemories] = useState(initialMemories);
@@ -935,8 +1004,21 @@ function CircleTimelineFeedContent({ route, navigation }) {
     sharedThoughts,
   ]);
 
+  const composedFeedItems = useMemo(() => {
+    let previousChapterKey = null;
+    return feedItems.map((item) => {
+      const chapter = timelineChapter(item.sortAt);
+      const showChapter = chapter.key !== previousChapterKey;
+      previousChapterKey = chapter.key;
+      return {
+        ...item,
+        timelineChapterLabel: showChapter ? chapter.label : '',
+      };
+    });
+  }, [feedItems]);
+
   const initialIndex = useMemo(() => {
-    const index = feedItems.findIndex((item) => {
+    const index = composedFeedItems.findIndex((item) => {
       if (item.kind === 'event_memory') return Boolean(initialEventId && item.id === initialEventId);
       if (item.kind === 'plan_memory') return Boolean(initialPlanId && item.id === initialPlanId);
       if (item.kind === 'important_date_memory') return Boolean(initialImportantDateId && item.id === initialImportantDateId);
@@ -944,11 +1026,12 @@ function CircleTimelineFeedContent({ route, navigation }) {
       return item.media.some((media) => media.id === initialMediaId);
     });
     return index >= 0 ? index : 0;
-  }, [feedItems, initialEventId, initialImportantDateId, initialMediaId, initialPlanId, initialThoughtId]);
+  }, [composedFeedItems, initialEventId, initialImportantDateId, initialMediaId, initialPlanId, initialThoughtId]);
 
   const renderTimelineGroup = useCallback(({ item }) => {
+    let card;
     if (item.kind === 'event_memory') {
-      return (
+      card = (
         <EventMemoryFeedCard
           event={item}
           width={stageWidth}
@@ -960,9 +1043,8 @@ function CircleTimelineFeedContent({ route, navigation }) {
           circleName={circleName}
         />
       );
-    }
-    if (item.kind === 'plan_memory') {
-      return (
+    } else if (item.kind === 'plan_memory') {
+      card = (
         <PlanMemoryFeedCard
           plan={item}
           linkedAlbum={item.linkedAlbum}
@@ -975,9 +1057,8 @@ function CircleTimelineFeedContent({ route, navigation }) {
           circleName={circleName}
         />
       );
-    }
-    if (item.kind === 'important_date_memory') {
-      return (
+    } else if (item.kind === 'important_date_memory') {
+      card = (
         <ImportantDateMemoryFeedCard
           item={item}
           width={stageWidth}
@@ -989,9 +1070,8 @@ function CircleTimelineFeedContent({ route, navigation }) {
           circleName={circleName}
         />
       );
-    }
-    if (item.kind === 'thought_memory') {
-      return (
+    } else if (item.kind === 'thought_memory') {
+      card = (
         <ThoughtMemoryFeedCard
           thought={item}
           width={stageWidth}
@@ -1003,18 +1083,42 @@ function CircleTimelineFeedContent({ route, navigation }) {
           circleName={circleName}
         />
       );
+    } else {
+      card = (
+        <TimelineFeedCard
+          group={item}
+          width={stageWidth}
+          height={cardHeight}
+          navigation={navigation}
+          styles={styles}
+          theme={theme}
+        />
+      );
     }
+
     return (
-      <TimelineFeedCard
-        group={item}
-        width={stageWidth}
-        height={cardHeight}
-        navigation={navigation}
-        styles={styles}
-        theme={theme}
-      />
+      <View style={[styles.timelineRow, { height: timelineRowHeight }]}>
+        <View style={styles.timelineChapterSlot}>
+          {item.timelineChapterLabel ? (
+            <View style={styles.timelineChapterRow}>
+              <Text style={styles.timelineChapterLabel}>{item.timelineChapterLabel}</Text>
+              <View style={styles.timelineChapterLine} />
+            </View>
+          ) : null}
+        </View>
+        <MemoryLiftSurface
+          scrollY={timelineScrollY}
+          focusRatio={0.51}
+          minScale={0.986}
+          maxScale={1.008}
+          lift={4}
+          style={styles.timelineLiftShell}
+        >
+          {card}
+        </MemoryLiftSurface>
+      </View>
     );
-  }, [cardHeight, circleName, conversationId, navigation, stageWidth, styles, theme]);
+  }, [cardHeight, circleName, conversationId, navigation, stageWidth, styles, theme, timelineRowHeight, timelineScrollY]);
 
   if (loading) {
     return (
@@ -1043,13 +1147,13 @@ function CircleTimelineFeedContent({ route, navigation }) {
           </Pressable>
         </View>
       ) : (
-        <FlatList
-          data={feedItems}
+        <Animated.FlatList
+          data={composedFeedItems}
           keyExtractor={(item) => `${item.kind}:${item.id}`}
-          initialScrollIndex={feedItems.length ? initialIndex : undefined}
+          initialScrollIndex={composedFeedItems.length ? initialIndex : undefined}
           getItemLayout={(_, index) => ({
-            length: cardHeight + 12,
-            offset: (cardHeight + 12) * index,
+            length: timelineRowHeight,
+            offset: timelineRowHeight * index,
             index,
           })}
           renderItem={renderTimelineGroup}
@@ -1057,6 +1161,9 @@ function CircleTimelineFeedContent({ route, navigation }) {
           maxToRenderPerBatch={3}
           updateCellsBatchingPeriod={45}
           windowSize={6}
+          directionalLockEnabled
+          onScroll={handleTimelineScroll}
+          scrollEventThrottle={16}
           refreshControl={(
             <RefreshControl
               refreshing={refreshing}
@@ -1095,7 +1202,26 @@ export function CircleTimelineFeedScreen(props) {
 function createStyles(theme) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: theme.circle.profileBackground },
-    listContent: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 34, flexGrow: 1 },
+    listContent: { paddingHorizontal: 12, paddingTop: 5, paddingBottom: 34, flexGrow: 1 },
+    timelineRow: { width: '100%', alignSelf: 'center' },
+    timelineChapterSlot: {
+      height: TIMELINE_CHAPTER_SLOT_HEIGHT,
+      justifyContent: 'center',
+      paddingHorizontal: 4,
+    },
+    timelineChapterRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+    timelineChapterLabel: {
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 8.5,
+      letterSpacing: 1.05,
+    },
+    timelineChapterLine: {
+      flex: 1,
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: theme.circle.accentSoft,
+    },
+    timelineLiftShell: { width: '100%', maxWidth: 696, alignSelf: 'center' },
     card: {
       width: '100%',
       maxWidth: 696,
@@ -1143,6 +1269,21 @@ function createStyles(theme) {
       backgroundColor: theme.circle.accentSoft,
     },
     mediaCount: { color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 10 },
+    mediaPagerRow: {
+      minHeight: 18,
+      marginBottom: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    mediaPagerLabel: {
+      flex: 1,
+      textAlign: 'right',
+      color: theme.colors.subtext,
+      fontFamily: 'Manrope_700Bold',
+      fontSize: 10,
+    },
     caption: { color: theme.colors.text, fontFamily: 'Manrope_400Regular', lineHeight: 19 },
     captionAuthor: { fontFamily: 'Manrope_700Bold' },
     captionMuted: { color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },

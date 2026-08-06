@@ -1,6 +1,13 @@
 import { supabase } from '../lib/supabase';
 import { timeAgo } from '../utils/timeAgo';
+import { hydrateConversationMediaItems } from './conversationMediaService';
+import {
+  addCirclePostComment,
+  listCirclePostComments,
+  toggleCirclePostLike,
+} from './circlePostService';
 
+let unifiedFeedAvailable = true;
 let optimizedFeedAvailable = true;
 
 function fallbackMedia(row) {
@@ -33,48 +40,42 @@ function normalizeMedia(media, row) {
   })).filter((item) => item.url);
 }
 
-export function mapFeedRow(row, enrichment = {}) {
-  const media = enrichment.mediaByPost?.get(row.id) || fallbackMedia(row);
-  const postMeta = enrichment.postMetaByPost?.get(row.id) || {};
-  const authorId = postMeta.user_id || row.user_id || null;
+function normalizeCircleFeedMedia(media, row) {
+  if (!Array.isArray(media) || media.length === 0) return [];
 
+  return media.map((item, index) => ({
+    id: item.id || `${row.id}-media-${index}`,
+    post_id: item.post_id || row.id,
+    url: item.url || null,
+    storagePath: item.storage_path || item.storagePath || null,
+    media_type: item.media_type || 'image',
+    width: Number(item.width || 0) || null,
+    height: Number(item.height || 0) || null,
+    durationMs: Number(item.duration_ms || item.durationMs || 0) || null,
+    sortOrder: Number(item.sort_order ?? item.sortOrder ?? index),
+    created_at: item.created_at || row.created_at,
+  }));
+}
+
+function baseFeedShape({
+  row,
+  sourceType,
+  media,
+  authorId,
+  commentCount,
+  canEdit,
+  circle,
+}) {
   return {
     id: row.id,
+    feedKey: `${sourceType}:${row.id}`,
+    sourceType,
     user: {
       id: authorId,
       name: row.author_name || 'Unknown',
       avatarUri: row.author_avatar || null,
     },
-    media,
-    presentation: {
-      mediaPresentations: Array.isArray(postMeta.media_presentations) ? postMeta.media_presentations : [],
-      aspectRatio: postMeta.display_aspect_ratio == null ? null : Number(postMeta.display_aspect_ratio),
-      cropPoints: Array.isArray(postMeta.media_crop_points) ? postMeta.media_crop_points : [],
-    },
-    uri: media[0]?.url || row.image_url || null,
-    liked: Boolean(row.liked_by_me),
-    likes: Number(row.likes_count || 0),
-    commentCount: Number(
-      enrichment.commentCountByPost?.get(row.id)
-      ?? row.comment_count
-      ?? 0
-    ),
-    caption: row.caption || '',
-    time: timeAgo(row.created_at),
-    created_at: row.created_at,
-  };
-}
-
-function mapOptimizedFeedRow(row) {
-  const media = normalizeMedia(row.media, row);
-
-  return {
-    id: row.id,
-    user: {
-      id: row.user_id || null,
-      name: row.author_name || 'Unknown',
-      avatarUri: row.author_avatar || null,
-    },
+    circle: circle || null,
     media,
     presentation: {
       mediaPresentations: Array.isArray(row.media_presentations) ? row.media_presentations : [],
@@ -84,11 +85,97 @@ function mapOptimizedFeedRow(row) {
     uri: media[0]?.url || row.image_url || null,
     liked: Boolean(row.liked_by_me),
     likes: Number(row.likes_count || 0),
-    commentCount: Number(row.comment_count || 0),
+    commentCount: Number(commentCount ?? row.comment_count ?? 0),
     caption: row.caption || '',
     time: timeAgo(row.created_at),
     created_at: row.created_at,
+    canEdit: Boolean(canEdit),
   };
+}
+
+export function mapFeedRow(row, enrichment = {}) {
+  const media = enrichment.mediaByPost?.get(row.id) || fallbackMedia(row);
+  const postMeta = enrichment.postMetaByPost?.get(row.id) || {};
+  const authorId = postMeta.user_id || row.user_id || null;
+
+  return baseFeedShape({
+    row,
+    sourceType: 'personal',
+    media,
+    authorId,
+    commentCount: enrichment.commentCountByPost?.get(row.id),
+    canEdit: false,
+    circle: null,
+  });
+}
+
+function mapOptimizedFeedRow(row) {
+  const media = normalizeMedia(row.media, row);
+
+  return baseFeedShape({
+    row,
+    sourceType: 'personal',
+    media,
+    authorId: row.user_id || null,
+    canEdit: false,
+    circle: null,
+  });
+}
+
+function mapUnifiedFeedRow(row) {
+  const sourceType = row.source_type === 'circle' ? 'circle' : 'personal';
+  const media = sourceType === 'circle'
+    ? normalizeCircleFeedMedia(row.media, row)
+    : normalizeMedia(row.media, row);
+
+  return baseFeedShape({
+    row,
+    sourceType,
+    media,
+    authorId: row.user_id || null,
+    canEdit: Boolean(row.can_edit),
+    circle: sourceType === 'circle'
+      ? {
+          id: row.circle_id || null,
+          name: row.circle_name || 'Circle',
+          avatarUri: row.circle_avatar || null,
+        }
+      : null,
+  });
+}
+
+async function hydrateUnifiedCircleMedia(posts) {
+  const circleMedia = posts.flatMap((post) => (
+    post.sourceType === 'circle'
+      ? (post.media || [])
+        .filter((item) => item.storagePath)
+        .map((item) => ({ ...item, feedKey: post.feedKey }))
+      : []
+  ));
+
+  if (!circleMedia.length) return posts;
+
+  const hydrated = await hydrateConversationMediaItems(circleMedia);
+  const byFeedKey = new Map();
+
+  hydrated.forEach((item) => {
+    const current = byFeedKey.get(item.feedKey) || [];
+    current.push(item);
+    byFeedKey.set(item.feedKey, current);
+  });
+
+  return posts.map((post) => {
+    if (post.sourceType !== 'circle') return post;
+    const hydratedMedia = byFeedKey.get(post.feedKey);
+    if (!hydratedMedia) return post;
+    const media = hydratedMedia
+      .sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0));
+    return {
+      ...post,
+      media,
+      uri: media[0]?.url || null,
+    };
+  });
 }
 
 function isMissingFunctionError(error, functionName) {
@@ -160,10 +247,7 @@ async function fetchLegacyFeedPage({ limit, before }) {
   return rows.map((row) => mapFeedRow(row, enrichment));
 }
 
-export async function fetchFeedPage({
-  limit = 10,
-  before = new Date().toISOString(),
-} = {}) {
+async function fetchPersonalFeedPage({ limit, before }) {
   let posts = null;
 
   if (optimizedFeedAvailable) {
@@ -183,6 +267,34 @@ export async function fetchFeedPage({
 
   if (!posts) {
     posts = await fetchLegacyFeedPage({ limit, before });
+  }
+
+  return posts;
+}
+
+export async function fetchFeedPage({
+  limit = 10,
+  before = new Date().toISOString(),
+} = {}) {
+  let posts = null;
+
+  if (unifiedFeedAvailable) {
+    const { data, error } = await supabase.rpc('get_feed_v3', {
+      limit_count: limit,
+      before,
+    });
+
+    if (!error) {
+      posts = await hydrateUnifiedCircleMedia((data || []).map(mapUnifiedFeedRow));
+    } else if (isMissingFunctionError(error, 'get_feed_v3')) {
+      unifiedFeedAvailable = false;
+    } else {
+      throw error;
+    }
+  }
+
+  if (!posts) {
+    posts = await fetchPersonalFeedPage({ limit, before });
   }
 
   return {
@@ -251,4 +363,36 @@ export async function togglePostLike(postId) {
 
   if (error) throw error;
   return data;
+}
+
+export async function fetchFeedComments(post) {
+  if (post?.sourceType !== 'circle') {
+    return fetchPostComments(post?.id);
+  }
+
+  const rows = await listCirclePostComments(post.id);
+  return rows.map((row) => ({
+    id: row.id,
+    userId: row.userId || null,
+    userName: row.displayName || 'Circle member',
+    avatarUri: row.avatarUri || null,
+    text: row.body || '',
+    createdAt: row.createdAt,
+    pending: false,
+  }));
+}
+
+export async function addFeedComment(post, body) {
+  if (post?.sourceType !== 'circle') {
+    return addPostComment(post?.id, body);
+  }
+  return addCirclePostComment(post.id, body);
+}
+
+export async function toggleFeedLike(post) {
+  if (post?.sourceType !== 'circle') {
+    await togglePostLike(post?.id);
+    return null;
+  }
+  return toggleCirclePostLike(post.id);
 }

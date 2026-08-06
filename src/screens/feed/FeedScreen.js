@@ -21,16 +21,20 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { supabase } from '../../lib/supabase';
 import {
-  addPostComment,
+  addFeedComment,
+  fetchFeedComments,
   fetchFeedPage,
-  fetchPostComments,
-  togglePostLike,
+  toggleFeedLike,
 } from '../../services/feedService';
 import {
   deleteOwnStory,
   fetchActiveStories,
 } from '../../services/storyService';
 import { deleteOwnPost } from '../../services/postService';
+import {
+  deleteOwnCirclePost,
+  subscribeToCirclePostChanges,
+} from '../../services/circlePostService';
 import {
   fetchMyMutualPreviewPostId,
   setMyMutualPreviewPost,
@@ -94,7 +98,9 @@ function sameFeedMedia(left, right) {
 }
 
 function sameFeedPost(left, right) {
-  return left?.id === right?.id
+  return left?.feedKey === right?.feedKey
+    && left?.id === right?.id
+    && left?.sourceType === right?.sourceType
     && left?.user?.id === right?.user?.id
     && left?.user?.name === right?.user?.name
     && left?.user?.avatarUri === right?.user?.avatarUri
@@ -104,6 +110,10 @@ function sameFeedPost(left, right) {
     && left?.liked === right?.liked
     && left?.likes === right?.likes
     && left?.commentCount === right?.commentCount
+    && left?.canEdit === right?.canEdit
+    && left?.circle?.id === right?.circle?.id
+    && left?.circle?.name === right?.circle?.name
+    && left?.circle?.avatarUri === right?.circle?.avatarUri
     && sameFeedMedia(left?.media, right?.media)
     && sameArrayJson(
       left?.presentation?.mediaPresentations,
@@ -135,6 +145,40 @@ const FeedPostRow = React.memo(function FeedPostRow({
   onManagePost,
 }) {
   const openPost = useCallback(() => {
+    if (post.sourceType === 'circle' && post.circle?.id) {
+      writeNavigationCache(navigationCacheKeys.circlePost(post.id), {
+        id: post.id,
+        conversationId: post.circle.id,
+        authorId: post.user.id,
+        authorName: post.user.name || 'Circle member',
+        authorAvatar: post.user.avatarUri || null,
+        caption: post.caption || '',
+        media: (post.media || []).map((item, index) => ({
+          id: item.id,
+          storagePath: item.storagePath || null,
+          url: item.url || null,
+          mediaType: item.media_type || 'image',
+          width: Number(item.width || 0) || null,
+          height: Number(item.height || 0) || null,
+          durationMs: Number(item.durationMs || 0) || null,
+          sortOrder: Number(item.sortOrder ?? index),
+          createdAt: item.created_at || post.created_at,
+        })),
+        commentCount: Number(post.commentCount || 0),
+        likeCount: Number(post.likes || 0),
+        likedByMe: Boolean(post.liked),
+        canEdit: Boolean(post.canEdit),
+        createdAt: post.created_at,
+        editedAt: null,
+        presentation: post.presentation || {},
+      });
+      navigation.navigate('CirclePostDetail', {
+        conversationId: post.circle.id,
+        postId: post.id,
+      });
+      return;
+    }
+
     writeNavigationCache(navigationCacheKeys.postPreview(post.id), {
       post: {
         id: post.id,
@@ -167,18 +211,31 @@ const FeedPostRow = React.memo(function FeedPostRow({
     });
   }, [navigation, post.user.id, post.user.name]);
 
+  const openCircle = useCallback(() => {
+    if (!post.circle?.id) return;
+    const tabsNavigation = navigation.getParent();
+    tabsNavigation?.navigate('Circles', {
+      screen: 'CircleProfile',
+      params: { conversationId: post.circle.id },
+    });
+  }, [navigation, post.circle?.id]);
+
   const toggleLike = useCallback(
-    () => onToggleLike(post.id),
-    [onToggleLike, post.id]
+    () => onToggleLike(post),
+    [onToggleLike, post]
   );
   const openComments = useCallback(
-    () => onOpenComments(post.id),
-    [onOpenComments, post.id]
+    () => onOpenComments(post),
+    [onOpenComments, post]
   );
   const openMenu = useCallback(
     () => onManagePost(post),
     [onManagePost, post]
   );
+
+  const canManage = post.sourceType === 'circle'
+    ? Boolean(post.canEdit)
+    : post.user.id === currentUserId;
 
   return (
     <PostCard
@@ -189,7 +246,8 @@ const FeedPostRow = React.memo(function FeedPostRow({
       onOpenComments={openComments}
       onOpenPost={openPost}
       onOpenProfile={post.user.id ? openProfile : undefined}
-      onOpenMenu={post.user.id === currentUserId ? openMenu : undefined}
+      onOpenCircle={post.circle?.id ? openCircle : undefined}
+      onOpenMenu={canManage ? openMenu : undefined}
     />
   );
 });
@@ -211,7 +269,7 @@ export function FeedScreen({ navigation }) {
   const [cursor, setCursor] = useState(cachedFeed?.cursor || null);
   const [hasMore, setHasMore] = useState(cachedFeed?.hasMore ?? true);
 
-  const [openPostId, setOpenPostId] = useState(null);
+  const [commentsPost, setCommentsPost] = useState(null);
   const [activeComments, setActiveComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState(null);
@@ -244,7 +302,7 @@ export function FeedScreen({ navigation }) {
   const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
     const nextVisibleIds = new Set(
       viewableItems
-        .map((item) => item.item?.id)
+        .map((item) => item.item?.feedKey || item.item?.id)
         .filter(Boolean)
     );
     setVisiblePostIds((current) => (
@@ -280,7 +338,8 @@ export function FeedScreen({ navigation }) {
         const nextPosts = reconcileRowsById(
           postsRef.current,
           page.posts,
-          sameFeedPost
+          sameFeedPost,
+          (post) => post?.feedKey || post?.id
         );
         setPosts(nextPosts);
         postsRef.current = nextPosts;
@@ -345,6 +404,7 @@ export function FeedScreen({ navigation }) {
     mountedRef.current = true;
     let feedChannel = null;
     let storyChannel = null;
+    let unsubscribeCirclePosts = null;
 
     const start = async () => {
       try {
@@ -375,6 +435,14 @@ export function FeedScreen({ navigation }) {
 
         if (!mountedRef.current) return;
 
+        const scheduleFeedRefresh = () => {
+          if (feedRealtimeTimerRef.current) clearTimeout(feedRealtimeTimerRef.current);
+          feedRealtimeTimerRef.current = setTimeout(
+            () => refreshFeed('silent'),
+            FEED_REALTIME_DEBOUNCE_MS
+          );
+        };
+
         feedChannel = supabase
           .channel('feed_rt')
           .on(
@@ -384,15 +452,13 @@ export function FeedScreen({ navigation }) {
               schema: 'public',
               table: 'posts',
             },
-            () => {
-              if (feedRealtimeTimerRef.current) clearTimeout(feedRealtimeTimerRef.current);
-              feedRealtimeTimerRef.current = setTimeout(
-                () => refreshFeed('silent'),
-                FEED_REALTIME_DEBOUNCE_MS
-              );
-            }
+            scheduleFeedRefresh
           )
           .subscribe();
+
+        unsubscribeCirclePosts = subscribeToCirclePostChanges({
+          onChange: scheduleFeedRefresh,
+        });
 
         storyChannel = supabase
           .channel('stories_rt')
@@ -428,6 +494,7 @@ export function FeedScreen({ navigation }) {
       mountedRef.current = false;
       if (feedChannel) supabase.removeChannel(feedChannel);
       if (storyChannel) supabase.removeChannel(storyChannel);
+      unsubscribeCirclePosts?.();
       if (feedRealtimeTimerRef.current) clearTimeout(feedRealtimeTimerRef.current);
       if (storyRealtimeTimerRef.current) clearTimeout(storyRealtimeTimerRef.current);
     };
@@ -512,10 +579,10 @@ export function FeedScreen({ navigation }) {
 
       setPosts((currentPosts) => {
         const seen = new Set(
-          currentPosts.map((post) => post.id)
+          currentPosts.map((post) => post.feedKey || post.id)
         );
         const newPosts = page.posts.filter(
-          (post) => !seen.has(post.id)
+          (post) => !seen.has(post.feedKey || post.id)
         );
         return [...currentPosts, ...newPosts];
       });
@@ -532,16 +599,17 @@ export function FeedScreen({ navigation }) {
     }
   }, [authed, cursor, hasMore, loadingMore]);
 
-  const toggleLike = useCallback(async (postId) => {
-    if (likeRequestsRef.current.has(postId)) return;
+  const toggleLike = useCallback(async (post) => {
+    const feedKey = post?.feedKey || post?.id;
+    if (!post?.id || !feedKey || likeRequestsRef.current.has(feedKey)) return;
 
     const previousPost = postsRef.current.find(
-      (post) => post.id === postId
+      (candidate) => (candidate.feedKey || candidate.id) === feedKey
     );
 
     if (!previousPost) return;
 
-    likeRequestsRef.current.add(postId);
+    likeRequestsRef.current.add(feedKey);
 
     const nextLiked = !previousPost.liked;
     const nextLikes = Math.max(
@@ -550,23 +618,30 @@ export function FeedScreen({ navigation }) {
     );
 
     setPosts((currentPosts) =>
-      currentPosts.map((post) =>
-        post.id === postId
+      currentPosts.map((candidate) =>
+        (candidate.feedKey || candidate.id) === feedKey
           ? {
-              ...post,
+              ...candidate,
               liked: nextLiked,
               likes: nextLikes,
             }
-          : post
+          : candidate
       )
     );
 
     try {
-      await togglePostLike(postId);
+      const result = await toggleFeedLike(previousPost);
+      if (previousPost.sourceType === 'circle' && result) {
+        setPosts((currentPosts) => currentPosts.map((candidate) => (
+          (candidate.feedKey || candidate.id) === feedKey
+            ? { ...candidate, liked: result.liked, likes: result.likeCount }
+            : candidate
+        )));
+      }
     } catch (error) {
       setPosts((currentPosts) =>
-        currentPosts.map((post) =>
-          post.id === postId ? previousPost : post
+        currentPosts.map((candidate) =>
+          (candidate.feedKey || candidate.id) === feedKey ? previousPost : candidate
         )
       );
 
@@ -575,23 +650,25 @@ export function FeedScreen({ navigation }) {
         errorMessage(error, 'Please try again.')
       );
     } finally {
-      likeRequestsRef.current.delete(postId);
+      likeRequestsRef.current.delete(feedKey);
     }
   }, []);
 
-  const loadComments = useCallback(async (postId) => {
+  const loadComments = useCallback(async (post) => {
+    if (!post?.id) return;
+    const feedKey = post.feedKey || post.id;
     setCommentsLoading(true);
     setCommentsError(null);
 
     try {
-      const comments = await fetchPostComments(postId);
+      const comments = await fetchFeedComments(post);
       if (mountedRef.current) {
         setActiveComments(comments);
         setPosts((currentPosts) =>
-          currentPosts.map((post) =>
-            post.id === postId
-              ? { ...post, commentCount: comments.length }
-              : post
+          currentPosts.map((candidate) =>
+            (candidate.feedKey || candidate.id) === feedKey
+              ? { ...candidate, commentCount: comments.length }
+              : candidate
           )
         );
       }
@@ -606,25 +683,26 @@ export function FeedScreen({ navigation }) {
   }, []);
 
   const openComments = useCallback(
-    (postId) => {
-      setOpenPostId(postId);
+    (post) => {
+      setCommentsPost(post);
       setActiveComments([]);
-      loadComments(postId);
+      loadComments(post);
     },
     [loadComments]
   );
 
   const closeComments = useCallback(() => {
-    setOpenPostId(null);
+    setCommentsPost(null);
     setActiveComments([]);
     setCommentsError(null);
   }, []);
 
   const submitComment = useCallback(async (body) => {
     const text = String(body || '').trim();
-    const postId = openPostId;
+    const post = commentsPost;
+    const feedKey = post?.feedKey || post?.id;
 
-    if (!text || !postId) return;
+    if (!text || !post?.id || !feedKey) return;
 
     const temporaryId = localCommentId();
     const temporaryComment = {
@@ -640,16 +718,16 @@ export function FeedScreen({ navigation }) {
     setActiveComments((comments) => [...comments, temporaryComment]);
 
     try {
-      await addPostComment(postId, text);
-      const comments = await fetchPostComments(postId);
+      await addFeedComment(post, text);
+      const comments = await fetchFeedComments(post);
 
-      if (mountedRef.current && openPostId === postId) {
+      if (mountedRef.current && (commentsPost?.feedKey || commentsPost?.id) === feedKey) {
         setActiveComments(comments);
         setPosts((currentPosts) =>
-          currentPosts.map((post) =>
-            post.id === postId
-              ? { ...post, commentCount: comments.length }
-              : post
+          currentPosts.map((candidate) =>
+            (candidate.feedKey || candidate.id) === feedKey
+              ? { ...candidate, commentCount: comments.length }
+              : candidate
           )
         );
       }
@@ -661,7 +739,7 @@ export function FeedScreen({ navigation }) {
       }
       throw error;
     }
-  }, [currentUserId, openPostId]);
+  }, [commentsPost, currentUserId]);
 
   const retryFeed = useCallback(() => {
     refreshFeed('initial');
@@ -691,7 +769,7 @@ export function FeedScreen({ navigation }) {
         currentPosts.filter((post) => post.id !== postId)
       );
 
-      if (openPostId === postId) closeComments();
+      if (commentsPost?.id === postId && commentsPost?.sourceType !== 'circle') closeComments();
       if (mutualPreviewPostId === postId) setMutualPreviewPostId(null);
       setManagedPost(null);
     } catch (error) {
@@ -702,7 +780,7 @@ export function FeedScreen({ navigation }) {
     } finally {
       if (mountedRef.current) setDeletingPostId(null);
     }
-  }, [closeComments, deletingPostId, managedPost, mutualPreviewPostId, openPostId]);
+  }, [closeComments, commentsPost, deletingPostId, managedPost, mutualPreviewPostId]);
 
   const toggleManagedPreview = useCallback(async () => {
     if (!managedPost?.id || previewSaving) return;
@@ -817,20 +895,74 @@ export function FeedScreen({ navigation }) {
     });
   }, [stories, storyIndex]);
 
+  const manageFeedPost = useCallback((post) => {
+    if (post?.sourceType !== 'circle') {
+      setManagedPost(post);
+      return;
+    }
+    if (!post?.canEdit || !post.circle?.id) return;
+
+    const edit = () => navigation.navigate('EditCirclePost', {
+      postId: post.id,
+      conversationId: post.circle.id,
+    });
+
+    const remove = () => {
+      Alert.alert(
+        'Delete this Circle post?',
+        'The post, comments, likes, and its separately uploaded media will be removed from the Circle.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete Post',
+            style: 'destructive',
+            onPress: async () => {
+              setDeletingPostId(post.id);
+              try {
+                await deleteOwnCirclePost(post.id);
+                const feedKey = post.feedKey || post.id;
+                setPosts((current) => current.filter(
+                  (candidate) => (candidate.feedKey || candidate.id) !== feedKey
+                ));
+                if ((commentsPost?.feedKey || commentsPost?.id) === feedKey) {
+                  closeComments();
+                }
+              } catch (error) {
+                Alert.alert(
+                  'Circle post not deleted',
+                  errorMessage(error, 'Please try again.')
+                );
+              } finally {
+                if (mountedRef.current) setDeletingPostId(null);
+              }
+            },
+          },
+        ]
+      );
+    };
+
+    Alert.alert('Circle post options', null, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Edit Caption', onPress: edit },
+      { text: 'Delete Post', style: 'destructive', onPress: remove },
+    ]);
+  }, [closeComments, commentsPost, navigation]);
+
   const renderFeedPost = useCallback(({ item }) => (
     <FeedPostRow
       post={item}
-      isVisible={visiblePostIds.has(item.id)}
+      isVisible={visiblePostIds.has(item.feedKey || item.id)}
       currentUserId={currentUserId}
       navigation={navigation}
       onToggleLike={toggleLike}
       onOpenComments={openComments}
-      onManagePost={setManagedPost}
+      onManagePost={manageFeedPost}
     />
   ), [
     currentUserId,
     navigation,
     openComments,
+    manageFeedPost,
     toggleLike,
     visiblePostIds,
   ]);
@@ -869,7 +1001,7 @@ export function FeedScreen({ navigation }) {
       <FlatList
         style={styles.feedList}
         data={posts}
-        keyExtractor={(post) => post.id}
+        keyExtractor={(post) => post.feedKey || post.id}
         initialNumToRender={4}
         maxToRenderPerBatch={4}
         updateCellsBatchingPeriod={40}
@@ -895,7 +1027,7 @@ export function FeedScreen({ navigation }) {
                 <View>
                   <Text style={styles.feedTitle}>Feed</Text>
                   <Text style={styles.feedSubtitle}>
-                    What your people have shared lately.
+                    What your people and Circles have shared lately.
                   </Text>
                 </View>
                 <Pressable
@@ -971,7 +1103,7 @@ export function FeedScreen({ navigation }) {
             />
             <Text style={styles.emptyTitle}>Your feed is ready</Text>
             <Text style={styles.emptyBody}>
-              New posts from your circles will appear here.
+              New posts shared with you — personally or inside your Circles — will appear here.
             </Text>
             <Pressable
               onPress={() => navigation.navigate('CreatePost')}
@@ -995,7 +1127,7 @@ export function FeedScreen({ navigation }) {
       />
 
       <InstagramCommentsSheet
-        visible={Boolean(openPostId)}
+        visible={Boolean(commentsPost)}
         comments={activeComments.map((comment) => ({
           id: comment.id,
           userId: comment.userId || null,
@@ -1008,13 +1140,13 @@ export function FeedScreen({ navigation }) {
         loading={commentsLoading}
         error={commentsError || ''}
         onSubmit={submitComment}
-        onRetry={() => openPostId && loadComments(openPostId)}
+        onRetry={() => commentsPost && loadComments(commentsPost)}
         onOpenProfile={(userId) => navigation.navigate('Profile', { userId })}
         onClose={closeComments}
       />
 
       <PostOwnerMenu
-        visible={Boolean(managedPost)}
+        visible={Boolean(managedPost && managedPost.sourceType !== 'circle')}
         busy={Boolean(deletingPostId)}
         previewBusy={previewSaving}
         isMutualPreview={managedPost?.id === mutualPreviewPostId}
