@@ -1,6 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  FlatList,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -10,10 +9,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
 import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
 import { ContinuityLoadingCard } from '../../components/ContinuityLoadingCard';
-import { EventLookArtwork } from '../../components/events/EventLookHero';
+import { EventAlbumMemoryCover } from '../../components/events/EventAlbumMemoryCover';
+import { MemoryLiftSurface } from '../../components/memories/MemoryLiftSurface';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { listCircleEvents } from '../../services/eventService';
@@ -75,7 +76,7 @@ function formatEventDate(startsAt, endsAt) {
   return `${date} · ${startTime}–${endTime}`;
 }
 
-function EventCard({ event, onPress, styles, theme }) {
+function EventCard({ event, memoryIndex = 0, onPress, styles, theme }) {
   const endTime = new Date(event.endsAt || event.startsAt).getTime();
   const isPast = event.status === 'completed' || endTime < Date.now();
 
@@ -92,46 +93,47 @@ function EventCard({ event, onPress, styles, theme }) {
       photoCount > 0 ? `${photoCount} ${photoCount === 1 ? 'photo' : 'photos'}` : null,
     ].filter(Boolean).join(' · ');
 
+    const memoryHeight = [190, 208, 196, 214][memoryIndex % 4];
+
     return (
       <Pressable
         onPress={onPress}
         style={({ pressed }) => [styles.memoryEventCard, pressed && styles.pressed]}
       >
-        <View style={styles.memoryArtworkShell}>
-          <EventLookArtwork
-            appearanceKey={event.appearanceKey || 'circle'}
-            coverUri={event.coverUrl || null}
-            compact
-            style={styles.memoryArtwork}
-          >
-            <View style={styles.memoryArtworkOverlay}>
-              <View style={styles.memoryBadge}>
-                <Ionicons name="sparkles" size={11} color="#fff" />
-                <Text style={styles.memoryBadgeText}>{memoryReady ? 'MEMORY' : 'AFTER GATHERING'}</Text>
-              </View>
-            </View>
-          </EventLookArtwork>
-        </View>
-
-        <View style={styles.memoryEventCopy}>
-          <Text style={styles.memoryEventTitle} numberOfLines={2}>{event.title}</Text>
-          <Text style={styles.memoryEventDate} numberOfLines={1}>
-            {formatEventDate(event.startsAt, event.endsAt)}
-          </Text>
-          {event.locationName ? (
-            <View style={styles.memoryMetaRow}>
-              <Ionicons name="location-outline" size={13} color={theme.colors.subtext} />
-              <Text style={styles.memoryMetaText} numberOfLines={1}>{event.locationName}</Text>
-            </View>
-          ) : null}
-          <View style={styles.memoryFooterRow}>
-            <Text style={styles.memorySummaryText} numberOfLines={1}>{memoryMeta}</Text>
-            <View style={styles.viewMemoryPill}>
-              <Text style={styles.viewMemoryText}>{memoryReady ? 'View memory' : 'Open gathering'}</Text>
-              <Ionicons name="chevron-forward" size={12} color={theme.colors.text} />
+        <EventAlbumMemoryCover
+          appearanceKey={event.appearanceKey || 'circle'}
+          coverUri={event.coverUrl || null}
+          previewUrls={event.previewUrls || []}
+          height={memoryHeight}
+          borderRadius={24}
+        >
+          <View style={styles.memoryArtworkOverlay}>
+            <View style={styles.memoryBadge}>
+              <Ionicons name="sparkles" size={11} color="#fff" />
+              <Text style={styles.memoryBadgeText}>{memoryReady ? 'MEMORY' : 'AFTER GATHERING'}</Text>
             </View>
           </View>
-        </View>
+
+          <View style={styles.memoryEventCopy}>
+            <Text style={styles.memoryEventTitle} numberOfLines={2}>{event.title}</Text>
+            <Text style={styles.memoryEventDate} numberOfLines={1}>
+              {formatEventDate(event.startsAt, event.endsAt)}
+            </Text>
+            {event.locationName ? (
+              <View style={styles.memoryMetaRow}>
+                <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.86)" />
+                <Text style={styles.memoryMetaText} numberOfLines={1}>{event.locationName}</Text>
+              </View>
+            ) : null}
+            <View style={styles.memoryFooterRow}>
+              <Text style={styles.memorySummaryText} numberOfLines={1}>{memoryMeta}</Text>
+              <View style={styles.viewMemoryPill}>
+                <Text style={styles.viewMemoryText}>{memoryReady ? 'View memory' : 'Open gathering'}</Text>
+                <Ionicons name="chevron-forward" size={12} color="#fff" />
+              </View>
+            </View>
+          </View>
+        </EventAlbumMemoryCover>
       </Pressable>
     );
   }
@@ -232,6 +234,12 @@ function CircleEventsContent({ route, navigation }) {
   const { conversationId, circleName = 'Circle' } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const memoryScrollY = useSharedValue(0);
+  const handleMemoryScroll = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      memoryScrollY.value = event.contentOffset.y;
+    },
+  });
   const cachedEvents = readNavigationCache(navigationCacheKeys.circleEvents(conversationId));
   const cachedPolls = readNavigationCache(navigationCacheKeys.circlePolls(conversationId));
   const hasWarmSnapshot = Array.isArray(cachedEvents) && Array.isArray(cachedPolls);
@@ -336,7 +344,7 @@ function CircleEventsContent({ route, navigation }) {
       { rowType: 'section', id: 'upcoming-section', title: 'Upcoming events', count: upcomingEvents.length },
       ...upcomingEvents.map((event) => ({ rowType: 'event', event })),
       { rowType: 'section', id: 'past-section', title: 'Past events', count: pastEvents.length },
-      ...pastEvents.map((event) => ({ rowType: 'event', event })),
+      ...pastEvents.map((event, memoryIndex) => ({ rowType: 'event', event, memoryIndex })),
     ];
   }, [events, pastEvents, upcomingEvents]);
   const openPollCount = useMemo(
@@ -432,18 +440,47 @@ function CircleEventsContent({ route, navigation }) {
     <SafeAreaView edges={['bottom']} style={styles.screen}>
       <CircleBackdrop conversationId={conversationId} imageTintOpacity={0.07} />
       <View pointerEvents="none" style={styles.wallpaperSoftener} />
-      <FlatList
+      <Animated.FlatList
         data={eventRows}
         keyExtractor={(item) => item.rowType === 'section' ? item.id : item.event.id}
         ListHeaderComponent={header}
-        renderItem={({ item }) => item.rowType === 'section' ? (
-          <View style={styles.eventSectionHeader}>
-            <Text style={styles.sectionTitle}>{item.title}</Text>
-            <Text style={styles.sectionCount}>{item.count}</Text>
-          </View>
-        ) : (
-          <EventCard event={item.event} onPress={() => openEvent(item.event)} styles={styles} theme={theme} />
-        )}
+        renderItem={({ item }) => {
+          if (item.rowType === 'section') {
+            return (
+              <View style={styles.eventSectionHeader}>
+                <Text style={styles.sectionTitle}>{item.title}</Text>
+                <Text style={styles.sectionCount}>{item.count}</Text>
+              </View>
+            );
+          }
+
+          const card = (
+            <EventCard
+              event={item.event}
+              memoryIndex={item.memoryIndex || 0}
+              onPress={() => openEvent(item.event)}
+              styles={styles}
+              theme={theme}
+            />
+          );
+
+          if (!Number.isInteger(item.memoryIndex)) return card;
+
+          return (
+            <MemoryLiftSurface
+              scrollY={memoryScrollY}
+              focusRatio={0.56}
+              minScale={0.968}
+              maxScale={1.016}
+              lift={7}
+              style={styles.memoryLiftShell}
+            >
+              {card}
+            </MemoryLiftSurface>
+          );
+        }}
+        onScroll={handleMemoryScroll}
+        scrollEventThrottle={16}
         ListEmptyComponent={loading ? (
           <ContinuityLoadingCard
             label="Loading Circle events…"
@@ -710,22 +747,25 @@ function createStyles(theme) {
     shadowOffset: { width: 0, height: 4 },
     elevation: 1,
   },
+  memoryLiftShell: { marginBottom: 12 },
   memoryEventCard: {
-    marginBottom: 11,
-    borderRadius: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: rgba(theme.circle.accent, 0.22),
+    borderRadius: 24,
     backgroundColor: glassStrong,
-    overflow: 'hidden',
-    shadowColor: theme.colors.text,
-    shadowOpacity: 0.035,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 1,
+    shadowColor: '#071725',
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
   },
-  memoryArtworkShell: { height: 104, overflow: 'hidden' },
-  memoryArtwork: { minHeight: 104, height: 104, borderRadius: 0 },
-  memoryArtworkOverlay: { flex: 1, padding: 11, justifyContent: 'flex-start', alignItems: 'flex-start' },
+  memoryArtworkOverlay: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
   memoryBadge: {
     minHeight: 26,
     paddingHorizontal: 9,
@@ -738,23 +778,25 @@ function createStyles(theme) {
     borderColor: 'rgba(255,255,255,0.30)',
   },
   memoryBadgeText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 9, letterSpacing: 0.7 },
-  memoryEventCopy: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 13 },
-  memoryEventTitle: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 17, lineHeight: 21 },
-  memoryEventDate: { marginTop: 3, color: theme.colors.text, fontFamily: 'Manrope_600SemiBold', fontSize: 11.5 },
+  memoryEventCopy: { position: 'absolute', left: 15, right: 15, bottom: 14 },
+  memoryEventTitle: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 22, lineHeight: 26, textShadowColor: 'rgba(0,0,0,0.28)', textShadowRadius: 8 },
+  memoryEventDate: { marginTop: 3, color: 'rgba(255,255,255,0.92)', fontFamily: 'Manrope_600SemiBold', fontSize: 11.5 },
   memoryMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },
-  memoryMetaText: { flex: 1, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular', fontSize: 11 },
+  memoryMetaText: { flex: 1, color: 'rgba(255,255,255,0.84)', fontFamily: 'Manrope_400Regular', fontSize: 11 },
   memoryFooterRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  memorySummaryText: { flex: 1, color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
+  memorySummaryText: { flex: 1, color: 'rgba(255,255,255,0.84)', fontFamily: 'Manrope_600SemiBold', fontSize: 10.5 },
   viewMemoryPill: {
     minHeight: 29,
     paddingHorizontal: 9,
     borderRadius: 999,
-    backgroundColor: rgba(theme.circle.accent, 0.11),
+    backgroundColor: 'rgba(5,16,30,0.34)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.26)',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
   },
-  viewMemoryText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 9.5 },
+  viewMemoryText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 9.5 },
   dateIcon: {
     width: 46,
     height: 46,

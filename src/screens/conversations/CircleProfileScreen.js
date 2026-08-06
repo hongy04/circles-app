@@ -16,7 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { StickerCanvas } from '../../components/decorations/StickerCanvas';
-import { EventLookArtwork } from '../../components/events/EventLookHero';
+import { EventAlbumMemoryCover } from '../../components/events/EventAlbumMemoryCover';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -173,10 +173,13 @@ function EventMemoryTile({ item, size, onPress, styles }) {
         pressed && styles.pressed,
       ]}
     >
-      <EventLookArtwork
+      <EventAlbumMemoryCover
         appearanceKey={item.appearanceKey || 'circle'}
         coverUri={item.coverUrl || null}
-        style={[styles.eventMemoryArtwork, { minHeight: size, height: size }]}
+        previewUrls={item.previewUrls || []}
+        height={size}
+        borderRadius={0}
+        style={styles.eventMemoryArtwork}
       >
         <View style={styles.eventMemoryShade}>
           <View style={styles.eventMemoryBadge}>
@@ -191,7 +194,7 @@ function EventMemoryTile({ item, size, onPress, styles }) {
             </Text>
           </View>
         </View>
-      </EventLookArtwork>
+      </EventAlbumMemoryCover>
     </Pressable>
   );
 }
@@ -427,7 +430,7 @@ function CircleProfileContent({ route, navigation }) {
 
     const request = (async () => {
       try {
-        const rows = await listCircleEventMemories(conversationId);
+        const rows = await listCircleEventMemories(conversationId, { includeTimelineMedia: false });
         setEventMemories(rows);
         writeNavigationCache(navigationCacheKeys.circleEventMemories(conversationId), rows);
         rows.forEach((event) => {
@@ -935,11 +938,10 @@ function CircleProfileContent({ route, navigation }) {
                   onPress={() => {
                     const summary = { ...item, id: item.eventId };
                     writeNavigationCache(navigationCacheKeys.eventSummary(item.eventId), summary);
-                    navigation.navigate('EventDetail', {
-                      eventId: item.eventId,
-                      eventTitle: item.title,
+                    navigation.navigate('CircleTimelineFeed', {
                       conversationId,
                       circleName: conversation?.title || 'Circle',
+                      initialEventId: item.eventId,
                     });
                   }}
                   styles={styles}

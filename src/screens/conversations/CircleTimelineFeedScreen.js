@@ -15,7 +15,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../../components/Avatar';
 import { CircleBackdrop } from '../../components/circles/CircleBackdrop';
-import { EventLookArtwork } from '../../components/events/EventLookHero';
+import { EventAlbumMemoryCover } from '../../components/events/EventAlbumMemoryCover';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { timeAgo } from '../../utils/timeAgo';
@@ -152,72 +152,195 @@ function formatMemoryDate(startsAt) {
 }
 
 const EventMemoryFeedCard = React.memo(function EventMemoryFeedCard({ event, width, height, navigation, styles, theme, conversationId, circleName }) {
-  const heroHeight = Math.min(272, Math.max(210, Math.round(width * 0.66)));
+  const [pageIndex, setPageIndex] = useState(0);
+  const cachedSummary = readNavigationCache(navigationCacheKeys.eventSummary(event.id));
+  const cachedEvents = readNavigationCache(navigationCacheKeys.circleEvents(conversationId));
+  const cachedListEvent = Array.isArray(cachedEvents)
+    ? cachedEvents.find((candidate) => candidate?.id === event.id)
+    : null;
+  const eventTitle = String(
+    event?.title
+      || cachedSummary?.title
+      || cachedSummary?.eventTitle
+      || cachedListEvent?.title
+      || ''
+  ).trim() || 'Event memory';
   const attended = event.attendanceReviewedAt
     ? Number(event.attendedCount || 0)
     : Number(event.goingCount || 0);
   const photoCount = Number(event.photoCount || 0);
+  const photoUrls = useMemo(() => Array.from(new Set([
+    ...(event.timelineUrls || []),
+    ...(event.previewUrls || []),
+  ].filter(Boolean))).slice(0, 6), [event.previewUrls, event.timelineUrls]);
+  const pages = useMemo(() => [
+    { id: `event-summary:${event.id}`, kind: 'summary' },
+    ...photoUrls.map((uri, index) => ({
+      id: `event-photo:${event.id}:${index}:${uri}`,
+      kind: 'photo',
+      uri,
+      photoIndex: index,
+    })),
+  ], [event.id, photoUrls]);
+
+  const openEventDetails = useCallback(() => {
+    writeNavigationCache(navigationCacheKeys.eventSummary(event.id), event);
+    navigation.navigate('EventDetail', {
+      eventId: event.id,
+      eventTitle,
+      conversationId,
+      circleName,
+    });
+  }, [circleName, conversationId, event, eventTitle, navigation]);
+
+  const openGallery = useCallback(() => {
+    writeNavigationCache(navigationCacheKeys.eventSummary(event.id), event);
+    navigation.navigate('EventPhotoGallery', {
+      eventId: event.id,
+      eventTitle,
+      conversationId,
+      circleName,
+      appearanceKey: event.appearanceKey || 'circle',
+      coverUri: event.coverUrl || null,
+      eventStartsAt: event.startsAt || null,
+      eventEndsAt: event.endsAt || null,
+      eventLocation: event.locationName || '',
+    });
+  }, [circleName, conversationId, event, eventTitle, navigation]);
+
+  const handlePageSettled = useCallback((scrollEvent) => {
+    const x = Number(scrollEvent?.nativeEvent?.contentOffset?.x || 0);
+    const nextIndex = width > 0 ? Math.round(x / width) : 0;
+    setPageIndex(Math.max(0, Math.min(pages.length - 1, nextIndex)));
+  }, [pages.length, width]);
 
   return (
-    <Pressable
-      onPress={() => {
-        writeNavigationCache(navigationCacheKeys.eventSummary(event.id), event);
-        navigation.navigate('EventDetail', {
-          eventId: event.id,
-          eventTitle: event.title,
-          conversationId,
-          circleName,
-        });
-      }}
-      style={({ pressed }) => [styles.eventMemoryCard, { height }, pressed && styles.pressed]}
-    >
-      <EventLookArtwork
-        appearanceKey={event.appearanceKey || 'circle'}
-        coverUri={event.coverUrl || null}
-        style={[styles.eventMemoryHero, { minHeight: heroHeight, height: heroHeight }]}
-      >
-        <View style={styles.eventMemoryHeroContent}>
-          <View style={styles.eventMemoryTopRow}>
-            <View style={styles.eventMemoryPill}>
-              <Ionicons name="sparkles" size={11} color="#fff" />
-              <Text style={styles.eventMemoryPillText}>SHARED MEMORY</Text>
+    <View style={[styles.eventMemoryCard, { height }]}>
+      <FlatList
+        horizontal
+        pagingEnabled
+        data={pages}
+        keyExtractor={(item) => item.id}
+        showsHorizontalScrollIndicator={false}
+        style={{ height: width, flexGrow: 0 }}
+        onMomentumScrollEnd={handlePageSettled}
+        renderItem={({ item }) => (
+          item.kind === 'summary' ? (
+            <View style={[styles.eventMemoryPage, { width, height: width }]}>
+              <EventAlbumMemoryCover
+                appearanceKey={event.appearanceKey || 'circle'}
+                coverUri={event.coverUrl || null}
+                previewUrls={event.previewUrls || []}
+                height={width}
+                borderRadius={0}
+              >
+                <View style={styles.eventMemoryHeroContent}>
+                  <View style={styles.eventMemoryTopRow}>
+                    <View style={styles.eventMemoryPill}>
+                      <Ionicons name="sparkles" size={11} color="#fff" />
+                      <Text style={styles.eventMemoryPillText}>SHARED MEMORY</Text>
+                    </View>
+                    <View style={styles.eventMemoryDatePill}>
+                      <Text style={styles.eventMemoryDate}>{formatMemoryDate(event.startsAt)}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.eventMemoryTitlePlate}>
+                    <Text style={styles.eventMemoryHeroTitle} numberOfLines={3}>{eventTitle}</Text>
+                    {event.locationName ? (
+                      <View style={styles.eventMemoryHeroLocationRow}>
+                        <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.92)" />
+                        <Text style={styles.eventMemoryHeroLocation} numberOfLines={1}>{event.locationName}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              </EventAlbumMemoryCover>
             </View>
-            <Text style={styles.eventMemoryDate}>{formatMemoryDate(event.startsAt)}</Text>
-          </View>
-          <Text style={styles.eventMemoryHeroTitle} numberOfLines={3}>{event.title}</Text>
-        </View>
-      </EventLookArtwork>
+          ) : (
+            <Pressable
+              onPress={openGallery}
+              style={({ pressed }) => [styles.eventMemoryPage, { width, height: width }, pressed && styles.pressed]}
+            >
+              <Image source={{ uri: item.uri }} style={styles.eventMemoryPhoto} resizeMode="cover" />
+              <View style={styles.eventMemoryPhotoTopRow}>
+                <View style={styles.eventMemoryPhotoPill}>
+                  <Ionicons name="images-outline" size={11} color="#fff" />
+                  <Text style={styles.eventMemoryPhotoPillText}>EVENT PHOTO</Text>
+                </View>
+                <View style={styles.eventMemoryPhotoCounterPill}>
+                  <Text style={styles.eventMemoryPhotoCounterText}>
+                    {item.photoIndex + 1}/{photoUrls.length}
+                  </Text>
+                </View>
+              </View>
+              {item.photoIndex === photoUrls.length - 1 && photoCount > photoUrls.length ? (
+                <View style={styles.eventMemoryMorePhotosPill}>
+                  <Ionicons name="add" size={13} color="#fff" />
+                  <Text style={styles.eventMemoryMorePhotosText}>
+                    {photoCount - photoUrls.length} more in the album
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+          )
+        )}
+      />
 
       <View style={styles.eventMemoryDetails}>
+        <View style={styles.eventMemoryPagerRow}>
+          <View style={styles.eventMemoryDots}>
+            {pages.map((page, index) => (
+              <View
+                key={page.id}
+                style={[
+                  styles.eventMemoryDot,
+                  index === pageIndex && styles.eventMemoryDotActive,
+                ]}
+              />
+            ))}
+          </View>
+          <Text style={styles.eventMemoryPageLabel} numberOfLines={1}>
+            {eventTitle}
+          </Text>
+        </View>
+
         <View style={styles.eventMemoryMetricRow}>
           <View style={styles.eventMemoryMetric}>
-            <Ionicons name="people-outline" size={16} color={theme.colors.text} />
+            <Ionicons name="people-outline" size={15} color={theme.colors.text} />
             <Text style={styles.eventMemoryMetricText}>{attended} {attended === 1 ? 'person' : 'people'} there</Text>
           </View>
           <View style={styles.eventMemoryMetric}>
-            <Ionicons name="images-outline" size={16} color={theme.colors.text} />
+            <Ionicons name="images-outline" size={15} color={theme.colors.text} />
             <Text style={styles.eventMemoryMetricText}>{photoCount} {photoCount === 1 ? 'photo' : 'photos'}</Text>
           </View>
         </View>
-
-        {event.locationName ? (
-          <View style={styles.eventMemoryLocationRow}>
-            <Ionicons name="location-outline" size={15} color={theme.colors.subtext} />
-            <Text style={styles.eventMemoryLocation} numberOfLines={1}>{event.locationName}</Text>
-          </View>
-        ) : null}
 
         <View style={styles.eventMemoryBottomRow}>
           <Text style={styles.eventMemoryBody} numberOfLines={2}>
             {event.description || 'A gathering your Circle chose to keep.'}
           </Text>
-          <View style={styles.eventMemoryOpenPill}>
-            <Text style={styles.eventMemoryOpenText}>Open memory</Text>
-            <Ionicons name="chevron-forward" size={13} color={theme.colors.text} />
+          <View style={styles.eventMemoryActions}>
+            {photoCount > 0 ? (
+              <Pressable
+                onPress={openGallery}
+                style={({ pressed }) => [styles.eventMemoryActionPill, pressed && styles.pressed]}
+              >
+                <Ionicons name="images-outline" size={13} color={theme.colors.text} />
+                <Text style={styles.eventMemoryActionText}>All photos</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={openEventDetails}
+              style={({ pressed }) => [styles.eventMemoryActionPill, pressed && styles.pressed]}
+            >
+              <Text style={styles.eventMemoryActionText}>Event details</Text>
+              <Ionicons name="chevron-forward" size={13} color={theme.colors.text} />
+            </Pressable>
           </View>
         </View>
       </View>
-    </Pressable>
+    </View>
   );
 });
 
@@ -233,7 +356,7 @@ function CircleTimelineFeedContent({ route, navigation }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
   const stageWidth = Math.min(width - 24, 696);
-  const cardHeight = stageWidth + 166;
+  const cardHeight = stageWidth + 186;
   const [items, setItems] = useState(initialItems);
   const itemsRef = useRef(initialItems);
   const [eventMemories, setEventMemories] = useState(initialMemories);
@@ -308,7 +431,14 @@ function CircleTimelineFeedContent({ route, navigation }) {
     useCallback(() => {
       const warmMemories = readNavigationCache(navigationCacheKeys.circleEventMemories(conversationId));
       if (Array.isArray(warmMemories)) setEventMemories(warmMemories);
+      const needsTimelineMedia = Array.isArray(warmMemories) && warmMemories.some((event) => {
+        const photoCount = Math.max(0, Number(event?.photoCount || 0));
+        const inlineCount = Array.isArray(event?.timelineUrls) ? event.timelineUrls.length : 0;
+        if (event?.timelineMediaSupported === false) return false;
+        return photoCount > 0 && inlineCount < Math.min(photoCount, 6);
+      });
       const isFresh = hasLoadedRef.current
+        && !needsTimelineMedia
         && Date.now() - lastRefreshAtRef.current < TIMELINE_FOCUS_FRESH_MS;
       if (!isFresh) {
         void load({ quiet: hasLoadedRef.current || hasInitialItems || hasInitialMemories }).finally(() => {
@@ -527,7 +657,10 @@ function createStyles(theme) {
       shadowOffset: { width: 0, height: 7 },
       elevation: 2,
     },
-    eventMemoryHero: { width: '100%', borderRadius: 0 },
+    eventMemoryPage: {
+      backgroundColor: '#111',
+      overflow: 'hidden',
+    },
     eventMemoryHeroContent: { flex: 1, padding: 15, justifyContent: 'space-between' },
     eventMemoryTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
     eventMemoryPill: {
@@ -542,34 +675,104 @@ function createStyles(theme) {
       gap: 5,
     },
     eventMemoryPillText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 9, letterSpacing: 0.7 },
+    eventMemoryDatePill: {
+      backgroundColor: 'transparent',
+      borderWidth: 0,
+      paddingHorizontal: 0,
+      paddingVertical: 0,
+    },
     eventMemoryDate: { color: 'rgba(255,255,255,0.88)', fontFamily: 'Manrope_700Bold', fontSize: 10, textShadowColor: 'rgba(0,0,0,0.24)', textShadowRadius: 4 },
-    eventMemoryHeroTitle: { maxWidth: '88%', color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 27, lineHeight: 31, textShadowColor: 'rgba(0,0,0,0.28)', textShadowRadius: 6 },
-    eventMemoryDetails: { flex: 1, paddingHorizontal: 15, paddingTop: 14, paddingBottom: 14 },
-    eventMemoryMetricRow: { flexDirection: 'row', gap: 8 },
-    eventMemoryMetric: {
-      minHeight: 38,
+    eventMemoryTitlePlate: {
+      alignSelf: 'flex-start',
+      maxWidth: '92%',
+      backgroundColor: 'transparent',
+      borderWidth: 0,
+      paddingHorizontal: 0,
+      paddingVertical: 0,
+    },
+    eventMemoryHeroTitle: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 27, lineHeight: 31, textShadowColor: 'rgba(0,0,0,0.28)', textShadowRadius: 6 },
+    eventMemoryHeroLocationRow: { marginTop: 7, flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '92%' },
+    eventMemoryHeroLocation: { flex: 1, color: 'rgba(255,255,255,0.9)', fontFamily: 'Manrope_600SemiBold', fontSize: 11, textShadowColor: 'rgba(0,0,0,0.24)', textShadowRadius: 4 },
+    eventMemoryPhoto: { width: '100%', height: '100%' },
+    eventMemoryPhotoTopRow: {
+      position: 'absolute',
+      left: 13,
+      right: 13,
+      top: 13,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    eventMemoryPhotoPill: {
+      minHeight: 27,
+      paddingHorizontal: 9,
+      borderRadius: 999,
+      backgroundColor: 'rgba(10,18,42,0.48)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.28)',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+    },
+    eventMemoryPhotoPillText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 9, letterSpacing: 0.65 },
+    eventMemoryPhotoCounterPill: {
+      minHeight: 27,
+      minWidth: 44,
+      paddingHorizontal: 9,
+      borderRadius: 999,
+      backgroundColor: 'rgba(10,18,42,0.48)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.28)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    eventMemoryPhotoCounterText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 9.5 },
+    eventMemoryMorePhotosPill: {
+      position: 'absolute',
+      right: 13,
+      bottom: 13,
+      minHeight: 32,
       paddingHorizontal: 10,
-      borderRadius: 13,
+      borderRadius: 999,
+      backgroundColor: 'rgba(10,18,42,0.58)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.28)',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    eventMemoryMorePhotosText: { color: '#fff', fontFamily: 'Manrope_700Bold', fontSize: 9.5 },
+    eventMemoryDetails: { flex: 1, paddingHorizontal: 13, paddingTop: 10, paddingBottom: 11 },
+    eventMemoryPagerRow: { minHeight: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+    eventMemoryDots: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 },
+    eventMemoryDot: { width: 5, height: 5, borderRadius: 999, backgroundColor: 'rgba(19,32,51,0.16)' },
+    eventMemoryDotActive: { width: 14, backgroundColor: theme.circle.accent },
+    eventMemoryPageLabel: { flex: 1, textAlign: 'right', color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 11 },
+    eventMemoryMetricRow: { marginTop: 8, flexDirection: 'row', gap: 7 },
+    eventMemoryMetric: {
+      minHeight: 32,
+      paddingHorizontal: 9,
+      borderRadius: 12,
       backgroundColor: theme.circle.accentSoft,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
+      gap: 5,
     },
-    eventMemoryMetricText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 10.5 },
-    eventMemoryLocationRow: { marginTop: 11, flexDirection: 'row', alignItems: 'center', gap: 5 },
-    eventMemoryLocation: { flex: 1, color: theme.colors.subtext, fontFamily: 'Manrope_600SemiBold', fontSize: 11 },
-    eventMemoryBottomRow: { flex: 1, marginTop: 10, flexDirection: 'row', alignItems: 'flex-end', gap: 12 },
-    eventMemoryBody: { flex: 1, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 12, lineHeight: 17 },
-    eventMemoryOpenPill: {
-      minHeight: 34,
-      paddingHorizontal: 10,
+    eventMemoryMetricText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 9.8 },
+    eventMemoryBottomRow: { flex: 1, marginTop: 8, flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+    eventMemoryBody: { flex: 1, color: theme.colors.text, fontFamily: 'Manrope_400Regular', fontSize: 11.5, lineHeight: 16.5 },
+    eventMemoryActions: { alignItems: 'flex-end', gap: 6 },
+    eventMemoryActionPill: {
+      minHeight: 31,
+      paddingHorizontal: 9,
       borderRadius: 999,
       backgroundColor: theme.circle.accentSoft,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 3,
+      gap: 4,
     },
-    eventMemoryOpenText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 9.5 },
+    eventMemoryActionText: { color: theme.colors.text, fontFamily: 'Manrope_700Bold', fontSize: 9.2 },
     centerState: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: 'transparent' },
     stateIcon: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: theme.circle.accentSoft },
     stateText: { marginTop: 10, color: theme.colors.subtext, fontFamily: 'Manrope_400Regular' },

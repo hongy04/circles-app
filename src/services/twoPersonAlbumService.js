@@ -4,6 +4,7 @@ import { decode } from 'base64-arraybuffer';
 import { supabase } from '../lib/supabase';
 import { ensureAuthed } from './authService';
 import { FEATURE_FLAGS, requireFeature } from './featureFlagService';
+import { getCachedSignedUrls, removeStorageSignedUrlCacheEntries } from './storageSignedUrlCacheService';
 import { compressIfImage } from './uploadService';
 
 export const TWO_PERSON_ALBUM_BUCKET = 'two-person-album-media';
@@ -20,16 +21,35 @@ async function requireAlbumsFeature() {
   );
 }
 
-async function signPath(storagePath) {
-  if (!storagePath) return null;
-  const { data, error } = await supabase.storage
-    .from(TWO_PERSON_ALBUM_BUCKET)
-    .createSignedUrl(storagePath, 60 * 60);
-  if (error) throw error;
-  return data?.signedUrl || null;
+function normalizePreviewPaths(row = {}) {
+  const raw = row.preview_storage_paths;
+  const paths = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.paths)
+      ? raw.paths
+      : [];
+  const clean = paths.map((path) => String(path || '').trim()).filter(Boolean);
+
+  // Backward compatibility before Migration 082: the old read model exposed
+  // only the first ready photo as cover_storage_path.
+  if (!clean.length && row.cover_storage_path) clean.push(row.cover_storage_path);
+  return Array.from(new Set(clean)).slice(0, 3);
 }
 
-async function mapAlbum(row = {}) {
+function albumStoragePaths(row = {}) {
+  return [
+    row.cover_storage_path,
+    ...normalizePreviewPaths(row),
+  ].filter(Boolean);
+}
+
+function photoStoragePaths(rows = []) {
+  return (rows || []).map((row) => row?.storage_path).filter(Boolean);
+}
+
+function mapAlbumWithUrls(row = {}, signedUrls = new Map()) {
+  const coverStoragePath = row.cover_storage_path || null;
+  const previewStoragePaths = normalizePreviewPaths(row);
   return {
     id: row.album_id || row.id,
     conversationId: row.conversation_id,
@@ -41,18 +61,23 @@ async function mapAlbum(row = {}) {
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
     photoCount: Number(row.photo_count || 0),
-    coverStoragePath: row.cover_storage_path || null,
-    coverUrl: await signPath(row.cover_storage_path || null),
+    coverPhotoId: row.cover_photo_id || null,
+    coverStoragePath,
+    coverUrl: coverStoragePath ? (signedUrls.get(coverStoragePath) || null) : null,
+    previewStoragePaths,
+    previewUrls: previewStoragePaths
+      .map((path) => signedUrls.get(path) || null)
+      .filter(Boolean),
   };
 }
 
-async function mapPhoto(row = {}) {
+function mapPhotoWithUrls(row = {}, signedUrls = new Map()) {
   const storagePath = row.storage_path || '';
   return {
     id: row.photo_id || row.id || storagePath,
     albumId: row.album_id,
     storagePath,
-    url: await signPath(storagePath),
+    url: signedUrls.get(storagePath) || null,
     width: Number(row.width || 0) || null,
     height: Number(row.height || 0) || null,
     uploaderName: row.uploader_name || 'Circle member',
@@ -60,6 +85,11 @@ async function mapPhoto(row = {}) {
     createdAt: row.created_at || null,
     canDelete: Boolean(row.can_delete),
   };
+}
+
+async function signAlbumRows(rows = []) {
+  const paths = Array.from(new Set((rows || []).flatMap(albumStoragePaths)));
+  return getCachedSignedUrls(TWO_PERSON_ALBUM_BUCKET, paths, 60 * 60);
 }
 
 export async function listTwoPersonAlbums(conversationId) {
@@ -71,7 +101,10 @@ export async function listTwoPersonAlbums(conversationId) {
     { p_conversation_id: conversationId }
   );
   if (error) throw error;
-  return Promise.all((data || []).map(mapAlbum));
+
+  const rows = data || [];
+  const signedUrls = await signAlbumRows(rows);
+  return rows.map((row) => mapAlbumWithUrls(row, signedUrls));
 }
 
 export async function getTwoPersonAlbum(albumId) {
@@ -85,8 +118,14 @@ export async function getTwoPersonAlbum(albumId) {
   if (error) throw error;
   if (!data) throw new Error('This shared album is unavailable.');
 
-  const album = await mapAlbum(data);
-  const photos = await Promise.all((data.photos || []).map(mapPhoto));
+  const photoRows = data.photos || [];
+  const paths = Array.from(new Set([
+    ...albumStoragePaths(data),
+    ...photoStoragePaths(photoRows),
+  ]));
+  const signedUrls = await getCachedSignedUrls(TWO_PERSON_ALBUM_BUCKET, paths, 60 * 60);
+  const album = mapAlbumWithUrls(data, signedUrls);
+  const photos = photoRows.map((row) => mapPhotoWithUrls(row, signedUrls));
   return { ...album, photos };
 }
 
@@ -129,7 +168,24 @@ export async function updateTwoPersonAlbum({
     }
   );
   if (error) throw error;
-  return mapAlbum(data);
+  const signedUrls = await signAlbumRows([data || {}]);
+  return mapAlbumWithUrls(data, signedUrls);
+}
+
+export async function setTwoPersonAlbumCover({ albumId, photoId = null }) {
+  await requireAlbumsFeature();
+  if (!albumId) throw new Error('Album is missing.');
+
+  const { data, error } = await supabase.rpc(
+    'set_two_person_circle_album_cover',
+    {
+      p_album_id: albumId,
+      p_photo_id: photoId || null,
+    }
+  );
+  if (error) throw error;
+  const signedUrls = await signAlbumRows([data || {}]);
+  return mapAlbumWithUrls(data, signedUrls);
 }
 
 async function prepareAlbumPhotoUpload(albumId) {
@@ -194,16 +250,19 @@ async function uploadOneAlbumPhoto({ albumId, asset }) {
     );
     if (finalizeError) throw finalizeError;
 
-    return mapPhoto({
+    const storagePath = data?.storage_path || slot.storagePath;
+    removeStorageSignedUrlCacheEntries(TWO_PERSON_ALBUM_BUCKET, [storagePath]);
+    const signedUrls = await getCachedSignedUrls(TWO_PERSON_ALBUM_BUCKET, [storagePath], 60 * 60);
+    return mapPhotoWithUrls({
       photo_id: data?.photo_id || slot.photoId,
       album_id: albumId,
-      storage_path: data?.storage_path || slot.storagePath,
+      storage_path: storagePath,
       width: asset.width || null,
       height: asset.height || null,
       uploader_name: 'You',
       can_delete: true,
       created_at: new Date().toISOString(),
-    });
+    }, signedUrls);
   } catch (error) {
     if (objectUploaded) {
       try {
@@ -258,6 +317,8 @@ export async function deleteTwoPersonAlbumPhoto(photo) {
     .remove([photo.storagePath]);
   if (storageError) throw storageError;
 
+  removeStorageSignedUrlCacheEntries(TWO_PERSON_ALBUM_BUCKET, [photo.storagePath]);
+
   const { data, error } = await supabase.rpc(
     'delete_two_person_album_photo',
     { p_photo_id: photo.id }
@@ -278,6 +339,7 @@ export async function deleteTwoPersonAlbum(album) {
       .from(TWO_PERSON_ALBUM_BUCKET)
       .remove(paths);
     if (storageError) throw storageError;
+    removeStorageSignedUrlCacheEntries(TWO_PERSON_ALBUM_BUCKET, paths);
   }
 
   const { data, error } = await supabase.rpc(

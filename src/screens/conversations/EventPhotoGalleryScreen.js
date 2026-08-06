@@ -17,7 +17,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 
 import { Avatar } from '../../components/Avatar';
-import { EventRoomSectionHero } from '../../components/events/EventRoomSectionHero';
+import { EventAlbumMemoryCover } from '../../components/events/EventAlbumMemoryCover';
 import { CircleThemeBoundary } from '../../theme/CircleThemeBoundary';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import {
@@ -119,7 +119,15 @@ function PhotoViewer({ photo, visible, deleting, onClose, onDelete }) {
 }
 
 function EventPhotoGalleryContent({ route }) {
-  const { eventId, conversationId, eventTitle = 'Event', appearanceKey = 'circle', coverUri = null } = route.params || {};
+  const {
+    eventId,
+    conversationId,
+    eventTitle = 'Event',
+    appearanceKey = 'circle',
+    coverUri = null,
+    eventStartsAt = null,
+    eventLocation = '',
+  } = route.params || {};
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
@@ -139,21 +147,33 @@ function EventPhotoGalleryContent({ route }) {
   const [deletingPhotoId, setDeletingPhotoId] = useState('');
   const [error, setError] = useState('');
 
-  const syncPhotoCountToEventCaches = useCallback((photoCount) => {
+  const syncPhotoCountToEventCaches = useCallback((photoCount, photos = []) => {
     const count = Math.max(0, Number(photoCount || 0));
+    const previewPhotos = (photos || []).filter((photo) => photo?.url).slice(0, 3);
+    const timelinePhotos = (photos || []).filter((photo) => photo?.url).slice(0, 6);
+    const mediaPatch = {
+      photoCount: count,
+      ...(photos.length > 0 || count === 0 ? {
+        previewUrls: previewPhotos.map((photo) => photo.url),
+        previewStoragePaths: previewPhotos.map((photo) => photo.storagePath).filter(Boolean),
+        timelineUrls: timelinePhotos.map((photo) => photo.url),
+        timelineStoragePaths: timelinePhotos.map((photo) => photo.storagePath).filter(Boolean),
+        timelineMediaSupported: true,
+      } : {}),
+    };
     const detailsKey = navigationCacheKeys.eventDetails(eventId);
     const cachedDetails = readNavigationCache(detailsKey);
     if (cachedDetails?.event) {
       writeNavigationCache(detailsKey, {
         ...cachedDetails,
-        event: { ...cachedDetails.event, photoCount: count },
+        event: { ...cachedDetails.event, ...mediaPatch },
       });
     }
 
     const summaryKey = navigationCacheKeys.eventSummary(eventId);
     const cachedSummary = readNavigationCache(summaryKey);
     if (cachedSummary) {
-      writeNavigationCache(summaryKey, { ...cachedSummary, photoCount: count });
+      writeNavigationCache(summaryKey, { ...cachedSummary, ...mediaPatch });
     }
 
     if (conversationId) {
@@ -161,7 +181,7 @@ function EventPhotoGalleryContent({ route }) {
       const cachedMemories = readNavigationCache(memoryKey);
       if (Array.isArray(cachedMemories)) {
         writeNavigationCache(memoryKey, cachedMemories.map((event) => (
-          event.id === eventId ? { ...event, photoCount: count } : event
+          event.id === eventId ? { ...event, ...mediaPatch } : event
         )));
       }
 
@@ -169,7 +189,7 @@ function EventPhotoGalleryContent({ route }) {
       const cachedEvents = readNavigationCache(eventsKey);
       if (Array.isArray(cachedEvents)) {
         writeNavigationCache(eventsKey, cachedEvents.map((event) => (
-          event.id === eventId ? { ...event, photoCount: count } : event
+          event.id === eventId ? { ...event, ...mediaPatch } : event
         )));
       }
     }
@@ -177,7 +197,7 @@ function EventPhotoGalleryContent({ route }) {
 
   const columns = width >= 720 ? 4 : 3;
   const maxContentWidth = Math.min(width, 760);
-  const gap = 4;
+  const gap = 7;
   const tileSize = useMemo(
     () => Math.floor((maxContentWidth - 24 - gap * (columns - 1)) / columns),
     [columns, gap, maxContentWidth]
@@ -192,7 +212,7 @@ function EventPhotoGalleryContent({ route }) {
       const next = await listEventPhotos(eventId);
       setGallery(next);
       writeNavigationCache(navigationCacheKeys.eventPhotos(eventId), next);
-      syncPhotoCountToEventCaches(next.photoCount);
+      syncPhotoCountToEventCaches(next.photoCount, next.photos);
       lastRefreshAtRef.current = Date.now();
     } catch (loadError) {
       setError(loadError?.message || 'Could not load event photos.');
@@ -252,7 +272,7 @@ function EventPhotoGalleryContent({ route }) {
           photos: [...uploaded.reverse(), ...current.photos],
         };
         writeNavigationCache(navigationCacheKeys.eventPhotos(eventId), next);
-        syncPhotoCountToEventCaches(next.photoCount);
+        syncPhotoCountToEventCaches(next.photoCount, next.photos);
         return next;
       });
       setUploadStage('');
@@ -290,7 +310,7 @@ function EventPhotoGalleryContent({ route }) {
                   photos: current.photos.filter((item) => item.id !== photo.id),
                 };
                 writeNavigationCache(navigationCacheKeys.eventPhotos(eventId), next);
-                syncPhotoCountToEventCaches(next.photoCount);
+                syncPhotoCountToEventCaches(next.photoCount, next.photos);
                 return next;
               });
             } catch (deleteError) {
@@ -308,24 +328,51 @@ function EventPhotoGalleryContent({ route }) {
     );
   };
 
+  const memoryPreviewUrls = gallery.photos.slice(0, 3).map((photo) => photo.url).filter(Boolean);
+  const memoryDate = eventStartsAt ? new Date(eventStartsAt) : null;
+  const memoryDateLabel = memoryDate && !Number.isNaN(memoryDate.getTime())
+    ? memoryDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+  const memoryHeroHeight = Math.min(300, Math.max(236, width * 0.66));
+
   const header = (
     <View style={styles.headerWrap}>
-      <EventRoomSectionHero
+      <EventAlbumMemoryCover
         appearanceKey={appearanceKey}
         coverUri={coverUri}
-        eventTitle={eventTitle}
-        eyebrow="EVENT MEMORY"
-        title="Shared photos"
-        body="A quiet gallery for the moments everyone wants to keep."
-        icon="images-outline"
-        trailingLabel={loading ? 'Loading…' : (gallery.photoCount === 1 ? '1 photo' : `${gallery.photoCount} photos`)}
-      />
+        previewUrls={memoryPreviewUrls}
+        height={memoryHeroHeight}
+      >
+        <View style={styles.memoryHeroContent}>
+          <View style={styles.memoryHeroTopRow}>
+            <View style={styles.memoryHeroPill}>
+              <Ionicons name="images-outline" size={12} color="#fff" />
+              <Text style={styles.memoryHeroPillText}>EVENT ALBUM</Text>
+            </View>
+            <View style={styles.memoryHeroCountPill}>
+              <Text style={styles.memoryHeroCountText}>
+                {loading ? 'Loading…' : (gallery.photoCount === 1 ? '1 photo' : `${gallery.photoCount} photos`)}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.memoryHeroCopy}>
+            <Text style={styles.memoryHeroTitle} numberOfLines={2}>{eventTitle}</Text>
+            <Text style={styles.memoryHeroMeta} numberOfLines={2}>
+              {[memoryDateLabel, eventLocation].filter(Boolean).join(' · ') || 'Shared event memory'}
+            </Text>
+            <Text style={styles.memoryHeroBody}>
+              The event look keeps the gathering recognizable; shared photos fill in the memory around it.
+            </Text>
+          </View>
+        </View>
+      </EventAlbumMemoryCover>
 
       <View style={styles.galleryTools}>
         <View style={styles.galleryActionRow}>
           <View style={styles.galleryCopy}>
-            <Text style={styles.galleryTitle}>The gallery</Text>
-            <Text style={styles.countText}>Photos stay with this private event.</Text>
+            <Text style={styles.galleryTitle}>Add to the memory</Text>
+            <Text style={styles.countText}>Photos stay together in this private event album.</Text>
           </View>
           {gallery.canUpload ? (
             <Pressable
@@ -384,7 +431,7 @@ function EventPhotoGalleryContent({ route }) {
                 <Ionicons name="image-outline" size={36} color={theme.colors.subtext} />
                 <Text style={styles.emptyTitle}>No event photos yet</Text>
                 <Text style={styles.emptyBody}>
-                  Photos shared here become part of the gathering’s history and remain available to invited guests through their private link.
+                  Add the first photos that belong in this memory. Invited guests can still revisit shared photos through their private link.
                 </Text>
               </>
             )}
@@ -449,6 +496,71 @@ function createStyles(theme) {
   },
   row: { justifyContent: 'flex-start' },
   headerWrap: { paddingTop: 14, paddingHorizontal: 2, paddingBottom: 8, gap: 12 },
+  memoryHeroContent: {
+    ...StyleSheet.absoluteFillObject,
+    padding: 16,
+    justifyContent: 'space-between',
+  },
+  memoryHeroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  memoryHeroPill: {
+    minHeight: 30,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(11,18,38,0.42)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.28)',
+  },
+  memoryHeroPillText: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 10,
+    letterSpacing: 0.7,
+  },
+  memoryHeroCountPill: {
+    minHeight: 30,
+    maxWidth: '38%',
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(11,18,38,0.36)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.24)',
+  },
+  memoryHeroCountText: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 10,
+    textAlign: 'center',
+  },
+  memoryHeroCopy: { maxWidth: '88%', gap: 4 },
+  memoryHeroTitle: {
+    color: '#fff',
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 26,
+    lineHeight: 31,
+    letterSpacing: -0.45,
+  },
+  memoryHeroMeta: {
+    color: 'rgba(255,255,255,0.86)',
+    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  memoryHeroBody: {
+    marginTop: 2,
+    color: 'rgba(255,255,255,0.82)',
+    fontFamily: 'Manrope_500Medium',
+    fontSize: 11,
+    lineHeight: 16,
+  },
   galleryTools: {
     padding: 14,
     borderRadius: 18,
@@ -503,7 +615,10 @@ function createStyles(theme) {
   },
   photoTile: {
     overflow: 'hidden',
+    borderRadius: 12,
     backgroundColor: '#e8e8e8',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.58)',
   },
   photoImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   ownerBadge: {
@@ -523,7 +638,7 @@ function createStyles(theme) {
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: theme.circle.accentSoft,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: rgba(theme.colors.surface, 0.84),
     alignItems: 'center',
   },
   emptyTitle: {

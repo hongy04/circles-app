@@ -4,6 +4,31 @@ import { trackAppEvent } from './analyticsService';
 import { FEATURE_FLAGS, requireFeature } from './featureFlagService';
 import { getCachedSignedUrls } from './storageSignedUrlCacheService';
 
+
+function normalizeEventPreviewPaths(row = {}) {
+  const raw = row.preview_storage_paths;
+  const paths = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.paths)
+      ? raw.paths
+      : [];
+  return Array.from(
+    new Set(paths.map((path) => String(path || '').trim()).filter(Boolean))
+  ).slice(0, 3);
+}
+
+function normalizeEventTimelinePaths(row = {}) {
+  const raw = row.timeline_storage_paths;
+  const paths = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.paths)
+      ? raw.paths
+      : [];
+  return Array.from(
+    new Set(paths.map((path) => String(path || '').trim()).filter(Boolean))
+  ).slice(0, 6);
+}
+
 function mapEventSummary(row) {
   return {
     id: row.event_id,
@@ -36,6 +61,11 @@ function mapEventSummary(row) {
     coverHeight: Number(row.cover_height || 0) || null,
     coverUpdatedAt: row.cover_updated_at || null,
     photoCount: Number(row.photo_count || 0),
+    previewStoragePaths: normalizeEventPreviewPaths(row),
+    previewUrls: [],
+    timelineStoragePaths: normalizeEventTimelinePaths(row),
+    timelineUrls: [],
+    timelineMediaSupported: Object.prototype.hasOwnProperty.call(row, 'timeline_storage_paths'),
   };
 }
 
@@ -157,7 +187,7 @@ function mapEventDetails(data, rawInvitations = [], attendanceSummary = {}, visu
   };
 }
 
-export async function listCircleEvents(conversationId) {
+export async function listCircleEvents(conversationId, { includeTimelineMedia = false } = {}) {
   await ensureAuthed();
   await requireFeature(
     FEATURE_FLAGS.CIRCLE_EVENTS,
@@ -174,33 +204,49 @@ export async function listCircleEvents(conversationId) {
 
   const events = (data || []).map(mapEventSummary);
   const now = Date.now();
-  const coverPaths = events
-    .filter((event) => {
-      const endAt = event.endsAt || event.startsAt;
-      const endMs = endAt ? new Date(endAt).getTime() : Number.NaN;
-      return event.status === 'completed' || (!Number.isNaN(endMs) && endMs < now);
-    })
-    .map((event) => event.coverStoragePath)
-    .filter(Boolean);
-  if (coverPaths.length > 0) {
+  const pastEvents = events.filter((event) => {
+    const endAt = event.endsAt || event.startsAt;
+    const endMs = endAt ? new Date(endAt).getTime() : Number.NaN;
+    return event.status === 'completed' || (!Number.isNaN(endMs) && endMs < now);
+  });
+  const memoryMediaPaths = Array.from(new Set(
+    pastEvents.flatMap((event) => [
+      event.coverStoragePath,
+      ...(event.previewStoragePaths || []),
+      ...(includeTimelineMedia ? (event.timelineStoragePaths || []) : []),
+    ]).filter(Boolean)
+  ));
+
+  if (memoryMediaPaths.length > 0) {
     try {
-      const signed = await getCachedSignedUrls('event-media', coverPaths, 10 * 60);
-      events.forEach((event) => {
+      const signed = await getCachedSignedUrls('event-media', memoryMediaPaths, 10 * 60);
+      pastEvents.forEach((event) => {
         if (event.coverStoragePath) {
           event.coverUrl = signed.get(event.coverStoragePath) || null;
+        }
+        event.previewUrls = (event.previewStoragePaths || [])
+          .map((path) => signed.get(path) || null)
+          .filter(Boolean);
+        if (includeTimelineMedia) {
+          event.timelineUrls = (event.timelineStoragePaths || [])
+            .map((path) => signed.get(path) || null)
+            .filter(Boolean);
+          if (event.timelineUrls.length === 0) {
+            event.timelineUrls = [...(event.previewUrls || [])];
+          }
         }
       });
     } catch {
       // Preset Event Looks remain a complete fallback if short-lived signing is
-      // temporarily unavailable. A later refresh can resolve custom covers.
+      // temporarily unavailable. A later refresh can resolve covers/photo peeks.
     }
   }
 
   return events;
 }
 
-export async function listCircleEventMemories(conversationId) {
-  const events = await listCircleEvents(conversationId);
+export async function listCircleEventMemories(conversationId, { includeTimelineMedia = true } = {}) {
+  const events = await listCircleEvents(conversationId, { includeTimelineMedia });
   return events.filter((event) => (
     event.status !== 'cancelled'
     && Boolean(event.attendanceReviewedAt || event.status === 'completed')
