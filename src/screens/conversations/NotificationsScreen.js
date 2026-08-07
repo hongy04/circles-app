@@ -36,6 +36,7 @@ import {
 } from '../../services/notificationService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 import { reconcileRowsById } from '../../utils/reconcileRows';
+import { markSharedThoughtRead } from '../../services/participationService';
 
 const NOTIFICATION_PAGE_SIZE = 40;
 const NOTIFICATION_FOCUS_FRESH_MS = 15_000;
@@ -72,6 +73,26 @@ function notificationCopy(notification) {
       return {
         icon: 'person-add-outline',
         text: `${notification.actorName} invited you to ${notification.conversationTitle || 'a private Circle'}.`,
+      };
+    case 'event_participation':
+      return {
+        icon: 'calendar-outline',
+        text: `${notification.actorName} created ${notification.targetTitle || 'an event'} in ${notification.conversationTitle || 'your Circle'}. RSVP when you can.`,
+      };
+    case 'event_poll_participation':
+      return {
+        icon: 'options-outline',
+        text: `${notification.actorName} started a poll in ${notification.conversationTitle || 'your Circle'}: ${notification.targetTitle || 'Availability poll'}.`,
+      };
+    case 'two_person_plan_participation':
+      return {
+        icon: 'paper-plane-outline',
+        text: `${notification.actorName} proposed ${notification.targetTitle || 'a shared plan'}.`,
+      };
+    case 'two_person_thought_shared':
+      return {
+        icon: 'chatbubble-ellipses-outline',
+        text: `${notification.actorName} shared a thought with you.`,
       };
     case 'safety_report_resolved':
       return {
@@ -115,6 +136,11 @@ function sameNotification(left, right) {
     && left?.personalPostId === right?.personalPostId
     && left?.personalCommentId === right?.personalCommentId
     && left?.invitationId === right?.invitationId
+    && left?.eventId === right?.eventId
+    && left?.pollId === right?.pollId
+    && left?.twoPersonPlanId === right?.twoPersonPlanId
+    && left?.twoPersonThoughtId === right?.twoPersonThoughtId
+    && left?.targetTitle === right?.targetTitle
     && left?.safetyReportId === right?.safetyReportId
     && left?.accountAppealId === right?.accountAppealId
     && left?.ageCorrectionRequestId === right?.ageCorrectionRequestId
@@ -362,6 +388,45 @@ export function NotificationsScreen({ navigation }) {
 
     if (notification.type === 'conversation_invitation') {
       navigation.navigate('Inbox');
+      return;
+    }
+
+    if (notification.eventId && notification.conversationId) {
+      navigation.navigate('EventDetail', {
+        eventId: notification.eventId,
+        eventTitle: notification.targetTitle || 'Event',
+        conversationId: notification.conversationId,
+        circleName: notification.conversationTitle || 'Circle',
+      });
+      return;
+    }
+
+    if (notification.pollId && notification.conversationId) {
+      navigation.navigate('AvailabilityPollDetail', {
+        pollId: notification.pollId,
+        pollTitle: notification.targetTitle || 'Availability poll',
+        conversationId: notification.conversationId,
+        circleName: notification.conversationTitle || 'Circle',
+      });
+      return;
+    }
+
+    if (notification.twoPersonPlanId && notification.conversationId) {
+      navigation.navigate('TwoPersonPlanDetail', {
+        planId: notification.twoPersonPlanId,
+        conversationId: notification.conversationId,
+        circleName: notification.conversationTitle || 'Our Circle',
+      });
+      return;
+    }
+
+    if (notification.twoPersonThoughtId && notification.conversationId) {
+      void markSharedThoughtRead(notification.twoPersonThoughtId).catch(() => {});
+      navigation.navigate('TwoPersonThoughtDetail', {
+        thoughtId: notification.twoPersonThoughtId,
+        conversationId: notification.conversationId,
+        circleName: notification.conversationTitle || 'Our Circle',
+      });
       return;
     }
 

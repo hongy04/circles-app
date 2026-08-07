@@ -46,6 +46,11 @@ import {
 } from '../../services/twoPersonThoughtService';
 import { fetchCircleDecoration } from '../../services/circleDecorationService';
 import { listCircleEventMemories } from '../../services/eventService';
+import {
+  listCircleParticipationPrompts,
+  markSharedThoughtRead,
+  subscribeToParticipationChanges,
+} from '../../services/participationService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 
 function rgba(hex, alpha) {
@@ -105,6 +110,59 @@ function preserveDecorationImageUrls(current, next) {
       return asset;
     }),
   };
+}
+
+function formatParticipationTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function participationPromptCopy(prompt) {
+  switch (prompt?.type) {
+    case 'event_poll':
+      return {
+        icon: 'options-outline',
+        eyebrow: 'VOTE WHEN YOU CAN',
+        action: 'Vote',
+        detail: prompt.startsAt ? `First option ${formatParticipationTime(prompt.startsAt)}` : 'A new availability poll is waiting.',
+      };
+    case 'event_rsvp':
+      return {
+        icon: 'calendar-outline',
+        eyebrow: 'UPCOMING EVENT',
+        action: 'RSVP',
+        detail: formatParticipationTime(prompt.startsAt) || 'Your RSVP is waiting.',
+      };
+    case 'two_person_plan':
+      return {
+        icon: 'paper-plane-outline',
+        eyebrow: 'PLAN FOR YOU',
+        action: 'Respond',
+        detail: prompt.startsAt ? formatParticipationTime(prompt.startsAt) : `${prompt.actorName || 'The other person'} proposed a plan.`,
+      };
+    case 'shared_thought':
+      return {
+        icon: 'chatbubble-ellipses-outline',
+        eyebrow: 'A THOUGHT FOR YOU',
+        action: 'Read',
+        detail: `${prompt.actorName || 'The other person'} shared something with you.`,
+      };
+    default:
+      return {
+        icon: 'sparkles-outline',
+        eyebrow: 'ACTIVE NOW',
+        action: 'Open',
+        detail: 'Something in this Circle is waiting for you.',
+      };
+  }
 }
 
 function Stat({ value, label, onPress, styles }) {
@@ -332,6 +390,7 @@ function CircleProfileContent({ route, navigation }) {
   const [albums, setAlbums] = useState(Array.isArray(cachedAlbums) ? cachedAlbums : []);
   const [decoration, setDecoration] = useState(cachedDecoration || null);
   const [eventMemories, setEventMemories] = useState(Array.isArray(cachedEventMemories) ? cachedEventMemories : []);
+  const [participationPrompts, setParticipationPrompts] = useState([]);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [loading, setLoading] = useState(!cachedDetails);
   const [contentResolved, setContentResolved] = useState(hasWarmGridSnapshot);
@@ -527,6 +586,31 @@ function CircleProfileContent({ route, navigation }) {
     return request;
   }, [conversationId, eventMemories]);
 
+  const loadParticipation = useCallback(async () => {
+    if (!conversationId) return [];
+    try {
+      const rows = await listCircleParticipationPrompts(conversationId);
+      setParticipationPrompts(rows);
+      return rows;
+    } catch {
+      // Participation awareness is additive polish. During a staged rollout,
+      // an older backend should never make the Circle profile unavailable.
+      setParticipationPrompts([]);
+      return [];
+    }
+  }, [conversationId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) return undefined;
+      void loadParticipation();
+      return subscribeToParticipationChanges({
+        conversationId,
+        onChange: () => loadParticipation(),
+      });
+    }, [conversationId, loadParticipation])
+  );
+
   useFocusEffect(
     useCallback(() => {
       const warmMemories = readNavigationCache(navigationCacheKeys.circleEventMemories(conversationId));
@@ -625,6 +709,8 @@ function CircleProfileContent({ route, navigation }) {
   const isTwoPersonCircle = conversation?.kind === 'direct';
   const circleLocked = isTwoPersonCircle
     && !conversation?.circle_access_active;
+  const participationPrompt = participationPrompts[0] || null;
+  const participationWaitingCount = Math.max(0, participationPrompts.length - 1);
   const decorationActive = Boolean(
     decoration?.circle_header_url
     || decoration?.circle_background_url
@@ -669,6 +755,51 @@ function CircleProfileContent({ route, navigation }) {
       createdAt: item.sharedAt || item.updatedAt,
     })),
   ].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+  const openParticipationPrompt = async () => {
+    if (!participationPrompt?.targetId) return;
+
+    if (participationPrompt.type === 'event_poll') {
+      navigation.navigate('AvailabilityPollDetail', {
+        pollId: participationPrompt.targetId,
+        pollTitle: participationPrompt.title || 'Availability poll',
+        conversationId,
+        circleName: conversation?.title || 'Circle',
+      });
+      return;
+    }
+
+    if (participationPrompt.type === 'event_rsvp') {
+      navigation.navigate('EventDetail', {
+        eventId: participationPrompt.targetId,
+        eventTitle: participationPrompt.title || 'Event',
+        conversationId,
+        circleName: conversation?.title || 'Circle',
+      });
+      return;
+    }
+
+    if (participationPrompt.type === 'two_person_plan') {
+      navigation.navigate('TwoPersonPlanDetail', {
+        planId: participationPrompt.targetId,
+        conversationId,
+        circleName: conversation?.title || 'Our Circle',
+      });
+      return;
+    }
+
+    if (participationPrompt.type === 'shared_thought') {
+      setParticipationPrompts((current) => current.filter(
+        (item) => item.targetId !== participationPrompt.targetId
+      ));
+      void markSharedThoughtRead(participationPrompt.targetId).catch(() => {});
+      navigation.navigate('TwoPersonThoughtDetail', {
+        thoughtId: participationPrompt.targetId,
+        conversationId,
+        circleName: conversation?.title || 'Our Circle',
+      });
+    }
+  };
 
   const createPost = () => {
     setActiveTab('posts');
@@ -754,25 +885,48 @@ function CircleProfileContent({ route, navigation }) {
 
         <Text style={styles.title}>{conversation.title}</Text>
 
-        {isTwoPersonCircle ? (
-          conversation.silent_message ? (
-            <View style={styles.silentMessageCard}>
-              <View style={styles.silentMessageHeading}>
-                <Ionicons name="moon-outline" size={14} color={theme.colors.text} />
-                <Text style={styles.silentMessageLabel}>
-                  A quiet message from {conversation.silent_message_author || 'them'}
-                </Text>
-              </View>
-              <Text style={styles.silentMessageText}>
-                {conversation.silent_message}
-              </Text>
-            </View>
-          ) : null
-        ) : conversation.bio ? (
+        {!isTwoPersonCircle && conversation.bio ? (
           <Text style={styles.bio} numberOfLines={2}>
             {conversation.bio}
           </Text>
         ) : null}
+
+        {activeTab === 'posts' && participationPrompt ? (() => {
+          const promptCopy = participationPromptCopy(participationPrompt);
+          return (
+            <Pressable
+              onPress={openParticipationPrompt}
+              style={({ pressed }) => [
+                styles.participationCard,
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={styles.participationIconWrap}>
+                <Ionicons name={promptCopy.icon} size={18} color={theme.colors.text} />
+              </View>
+              <View style={styles.participationBody}>
+                <View style={styles.participationTopRow}>
+                  <Text style={styles.participationEyebrow}>{promptCopy.eyebrow}</Text>
+                  {participationWaitingCount > 0 ? (
+                    <Text style={styles.participationWaiting}>
+                      +{participationWaitingCount} waiting
+                    </Text>
+                  ) : null}
+                </View>
+                <Text style={styles.participationTitle} numberOfLines={2}>
+                  {participationPrompt.title}
+                </Text>
+                <Text style={styles.participationDetail} numberOfLines={2}>
+                  {promptCopy.detail}
+                </Text>
+              </View>
+              <View style={styles.participationAction}>
+                <Text style={styles.participationActionText}>{promptCopy.action}</Text>
+                <Ionicons name="chevron-forward" size={15} color={theme.colors.text} />
+              </View>
+            </Pressable>
+          );
+        })() : null}
 
         <View style={styles.statsRow}>
           <Stat
@@ -1467,31 +1621,71 @@ function createStyles(theme) {
   eventMemoryBadgeText: { color: '#fff', fontFamily: theme.typography.bold, fontSize: 8, letterSpacing: 0.55 },
   eventMemoryTitle: { color: '#fff', fontFamily: theme.typography.bold, fontSize: 12, lineHeight: 15, textShadowColor: 'rgba(0,0,0,0.25)', textShadowRadius: 5 },
   eventMemoryMeta: { marginTop: 3, color: 'rgba(255,255,255,0.86)', fontFamily: theme.typography.semibold, fontSize: 8.5 },
-  silentMessageCard: {
+  participationCard: {
     width: '100%',
     maxWidth: 440,
-    marginTop: 9,
+    minHeight: 78,
+    marginTop: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.42)',
-  },
-  silentMessageHeading: {
+    paddingVertical: 11,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: rgba(theme.circle.accent, 0.26),
+    backgroundColor: rgba(theme.colors.surface, 0.82),
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 10,
   },
-  silentMessageLabel: {
+  participationIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: rgba(theme.circle.accent, 0.13),
+  },
+  participationBody: { flex: 1, minWidth: 0 },
+  participationTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  participationEyebrow: {
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.bold,
+    fontSize: 8.5,
+    letterSpacing: 0.8,
+  },
+  participationWaiting: {
+    color: theme.colors.subtext,
+    fontFamily: theme.typography.semibold,
+    fontSize: 9,
+  },
+  participationTitle: {
+    marginTop: 3,
     color: theme.colors.text,
     fontFamily: theme.typography.bold,
-    fontSize: 11.5,
+    fontSize: 13.5,
+    lineHeight: 18,
   },
-  silentMessageText: {
-    marginTop: 7,
-    color: theme.colors.text,
+  participationDetail: {
+    marginTop: 2,
+    color: theme.colors.subtext,
     fontFamily: theme.typography.regular,
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 10.5,
+    lineHeight: 15,
+  },
+  participationAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingLeft: 4,
+  },
+  participationActionText: {
+    color: theme.colors.text,
+    fontFamily: theme.typography.bold,
+    fontSize: 10.5,
   },
   bio: {
     maxWidth: 440,

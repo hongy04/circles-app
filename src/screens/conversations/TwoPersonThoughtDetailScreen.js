@@ -22,6 +22,7 @@ import {
   subscribeToTwoPersonThoughtChanges,
 } from '../../services/twoPersonThoughtService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+import { markSharedThoughtRead } from '../../services/participationService';
 
 function rgba(hex, alpha) {
   const normalized = String(hex || '').replace('#', '');
@@ -69,6 +70,9 @@ function TwoPersonThoughtDetailContent({ route, navigation }) {
     setError('');
     try {
       const nextThought = await getTwoPersonThought(thoughtId);
+      if (nextThought?.status === 'shared' && !nextThought?.isAuthor) {
+        void markSharedThoughtRead(thoughtId).catch(() => {});
+      }
       setThought(nextThought);
       writeNavigationCache(navigationCacheKeys.thought(thoughtId), nextThought);
     } catch (loadError) {
