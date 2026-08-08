@@ -4,6 +4,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Avatar } from '../Avatar';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { LinearGradient } from 'expo-linear-gradient';
+import { WhisperBubbleField } from './WhisperBubbleField';
 
 
 function useProfileHeaderTheme() {
@@ -181,6 +182,7 @@ export function ProfileHeader({
   onWhisperPress,
   whisperVisible = false,
   whisperReady = false,
+  incomingWhispers = [],
   topInset = 0,
 }) {
   const { theme, styles } = useProfileHeaderTheme();
@@ -211,6 +213,14 @@ export function ProfileHeader({
             style={StyleSheet.absoluteFill}
           />
         </ImageBackground>
+      ) : null}
+
+      {isSelf && incomingWhispers.length > 0 ? (
+        <WhisperBubbleField
+          whispers={incomingWhispers}
+          hasHeaderPhoto={hasHeaderPhoto}
+          topInset={topInset}
+        />
       ) : null}
 
       <View style={[styles.identityRow, hasHeaderPhoto && styles.identityRowWithHeader]}>
@@ -291,6 +301,7 @@ export function ProfileHeader({
 function createStyles(theme) {
   return StyleSheet.create({
   root: {
+    position: 'relative',
     paddingHorizontal: 18,
     paddingTop: 12,
     paddingBottom: 10,

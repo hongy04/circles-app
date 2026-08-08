@@ -40,7 +40,12 @@ import {
   sendProfileConnectionRequest,
 } from '../../services/profileService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
-import { getWhisperSendEligibility, sendWhisper } from '../../services/whisperService';
+import {
+  getWhisperSendEligibility,
+  listMyActiveWhispers,
+  sendWhisper,
+  subscribeToWhisperPulses,
+} from '../../services/whisperService';
 
 
 function useProfileTheme() {
@@ -389,6 +394,18 @@ export function ProfileViewScreen({
     nextAllowedAt: null,
   });
   const [whisperComposerVisible, setWhisperComposerVisible] = useState(false);
+  const [incomingWhispers, setIncomingWhispers] = useState([]);
+  const whisperPulseRefreshTimerRef = useRef(null);
+
+  const refreshIncomingWhispers = useCallback(async () => {
+    try {
+      const nextWhispers = await listMyActiveWhispers();
+      setIncomingWhispers(nextWhispers);
+    } catch {
+      // Whisper bubbles are an ambient profile affordance. A transient refresh
+      // failure should never replace the profile with an error state.
+    }
+  }, []);
 
   const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -502,6 +519,61 @@ export function ProfileViewScreen({
   }, [navigation, load]);
 
   const resolvedIsSelf = isSelf || profile?.relationship_status === 'self';
+
+  useEffect(() => {
+    if (!resolvedIsSelf || !profile?.id) {
+      setIncomingWhispers([]);
+      return undefined;
+    }
+
+    void refreshIncomingWhispers();
+
+    const unsubscribe = subscribeToWhisperPulses(profile.id, () => {
+      if (whisperPulseRefreshTimerRef.current) {
+        clearTimeout(whisperPulseRefreshTimerRef.current);
+      }
+      whisperPulseRefreshTimerRef.current = setTimeout(() => {
+        whisperPulseRefreshTimerRef.current = null;
+        void refreshIncomingWhispers();
+      }, 90);
+    });
+
+    return () => {
+      unsubscribe();
+      if (whisperPulseRefreshTimerRef.current) {
+        clearTimeout(whisperPulseRefreshTimerRef.current);
+        whisperPulseRefreshTimerRef.current = null;
+      }
+    };
+  }, [profile?.id, refreshIncomingWhispers, resolvedIsSelf]);
+
+  useEffect(() => {
+    if (!resolvedIsSelf) return undefined;
+
+    return navigation.addListener('focus', () => {
+      void refreshIncomingWhispers();
+    });
+  }, [navigation, refreshIncomingWhispers, resolvedIsSelf]);
+
+  useEffect(() => {
+    if (!resolvedIsSelf || incomingWhispers.length === 0) return undefined;
+
+    const nextExpiryAt = incomingWhispers.reduce((earliest, whisper) => {
+      const value = Date.parse(whisper?.expiresAt || '');
+      if (!Number.isFinite(value)) return earliest;
+      return earliest === null || value < earliest ? value : earliest;
+    }, null);
+
+    if (nextExpiryAt === null) return undefined;
+
+    const delay = Math.max(120, nextExpiryAt - Date.now() + 120);
+    const timer = setTimeout(() => {
+      void refreshIncomingWhispers();
+    }, Math.min(delay, 2_147_000_000));
+
+    return () => clearTimeout(timer);
+  }, [incomingWhispers, refreshIncomingWhispers, resolvedIsSelf]);
+
   const romanceAffordanceIcon = romanticStatus.focusActive || romanticStatus.focusSelectedByMe
     ? 'infinite'
     : romanticStatus.selectedByMe || romanticStatus.mutualRevealed
@@ -1114,6 +1186,7 @@ export function ProfileViewScreen({
       onWhisperPress={openWhisperComposer}
       whisperVisible={profile.relationship_status === 'connected' && (whisperEligibility.canSend || whisperEligibility.reason === 'cooldown')}
       whisperReady={Boolean(whisperEligibility.canSend)}
+      incomingWhispers={resolvedIsSelf ? incomingWhispers : []}
       topInset={hasHeaderPhoto ? insets.top : 0}
     />
   ) : null;

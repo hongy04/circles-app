@@ -4,6 +4,9 @@ import { ensureAuthed } from './authService';
 export const WHISPER_MAX_CHARACTERS = 140;
 export const WHISPER_LIFETIME_HOURS = 24;
 export const WHISPER_MAX_VISIBLE_INCOMING = 10;
+export const WHISPER_MAX_HEADER_BUBBLES = 3;
+
+let whisperRealtimeCounter = 0;
 
 function normalizeSettings(data) {
   return {
@@ -84,6 +87,29 @@ export async function listMyActiveWhispers() {
   const { data, error } = await supabase.rpc('get_my_active_whispers');
   if (error) throw error;
   return (data || []).map(normalizeWhisper);
+}
+
+export function subscribeToWhisperPulses(recipientId, onChange) {
+  if (!recipientId || typeof onChange !== 'function') return () => {};
+
+  whisperRealtimeCounter += 1;
+  const channel = supabase
+    .channel(`whisper_pulses_${recipientId}_${Date.now()}_${whisperRealtimeCounter}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'profile_whisper_pulses',
+        filter: `recipient_id=eq.${recipientId}`,
+      },
+      onChange
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
 }
 
 export async function markWhisperOpened(whisperId) {
