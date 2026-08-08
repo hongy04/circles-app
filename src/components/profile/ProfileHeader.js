@@ -183,6 +183,9 @@ export function ProfileHeader({
   whisperVisible = false,
   whisperReady = false,
   incomingWhispers = [],
+  onIncomingWhisperPress,
+  poppingWhisperId = null,
+  onIncomingWhisperPopComplete,
   topInset = 0,
 }) {
   const { theme, styles } = useProfileHeaderTheme();
@@ -220,6 +223,9 @@ export function ProfileHeader({
           whispers={incomingWhispers}
           hasHeaderPhoto={hasHeaderPhoto}
           topInset={topInset}
+          onWhisperPress={onIncomingWhisperPress}
+          poppingWhisperId={poppingWhisperId}
+          onWhisperPopComplete={onIncomingWhisperPopComplete}
         />
       ) : null}
 

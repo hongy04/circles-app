@@ -1,10 +1,11 @@
 import React, { memo, useEffect, useMemo } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   Easing,
   cancelAnimation,
   interpolate,
+  runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -182,10 +183,42 @@ function BubblePhoto({ whisper, size }) {
   );
 }
 
-function FloatingPhotoBubble({ whisper, index, layout, topInset = 0, hasHeaderPhoto }) {
+function PopDroplet({ progress, dx, dy, size = 3 }) {
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0, 0.08, 0.58, 1], [0, 0.82, 0.42, 0]),
+    transform: [
+      { translateX: interpolate(progress.value, [0, 1], [0, dx]) },
+      { translateY: interpolate(progress.value, [0, 1], [0, dy]) },
+      { scale: interpolate(progress.value, [0, 0.22, 1], [0.4, 1, 0.46]) },
+    ],
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.popDroplet,
+        { width: size, height: size, borderRadius: size },
+        animatedStyle,
+      ]}
+    />
+  );
+}
+
+function FloatingPhotoBubble({
+  whisper,
+  index,
+  layout,
+  topInset = 0,
+  hasHeaderPhoto,
+  onPress,
+  popping = false,
+  onPopComplete,
+}) {
   const reduceMotion = useReducedMotion();
   const floatProgress = useSharedValue(0);
   const appearProgress = useSharedValue(reduceMotion ? 1 : 0);
+  const popProgress = useSharedValue(0);
   const seed = useMemo(() => hashString(`${whisper.id}:${whisper.senderId}:${index}`), [index, whisper.id, whisper.senderId]);
 
   const floatX = 2.2 + (seed % 23) / 10;
@@ -224,6 +257,25 @@ function FloatingPhotoBubble({ whisper, index, layout, topInset = 0, hasHeaderPh
     };
   }, [appearProgress, delay, duration, floatProgress, reduceMotion]);
 
+  useEffect(() => {
+    if (!popping) {
+      popProgress.value = 0;
+      return undefined;
+    }
+
+    cancelAnimation(floatProgress);
+    popProgress.value = withTiming(1, {
+      duration: reduceMotion ? 170 : 390,
+      easing: Easing.out(Easing.cubic),
+    }, (finished) => {
+      if (finished && onPopComplete) {
+        runOnJS(onPopComplete)(whisper.id);
+      }
+    });
+
+    return () => cancelAnimation(popProgress);
+  }, [floatProgress, onPopComplete, popProgress, popping, reduceMotion, whisper.id]);
+
   const animatedStyle = useAnimatedStyle(() => {
     const x = reduceMotion
       ? 0
@@ -235,17 +287,24 @@ function FloatingPhotoBubble({ whisper, index, layout, topInset = 0, hasHeaderPh
       ? 0
       : interpolate(floatProgress.value, [0, 1], [-rotate, rotate]);
     const arrivalScale = interpolate(appearProgress.value, [0, 1], [0.78, 1]);
+    const popScale = interpolate(popProgress.value, [0, 0.16, 0.42, 1], [1, 1.16, 0.94, 1.38]);
+    const popOpacity = interpolate(popProgress.value, [0, 0.34, 1], [1, 0.96, 0]);
 
     return {
-      opacity: appearProgress.value * (layout.depth ?? 1),
+      opacity: appearProgress.value * (layout.depth ?? 1) * popOpacity,
       transform: [
         { translateX: x },
         { translateY: y },
         { rotate: `${rotation}deg` },
-        { scale: arrivalScale },
+        { scale: arrivalScale * popScale },
       ],
     };
-  }, [floatX, floatY, layout.depth, reduceMotion, rotate]);
+  }, [floatX, floatY, layout.depth, popProgress, reduceMotion, rotate]);
+
+  const burstRingStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(popProgress.value, [0, 0.12, 0.68, 1], [0, 0.86, 0.26, 0]),
+    transform: [{ scale: interpolate(popProgress.value, [0, 1], [0.72, 1.82]) }],
+  }));
 
   const positionStyle = hasHeaderPhoto
     ? {
@@ -269,7 +328,30 @@ function FloatingPhotoBubble({ whisper, index, layout, topInset = 0, hasHeaderPh
         animatedStyle,
       ]}
     >
-      <BubblePhoto whisper={whisper} size={layout.size} />
+      <Pressable
+        disabled={popping}
+        onPress={() => onPress?.(whisper)}
+        accessibilityRole="button"
+        accessibilityLabel={`Whisper from ${whisper.senderName || 'connection'}`}
+        hitSlop={7}
+        style={styles.bubblePressable}
+      >
+        <BubblePhoto whisper={whisper} size={layout.size} />
+      </Pressable>
+      {popping ? (
+        <>
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.burstRing, burstRingStyle]}
+          />
+          <PopDroplet progress={popProgress} dx={-18} dy={-14} size={3.2} />
+          <PopDroplet progress={popProgress} dx={15} dy={-19} size={2.7} />
+          <PopDroplet progress={popProgress} dx={22} dy={3} size={3.4} />
+          <PopDroplet progress={popProgress} dx={13} dy={19} size={2.5} />
+          <PopDroplet progress={popProgress} dx={-17} dy={18} size={3} />
+          <PopDroplet progress={popProgress} dx={-23} dy={2} size={2.4} />
+        </>
+      ) : null}
     </Animated.View>
   );
 }
@@ -302,7 +384,14 @@ function OverflowBubble({ count, hasHeaderPhoto, topInset = 0 }) {
   );
 }
 
-function WhisperBubbleFieldBase({ whispers = [], hasHeaderPhoto = false, topInset = 0 }) {
+function WhisperBubbleFieldBase({
+  whispers = [],
+  hasHeaderPhoto = false,
+  topInset = 0,
+  onWhisperPress,
+  poppingWhisperId = null,
+  onWhisperPopComplete,
+}) {
   const active = Array.isArray(whispers) ? whispers.filter(Boolean) : [];
   if (active.length === 0) return null;
 
@@ -314,9 +403,7 @@ function WhisperBubbleFieldBase({ whispers = [], hasHeaderPhoto = false, topInse
 
   return (
     <View
-      pointerEvents="none"
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+      pointerEvents="box-none"
       style={[
         styles.field,
         hasHeaderPhoto
@@ -332,6 +419,9 @@ function WhisperBubbleFieldBase({ whispers = [], hasHeaderPhoto = false, topInse
           layout={layout[index]}
           topInset={topInset}
           hasHeaderPhoto={hasHeaderPhoto}
+          onPress={onWhisperPress}
+          popping={poppingWhisperId === whisper.id}
+          onPopComplete={onWhisperPopComplete}
         />
       ))}
       <OverflowBubble
@@ -353,6 +443,33 @@ const styles = StyleSheet.create({
   floatingBubble: {
     position: 'absolute',
     zIndex: 2,
+  },
+  bubblePressable: {
+    width: '100%',
+    height: '100%',
+  },
+  burstRing: {
+    position: 'absolute',
+    left: -4,
+    right: -4,
+    top: -4,
+    bottom: -4,
+    borderRadius: 999,
+    borderWidth: 1.4,
+    borderColor: 'rgba(226,248,255,0.92)',
+  },
+  popDroplet: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    marginLeft: -1.5,
+    marginTop: -1.5,
+    backgroundColor: 'rgba(228,249,255,0.9)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.94)',
+    shadowColor: '#A6DFF4',
+    shadowOpacity: 0.28,
+    shadowRadius: 3,
   },
   shell: {
     overflow: 'visible',

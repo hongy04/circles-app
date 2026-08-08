@@ -13,9 +13,11 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Haptics from 'expo-haptics';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { ProfileHeader } from '../../components/profile/ProfileHeader';
 import { WhisperComposerSheet } from '../../components/profile/WhisperComposerSheet';
+import { WhisperReadSheet } from '../../components/profile/WhisperReadSheet';
 import { RomanceProfileSheet } from '../../components/profile/RomanceProfileSheet';
 import { PreConnectionProfileShell } from '../../components/profile/PreConnectionProfileShell';
 import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
@@ -41,8 +43,10 @@ import {
 } from '../../services/profileService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
 import {
+  consumeWhisper,
   getWhisperSendEligibility,
   listMyActiveWhispers,
+  markWhisperOpened,
   sendWhisper,
   subscribeToWhisperPulses,
 } from '../../services/whisperService';
@@ -395,6 +399,9 @@ export function ProfileViewScreen({
   });
   const [whisperComposerVisible, setWhisperComposerVisible] = useState(false);
   const [incomingWhispers, setIncomingWhispers] = useState([]);
+  const [readingWhisper, setReadingWhisper] = useState(null);
+  const [whisperReadBusy, setWhisperReadBusy] = useState(false);
+  const [poppingWhisperId, setPoppingWhisperId] = useState(null);
   const whisperPulseRefreshTimerRef = useRef(null);
 
   const refreshIncomingWhispers = useCallback(async () => {
@@ -406,6 +413,108 @@ export function ProfileViewScreen({
       // failure should never replace the profile with an error state.
     }
   }, []);
+
+  const openIncomingWhisper = useCallback(async (whisper) => {
+    if (!whisper?.id || readingWhisper || whisperReadBusy || poppingWhisperId) return;
+
+    setWhisperReadBusy(true);
+    try {
+      const opened = await markWhisperOpened(whisper.id);
+      setReadingWhisper({
+        ...whisper,
+        senderId: opened.senderId || whisper.senderId,
+        body: opened.body || whisper.body || '',
+        expiresAt: opened.expiresAt || whisper.expiresAt,
+      });
+      void Haptics.selectionAsync().catch(() => {});
+    } catch (openError) {
+      void refreshIncomingWhispers();
+      Alert.alert(
+        'Whisper unavailable',
+        openError?.message || 'This Whisper is no longer available.'
+      );
+    } finally {
+      setWhisperReadBusy(false);
+    }
+  }, [poppingWhisperId, readingWhisper, refreshIncomingWhispers, whisperReadBusy]);
+
+  const finishWhisperPopAnimation = useCallback((whisperId) => {
+    setIncomingWhispers((current) => current.filter((item) => item.id !== whisperId));
+    setPoppingWhisperId((current) => current === whisperId ? null : current);
+  }, []);
+
+  const popReadingWhisper = useCallback(async () => {
+    if (!readingWhisper?.id || whisperReadBusy) return;
+
+    const whisperId = readingWhisper.id;
+    setWhisperReadBusy(true);
+    try {
+      const result = await consumeWhisper(whisperId);
+      if (!result.consumed) {
+        throw new Error('This Whisper is no longer available.');
+      }
+
+      setReadingWhisper(null);
+      setPoppingWhisperId(whisperId);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    } catch (consumeError) {
+      Alert.alert(
+        'Whisper not popped',
+        consumeError?.message || 'Please try again.'
+      );
+      void refreshIncomingWhispers();
+    } finally {
+      setWhisperReadBusy(false);
+    }
+  }, [readingWhisper, refreshIncomingWhispers, whisperReadBusy]);
+
+  const reportReadingWhisper = useCallback(() => {
+    if (!readingWhisper?.id || !readingWhisper?.senderId) return;
+
+    const whisper = readingWhisper;
+    setReadingWhisper(null);
+    navigation.navigate('ReportUser', {
+      userId: whisper.senderId,
+      displayName: whisper.senderName || 'This account',
+      sourceContext: 'whisper',
+      reportMode: 'whisper',
+      whisperId: whisper.id,
+    });
+  }, [navigation, readingWhisper]);
+
+  const blockReadingWhisperSender = useCallback(() => {
+    if (!readingWhisper?.senderId || whisperReadBusy) return;
+
+    const whisper = readingWhisper;
+    const firstName = (whisper.senderName || 'this account').trim().split(/\s+/)[0];
+    Alert.alert(
+      `Block ${firstName}?`,
+      'They will not be notified. Your connection, direct messaging access, romantic state, and active Whispers will end.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            setWhisperReadBusy(true);
+            try {
+              await blockUser(whisper.senderId, 'whisper');
+              setReadingWhisper(null);
+              setIncomingWhispers((current) => current.filter((item) => item.senderId !== whisper.senderId));
+              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+            } catch (blockError) {
+              Alert.alert(
+                'Account not blocked',
+                blockError?.message || 'Please try again.'
+              );
+            } finally {
+              setWhisperReadBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [readingWhisper, whisperReadBusy]);
 
   const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -1187,6 +1296,9 @@ export function ProfileViewScreen({
       whisperVisible={profile.relationship_status === 'connected' && (whisperEligibility.canSend || whisperEligibility.reason === 'cooldown')}
       whisperReady={Boolean(whisperEligibility.canSend)}
       incomingWhispers={resolvedIsSelf ? incomingWhispers : []}
+      onIncomingWhisperPress={resolvedIsSelf ? openIncomingWhisper : undefined}
+      poppingWhisperId={poppingWhisperId}
+      onIncomingWhisperPopComplete={finishWhisperPopAnimation}
       topInset={hasHeaderPhoto ? insets.top : 0}
     />
   ) : null;
@@ -1341,6 +1453,14 @@ export function ProfileViewScreen({
           profile={profile}
           onClose={() => setWhisperComposerVisible(false)}
           onSend={submitWhisper}
+        />
+
+        <WhisperReadSheet
+          whisper={readingWhisper}
+          busy={whisperReadBusy}
+          onPop={popReadingWhisper}
+          onReport={reportReadingWhisper}
+          onBlock={blockReadingWhisperSender}
         />
 
         <PostOwnerMenu

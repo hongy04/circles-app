@@ -19,12 +19,16 @@ import {
   blockUser,
   REPORT_REASONS,
   submitUserReport,
+  submitWhisperSafetyReport,
 } from '../../services/safetyService';
 
 export function ReportUserScreen({ navigation, route }) {
   const userId = route?.params?.userId;
   const displayName = route?.params?.displayName || 'this account';
   const sourceContext = route?.params?.sourceContext || 'profile';
+  const reportMode = route?.params?.reportMode || 'account';
+  const whisperId = route?.params?.whisperId || null;
+  const isWhisperReport = reportMode === 'whisper' && Boolean(whisperId);
   const scrollRef = useRef(null);
   const [reason, setReason] = useState('');
   const [details, setDetails] = useState('');
@@ -46,12 +50,20 @@ export function ReportUserScreen({ navigation, route }) {
     setSubmitting(true);
     let blockFailed = false;
     try {
-      await submitUserReport({
-        userId,
-        reason,
-        details,
-        sourceContext,
-      });
+      if (isWhisperReport) {
+        await submitWhisperSafetyReport({
+          whisperId,
+          reason,
+          details,
+        });
+      } else {
+        await submitUserReport({
+          userId,
+          reason,
+          details,
+          sourceContext,
+        });
+      }
 
       if (alsoBlock) {
         try {
@@ -71,7 +83,7 @@ export function ReportUserScreen({ navigation, route }) {
         [{
           text: 'Done',
           onPress: () => {
-            if (alsoBlock && !blockFailed) {
+            if (!isWhisperReport && alsoBlock && !blockFailed) {
               navigation.pop(2);
             } else {
               navigation.goBack();
@@ -95,7 +107,7 @@ export function ReportUserScreen({ navigation, route }) {
         <Pressable onPress={() => navigation.goBack()} hitSlop={10} style={styles.topBarSide}>
           <Ionicons name="chevron-back" size={24} color={COLORS.text} />
         </Pressable>
-        <Text style={styles.topBarTitle}>Report account</Text>
+        <Text style={styles.topBarTitle}>{isWhisperReport ? 'Report Whisper' : 'Report account'}</Text>
         <View style={styles.topBarSide} />
       </View>
 
@@ -115,7 +127,9 @@ export function ReportUserScreen({ navigation, route }) {
             <View style={styles.noticeCopy}>
               <Text style={styles.noticeTitle}>Reports are private</Text>
               <Text style={styles.noticeBody}>
-                {displayName} will not be told who reported them. Include only information relevant to the safety concern.
+                {isWhisperReport
+                  ? `${displayName} will not be told who reported the Whisper. Its disappearing text will be saved privately as report evidence.`
+                  : `${displayName} will not be told who reported them. Include only information relevant to the safety concern.`}
               </Text>
             </View>
           </View>
