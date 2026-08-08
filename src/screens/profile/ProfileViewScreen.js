@@ -15,6 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useThemeTokens } from '../../theme/ThemeProvider';
 import { ProfileHeader } from '../../components/profile/ProfileHeader';
+import { WhisperComposerSheet } from '../../components/profile/WhisperComposerSheet';
 import { RomanceProfileSheet } from '../../components/profile/RomanceProfileSheet';
 import { PreConnectionProfileShell } from '../../components/profile/PreConnectionProfileShell';
 import { ProfilePostGridItem } from '../../components/profile/ProfilePostGridItem';
@@ -39,6 +40,7 @@ import {
   sendProfileConnectionRequest,
 } from '../../services/profileService';
 import { navigationCacheKeys, readNavigationCache, writeNavigationCache } from '../../services/navigationCacheService';
+import { getWhisperSendEligibility, sendWhisper } from '../../services/whisperService';
 
 
 function useProfileTheme() {
@@ -381,6 +383,12 @@ export function ProfileViewScreen({
     circleAccessActive: false,
     conversationId: null,
   });
+  const [whisperEligibility, setWhisperEligibility] = useState({
+    canSend: false,
+    reason: 'loading',
+    nextAllowedAt: null,
+  });
+  const [whisperComposerVisible, setWhisperComposerVisible] = useState(false);
 
   const load = useCallback(async ({ refresh = false, quiet = false } = {}) => {
     if (refresh) setRefreshing(true);
@@ -433,16 +441,29 @@ export function ProfileViewScreen({
             circleAccessActive: false,
             conversationId: null,
           });
+      const whisperPromise = connected
+        ? getWhisperSendEligibility(result.profile.id).catch(() => ({
+            canSend: false,
+            reason: 'unavailable',
+            nextAllowedAt: null,
+          }))
+        : Promise.resolve({
+            canSend: false,
+            reason: 'not_connected',
+            nextAllowedAt: null,
+          });
 
-      const [previewPostId, romanticStatus, proposalStatus] = await Promise.all([
+      const [previewPostId, romanticStatus, proposalStatus, whisperStatus] = await Promise.all([
         previewPromise,
         romanticPromise,
         proposalPromise,
+        whisperPromise,
       ]);
 
       setMutualPreviewPostId(previewPostId);
       setRomanticStatus(romanticStatus);
       setCircleProposalStatus(proposalStatus);
+      setWhisperEligibility(whisperStatus);
       writeNavigationCache(cacheKey, {
         profile: result.profile,
         posts: result.posts || [],
@@ -1037,6 +1058,37 @@ export function ProfileViewScreen({
     });
   };
 
+  const openWhisperComposer = () => {
+    if (!profile?.id || profile.relationship_status !== 'connected') return;
+
+    if (whisperEligibility.canSend) {
+      setWhisperComposerVisible(true);
+      return;
+    }
+
+    if (whisperEligibility.reason === 'cooldown') {
+      Alert.alert(
+        'Whisper already floating',
+        'You can Whisper this connection once every 24 hours.'
+      );
+      return;
+    }
+
+    if (whisperEligibility.reason === 'disabled') return;
+
+    Alert.alert('Whisper unavailable', 'You cannot send a Whisper to this connection right now.');
+  };
+
+  const submitWhisper = async (body) => {
+    if (!profile?.id) return;
+    const result = await sendWhisper(profile.id, body);
+    setWhisperEligibility({
+      canSend: false,
+      reason: 'cooldown',
+      nextAllowedAt: result.nextAllowedAt || null,
+    });
+  };
+
   const decorationActive = Boolean(
     profile?.profile_header_url
     || profile?.profile_background_url
@@ -1059,6 +1111,9 @@ export function ProfileViewScreen({
       onPostsPress={openPosts}
       onEventsPress={openEvents}
       onConnectionsPress={openConnections}
+      onWhisperPress={openWhisperComposer}
+      whisperVisible={profile.relationship_status === 'connected' && (whisperEligibility.canSend || whisperEligibility.reason === 'cooldown')}
+      whisperReady={Boolean(whisperEligibility.canSend)}
       topInset={hasHeaderPhoto ? insets.top : 0}
     />
   ) : null;
@@ -1206,6 +1261,13 @@ export function ProfileViewScreen({
           onNotYet={handleNotYetCircleProposal}
           onEndFocus={handleEndFocusFromProposal}
           onOpenCircle={openTwoPersonCircle}
+        />
+
+        <WhisperComposerSheet
+          visible={whisperComposerVisible}
+          profile={profile}
+          onClose={() => setWhisperComposerVisible(false)}
+          onSend={submitWhisper}
         />
 
         <PostOwnerMenu

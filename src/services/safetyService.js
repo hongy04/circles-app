@@ -105,3 +105,27 @@ export async function submitUserReport({
   if (error) throw error;
   return data || { submitted: true };
 }
+
+
+export async function submitWhisperSafetyReport({
+  whisperId,
+  reason,
+  details = '',
+}) {
+  await requireSafetyFeature();
+
+  const cleanDetails = details.trim();
+  if (!reason) throw new Error('Choose a reason for the report.');
+  if (cleanDetails.length > 1600) {
+    throw new Error('Report details must be 1600 characters or fewer.');
+  }
+
+  const { data, error } = await supabase.rpc('submit_whisper_report', {
+    p_whisper_id: whisperId,
+    p_reason: reason,
+    p_details: cleanDetails || null,
+  });
+
+  if (error) throw error;
+  return data || { submitted: true, whisper_consumed: true };
+}

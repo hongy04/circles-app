@@ -44,6 +44,9 @@ function RelationshipActions({
   onConnect,
   onAccept,
   onDecline,
+  onWhisperPress,
+  whisperVisible = false,
+  whisperReady = false,
 }) {
   const { theme, styles } = useProfileHeaderTheme();
   const relationship = profile.relationship_status;
@@ -57,6 +60,41 @@ function RelationshipActions({
           <Ionicons name="checkmark-circle" size={18} color={theme.colors.text} />
           <Text style={styles.connectedButtonText}>Connected</Text>
         </View>
+
+        {whisperVisible ? (
+          <Pressable
+            onPress={onWhisperPress}
+            accessibilityRole="button"
+            accessibilityLabel={whisperReady ? 'Whisper' : 'Whisper unavailable right now'}
+            style={({ pressed }) => [
+              styles.whisperButton,
+              !whisperReady && styles.whisperButtonWaiting,
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <View style={styles.whisperGlyph}>
+              <Ionicons
+                name="ear-outline"
+                size={22}
+                color={whisperReady ? theme.colors.text : theme.colors.subtext}
+              />
+              <View
+                style={[
+                  styles.whisperBubble,
+                  styles.whisperBubbleLarge,
+                  { borderColor: whisperReady ? theme.colors.text : theme.colors.subtext },
+                ]}
+              />
+              <View
+                style={[
+                  styles.whisperBubble,
+                  styles.whisperBubbleSmall,
+                  { borderColor: whisperReady ? theme.colors.text : theme.colors.subtext },
+                ]}
+              />
+            </View>
+          </Pressable>
+        ) : null}
       </View>
     );
   }
@@ -140,6 +178,9 @@ export function ProfileHeader({
   onPostsPress,
   onEventsPress,
   onConnectionsPress,
+  onWhisperPress,
+  whisperVisible = false,
+  whisperReady = false,
   topInset = 0,
 }) {
   const { theme, styles } = useProfileHeaderTheme();
@@ -156,15 +197,6 @@ export function ProfileHeader({
 
   return (
     <View style={[styles.root, decorated && styles.decoratedRoot]}>
-      {decorated ? (
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(255,255,255,0.80)', 'rgba(255,255,255,0.66)']}
-          start={{ x: 0.2, y: 0 }}
-          end={{ x: 0.8, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-      ) : null}
       {hasHeaderPhoto ? (
         <ImageBackground
           source={{ uri: profile.profile_header_url }}
@@ -247,6 +279,9 @@ export function ProfileHeader({
           onConnect={onConnect}
           onAccept={onAccept}
           onDecline={onDecline}
+          onWhisperPress={onWhisperPress}
+          whisperVisible={whisperVisible}
+          whisperReady={whisperReady}
         />
       ) : null}
     </View>
@@ -261,9 +296,7 @@ function createStyles(theme) {
     paddingBottom: 10,
   },
   decoratedRoot: {
-    backgroundColor: 'transparent',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.76)',
+    backgroundColor: 'rgba(255,255,255,0.88)',
   },
   headerPhoto: {
     height: 104,
@@ -413,6 +446,46 @@ function createStyles(theme) {
   connectedButtonText: {
     color: theme.colors.text,
     fontFamily: 'Manrope_700Bold',
+  },
+  whisperButton: {
+    width: 46,
+    minHeight: 44,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.border,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  whisperButtonWaiting: {
+    backgroundColor: theme.colors.surfaceSoft,
+    opacity: 0.72,
+  },
+  whisperGlyph: {
+    width: 30,
+    height: 30,
+    position: 'relative',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  whisperBubble: {
+    position: 'absolute',
+    borderWidth: 1.1,
+    backgroundColor: 'transparent',
+  },
+  whisperBubbleLarge: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    right: 0,
+    top: 3,
+  },
+  whisperBubbleSmall: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    right: 1,
+    top: 14,
   },
   buttonPressed: {
     opacity: 0.7,

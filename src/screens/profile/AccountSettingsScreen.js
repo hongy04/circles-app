@@ -6,36 +6,50 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ThemeAtmosphere } from '../../components/ThemeAtmosphere';
 import { useTheme, useThemeTokens } from '../../theme/ThemeProvider';
 import { getTheme } from '../../theme/themes';
 import { IS_DEVELOPMENT } from '../../config/env';
 import { getAccountSession, signOut } from '../../services/profileService';
 import { getModerationAccess } from '../../services/safetyModerationService';
 import { getMyAccountEnforcementState } from '../../services/accountEnforcementService';
+import {
+  getMyWhisperSettings,
+  updateMyWhisperSettings,
+} from '../../services/whisperService';
 
-
-function rgba(hex, alpha) {
-  const normalized = String(hex || '').replace('#', '');
-  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
-    return `rgba(77,185,229,${alpha})`;
-  }
-  const value = parseInt(normalized, 16);
-  const r = (value >> 16) & 255;
-  const g = (value >> 8) & 255;
-  const b = value & 255;
-  return `rgba(${r},${g},${b},${alpha})`;
-}
 
 function useSettingsTheme() {
   const theme = useThemeTokens();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return { theme, styles };
+}
+
+
+function ToggleSettingRow({ icon, title, subtitle, value, onValueChange, disabled = false }) {
+  const { theme, styles } = useSettingsTheme();
+  return (
+    <View style={styles.row}>
+      <View style={styles.rowIcon}>
+        <Ionicons name={icon} size={19} color={theme.colors.text} />
+      </View>
+      <View style={styles.rowText}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
+      </View>
+      <Switch
+        value={Boolean(value)}
+        onValueChange={onValueChange}
+        disabled={disabled}
+        accessibilityLabel={title}
+      />
+    </View>
+  );
 }
 
 function SettingRow({ icon, title, subtitle, onPress, destructive = false }) {
@@ -83,6 +97,8 @@ export function AccountSettingsScreen({ navigation }) {
   const [signingOut, setSigningOut] = useState(false);
   const [moderationAccess, setModerationAccess] = useState({ hasAccess: false, role: null });
   const [enforcement, setEnforcement] = useState({ active: false, state: 'active' });
+  const [allowWhispers, setAllowWhispers] = useState(true);
+  const [savingWhispers, setSavingWhispers] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -91,12 +107,14 @@ export function AccountSettingsScreen({ navigation }) {
       getAccountSession(),
       getModerationAccess().catch(() => ({ hasAccess: false, role: null })),
       getMyAccountEnforcementState().catch(() => ({ active: false, state: 'active' })),
+      getMyWhisperSettings().catch(() => ({ allowWhispers: true })),
     ])
-      .then(([result, access, enforcementState]) => {
+      .then(([result, access, enforcementState, whisperSettings]) => {
         if (!mounted) return;
         setSession(result);
         setModerationAccess(access);
         setEnforcement(enforcementState);
+        setAllowWhispers(whisperSettings.allowWhispers !== false);
       })
       .catch((error) => {
         Alert.alert('Account unavailable', error?.message || 'Please sign in again.');
@@ -131,6 +149,24 @@ export function AccountSettingsScreen({ navigation }) {
     }
   };
 
+  const setWhispersEnabled = async (nextValue) => {
+    const previousValue = allowWhispers;
+    setAllowWhispers(nextValue);
+    setSavingWhispers(true);
+    try {
+      const settings = await updateMyWhisperSettings(nextValue);
+      setAllowWhispers(settings.allowWhispers);
+    } catch (error) {
+      setAllowWhispers(previousValue);
+      Alert.alert(
+        'Could not update Whispers',
+        error?.message || 'Please try again.'
+      );
+    } finally {
+      setSavingWhispers(false);
+    }
+  };
+
   const confirmSignOut = () => {
     if (Platform.OS === 'web') {
       const confirmed = globalThis.confirm?.(
@@ -156,7 +192,6 @@ export function AccountSettingsScreen({ navigation }) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.screen}>
-      <ThemeAtmosphere theme={theme} strength={0.78} decals />
       <View style={styles.topBar}>
         <Pressable
           onPress={() => navigation.goBack()}
@@ -206,6 +241,15 @@ export function AccountSettingsScreen({ navigation }) {
               title="Blocked accounts"
               subtitle="Review accounts you blocked and unblock them without restoring a connection"
               onPress={() => navigation.navigate('BlockedAccounts')}
+            />
+            <View style={styles.separator} />
+            <ToggleSettingRow
+              icon="ear-outline"
+              title="Whispers"
+              subtitle="Allow accepted connections to leave temporary Whispers on your profile"
+              value={allowWhispers}
+              disabled={savingWhispers}
+              onValueChange={setWhispersEnabled}
             />
           </View>
 
@@ -362,24 +406,19 @@ export function AccountSettingsScreen({ navigation }) {
 }
 
 function createStyles(theme) {
-  const glass = rgba(theme.colors.surface, 0.84);
-  const glassStrong = rgba(theme.colors.surface, 0.93);
-  const accentBorder = rgba(theme.circle.accent, 0.17);
-
   return StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: theme.colors.bg,
+    backgroundColor: theme.colors.surfaceSoft,
   },
   topBar: {
-    zIndex: 2,
     minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: accentBorder,
-    backgroundColor: glassStrong,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
   },
   topBarSide: {
     width: 52,
@@ -411,23 +450,18 @@ function createStyles(theme) {
     color: theme.colors.subtext,
     fontFamily: 'Manrope_700Bold',
     fontSize: 11,
-    letterSpacing: 0.65,
+    letterSpacing: 0.6,
     marginLeft: 4,
     marginBottom: 7,
     marginTop: 6,
   },
   section: {
-    borderRadius: 17,
+    borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: accentBorder,
-    backgroundColor: glass,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.bg,
     overflow: 'hidden',
     marginBottom: 20,
-    shadowColor: theme.colors.text,
-    shadowOpacity: 0.025,
-    shadowRadius: 9,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 1,
   },
   row: {
     minHeight: 66,
@@ -437,22 +471,19 @@ function createStyles(theme) {
     paddingVertical: 11,
   },
   rowPressed: {
-    backgroundColor: rgba(theme.circle.accent, 0.075),
+    backgroundColor: '#f5f5f5',
   },
   rowIcon: {
     width: 36,
     height: 36,
-    borderRadius: 11,
-    backgroundColor: rgba(theme.circle.accent, 0.10),
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: rgba(theme.circle.accent, 0.12),
+    borderRadius: 10,
+    backgroundColor: '#f1f1f1',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   rowIconDestructive: {
-    backgroundColor: 'rgba(180,35,24,0.08)',
-    borderColor: 'rgba(180,35,24,0.13)',
+    backgroundColor: '#fff1f0',
   },
   rowText: {
     flex: 1,
@@ -474,7 +505,7 @@ function createStyles(theme) {
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: rgba(theme.circle.accent, 0.12),
+    backgroundColor: theme.colors.border,
     marginLeft: 62,
   },
   footerText: {
@@ -484,7 +515,6 @@ function createStyles(theme) {
     lineHeight: 18,
     textAlign: 'center',
     paddingHorizontal: 20,
-    paddingBottom: 6,
   },
   });
 }
